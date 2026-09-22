@@ -1,0 +1,25 @@
+// Game balance/tuning data. Adjust values here without touching game logic.
+const GAME_CONFIG = {
+  carryCapacityTiers: [5, 8, 12, 18, 25],
+  homeLevelCosts: [0, 20, 50, 100, 200],
+  shellColorCosts: [0, 15, 15, 25, 25, 40],
+  shellColors: [
+    { id: "natural", label: "Natural", hue: 0 },
+    { id: "teal", label: "Teal", hue: 150 },
+    { id: "amber", label: "Amber", hue: 60 },
+    { id: "coral", label: "Coral", hue: 320 },
+    { id: "violet", label: "Violet", hue: 250 },
+    { id: "moss", label: "Moss", hue: 100 },
+  ],
+  hungerDrainPerSecond: 1,
+  hungerMax: 100,
+  hungerSlowThreshold: 0,
+  slowedSpeedMultiplier: 0.5,
+  birdCount: 3,
+  birdSpeed: 60,
+  turtleSpeed: 120,
+  turtleRadius: 18,
+  birdRadius: 16,
+  itemRadius: 10,
+  homeRadius: 70,
+};

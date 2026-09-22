@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>Turtle Tides</title>
+<meta name="theme-color" content="#2FA6A1" />
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" href="icons/icon-192.png" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- A. Main Menu -->
+<div id="screen-menu" class="screen active">
+  <div class="menu-card">
+    <h1 class="title">🐢 Turtle Tides</h1>
+    <p class="subtitle">gather coconuts &amp; shells, mind the birds, bank it all at home</p>
+    <button id="btn-play" class="btn btn-primary">Play</button>
+    <button id="btn-howto" class="btn btn-secondary">How to Play</button>
+    <button id="btn-sound-menu" class="btn btn-icon" aria-label="Toggle sound">🔊</button>
+  </div>
+</div>
+
+<!-- B. How to Play -->
+<div id="screen-howto" class="screen">
+  <div class="panel">
+    <h2>How to Play</h2>
+    <ul class="howto-list">
+      <li>🐢 Roam the island freely and walk over coconuts and shells to pick them up.</li>
+      <li>🏖️ The beach near home is safe. 🌳 The woods are riskier — birds patrol there.</li>
+      <li>🎒 You can only carry so much at once. Watch your carry meter.</li>
+      <li>🏠 Walk back onto your rock-pile home to bank everything you're carrying — banked items are safe forever.</li>
+      <li>🦅 If a bird touches you in the woods, you respawn at home and lose only that trip's unbanked haul.</li>
+      <li>🥥 Coconuts refill your hunger automatically when it runs low. No coconuts? You just move a little slower.</li>
+      <li>🐚 Spend banked shells at home to upgrade your home, carry capacity, and shell color.</li>
+    </ul>
+    <button id="btn-howto-back" class="btn btn-secondary">Back</button>
+  </div>
+</div>
+
+<!-- C. Save Slot Select -->
+<div id="screen-slots" class="screen">
+  <div class="panel">
+    <h2>Select a Save</h2>
+    <div id="slot-list" class="slot-list"></div>
+    <button id="btn-slots-back" class="btn btn-secondary">Back</button>
+  </div>
+</div>
+
+<!-- D. Game World / Play Screen -->
+<div id="screen-game" class="screen">
+  <canvas id="gameCanvas"></canvas>
+
+  <div id="zone-banner" class="zone-banner"></div>
+
+  <div id="hud" class="hud">
+    <div class="hud-row">
+      <div class="hud-pill" id="hud-carry">🎒 0 / 0</div>
+      <div class="hud-pill" id="hud-banked">🥥 0 &nbsp; 🐚 0</div>
+      <button id="btn-sound-game" class="btn btn-icon small" aria-label="Toggle sound">🔊</button>
+      <button id="btn-menu-exit" class="btn btn-icon small" aria-label="Back to menu">☰</button>
+    </div>
+    <div class="hunger-bar-wrap">
+      <div class="hunger-label">Hunger</div>
+      <div class="hunger-bar"><div id="hunger-fill" class="hunger-fill"></div></div>
+    </div>
+  </div>
+
+  <div id="home-prompt" class="home-prompt hidden">
+    <button id="btn-open-home" class="btn btn-primary">🏠 Open Home</button>
+  </div>
+
+  <!-- Virtual joystick (touch) -->
+  <div id="joystick-zone" class="joystick-zone">
+    <div id="joystick-base" class="joystick-base">
+      <div id="joystick-thumb" class="joystick-thumb"></div>
+    </div>
+  </div>
+</div>
+
+<!-- E. Home / Upgrade Screen -->
+<div id="screen-home" class="screen">
+  <div class="panel home-panel">
+    <h2>🏠 Home</h2>
+    <div id="home-visual" class="home-visual"></div>
+    <div class="home-stats">
+      <div>Home Level: <span id="home-level-label">1</span></div>
+      <div>Banked: <span id="home-banked-label">🥥 0 &nbsp; 🐚 0</span></div>
+    </div>
+
+    <div class="upgrade-track">
+      <h3>Home Level</h3>
+      <p id="upgrade-home-desc" class="upgrade-desc"></p>
+      <button id="btn-upgrade-home" class="btn btn-upgrade"></button>
+    </div>
+
+    <div class="upgrade-track">
+      <h3>Carry Capacity</h3>
+      <p id="upgrade-capacity-desc" class="upgrade-desc"></p>
+      <button id="btn-upgrade-capacity" class="btn btn-upgrade"></button>
+    </div>
+
+    <div class="upgrade-track">
+      <h3>Shell Color</h3>
+      <div id="shell-color-swatches" class="swatches"></div>
+    </div>
+
+    <button id="btn-home-close" class="btn btn-secondary">Back to Beach</button>
+  </div>
+</div>
+
+<!-- F. Respawn Transition -->
+<div id="respawn-overlay" class="respawn-overlay hidden">
+  <div class="respawn-text">🌊 caught by a bird... washing back home 🌊</div>
+</div>
+
+<script src="data/config.js"></script>
+<script src="data/world.js"></script>
+<script src="script.js"></script>
+</body>
+</html>
