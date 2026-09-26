@@ -4,9 +4,17 @@
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
 
-  // Play space in world units; canvas scales to fit while keeping aspect ratio.
-  const WORLD_W = 800;
-  const WORLD_H = 600;
+  // Visible area in world units; canvas scales to fit while keeping aspect ratio.
+  const VIEW_W = 800;
+  const VIEW_H = 600;
+  // Explorable world: 3x the view (assumption; MDD gives no size). Turtle is clamped to its edges.
+  const WORLD_W = 2400;
+  const WORLD_H = 1800;
+  // Island layout (MDD s3): beach/home ring around a woods interior, ocean beyond.
+  // Home is on the south beach, woods to the north. Zone checks are ellipse tests.
+  const ISLAND = { x: 1200, y: 900, rx: 1000, ry: 700 };
+  const WOODS = { x: 1200, y: 740, rx: 680, ry: 400 };
+  const HOME = { x: 1200, y: 1380 };
 
   const TURTLE_RADIUS = 36;
   const MAX_SPEED = 180;   // px/s
@@ -15,7 +23,7 @@
   const JOY_RADIUS = 60;   // CSS px: drag distance for full speed
   const JOY_DEADZONE = 0.12;
 
-  const turtle = { x: WORLD_W / 2, y: WORLD_H / 2, vx: 0, vy: 0, angle: 0 };
+  const turtle = { x: HOME.x, y: HOME.y - 90, vx: 0, vy: 0, angle: 0 };
 
   // ---- Input -> normalized direction vector (length 0..1) ----
   const keys = new Set();
@@ -123,12 +131,98 @@
     const w = window.innerWidth, h = window.innerHeight;
     canvas.width = Math.round(w * dpr);
     canvas.height = Math.round(h * dpr);
-    scale = Math.min(w / WORLD_W, h / WORLD_H);
-    offX = (w - WORLD_W * scale) / 2;
-    offY = (h - WORLD_H * scale) / 2;
+    scale = Math.min(w / VIEW_W, h / VIEW_H);
+    offX = (w - VIEW_W * scale) / 2;
+    offY = (h - VIEW_H * scale) / 2;
   }
   window.addEventListener('resize', resize);
   resize();
+
+  // ---- World art (placeholder flat shapes, pre-rendered once to an offscreen canvas) ----
+  // Simple seeded RNG so the layout is the same every load.
+  let seed = 7;
+  const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const inEllipse = (e, x, y, pad = 0) =>
+    ((x - e.x) / (e.rx + pad)) ** 2 + ((y - e.y) / (e.ry + pad)) ** 2 <= 1;
+  const inWoods = (x, y) => inEllipse(WOODS, x, y); // TODO: used by bird/collectible zone logic
+
+  function blob(g, e, pad, color) {
+    g.beginPath(); g.ellipse(e.x, e.y, e.rx + pad, e.ry + pad, 0, 0, Math.PI * 2);
+    g.fillStyle = color; g.fill();
+  }
+
+  function buildWorld() {
+    const c = document.createElement('canvas');
+    c.width = WORLD_W; c.height = WORLD_H;
+    const g = c.getContext('2d');
+    g.fillStyle = '#1c8ea6'; g.fillRect(0, 0, WORLD_W, WORLD_H);   // open ocean
+    blob(g, ISLAND, 180, '#2fb3bd');                                // shallows
+    blob(g, ISLAND, 90, '#7fd6d0');                                 // foam-ish shallow edge
+    blob(g, ISLAND, 0, '#f2dfa7');                                  // sand
+    blob(g, WOODS, 60, '#e6cf8f');                                  // dry sand fringe / tree line edge
+    blob(g, WOODS, 0, '#4f8f4a');                                   // woods floor
+
+    // Dunes on the beach: soft darker sand bumps.
+    for (let i = 0, n = 0; n < 24 && i < 500; i++) {
+      const x = rand() * WORLD_W, y = rand() * WORLD_H;
+      if (!inEllipse(ISLAND, x, y, -60) || inEllipse(WOODS, x, y, 90)) continue;
+      g.beginPath(); g.ellipse(x, y, 40 + rand() * 30, 14 + rand() * 8, 0, 0, Math.PI * 2);
+      g.fillStyle = '#e8d391'; g.fill(); n++;
+    }
+    // Tide pools on the beach.
+    for (let i = 0, n = 0; n < 6 && i < 500; i++) {
+      const x = rand() * WORLD_W, y = rand() * WORLD_H;
+      if (!inEllipse(ISLAND, x, y, -120) || inEllipse(WOODS, x, y, 120) || Math.hypot(x - HOME.x, y - HOME.y) < 200) continue;
+      g.beginPath(); g.ellipse(x, y, 34, 22, 0, 0, Math.PI * 2);
+      g.fillStyle = '#c9b57a'; g.fill();
+      g.beginPath(); g.ellipse(x, y, 26, 15, 0, 0, Math.PI * 2);
+      g.fillStyle = '#5ec8d0'; g.fill(); n++;
+    }
+    // Woods: dense round-canopy trees (drawn back to front by y).
+    const trees = [];
+    for (let i = 0; i < 260; i++) {
+      const x = WOODS.x + (rand() * 2 - 1) * WOODS.rx, y = WOODS.y + (rand() * 2 - 1) * WOODS.ry;
+      if (inEllipse(WOODS, x, y, -20)) trees.push({ x, y, r: 26 + rand() * 18 });
+    }
+    // A few palms on the beach.
+    for (let i = 0, n = 0; n < 12 && i < 500; i++) {
+      const x = rand() * WORLD_W, y = rand() * WORLD_H;
+      if (!inEllipse(ISLAND, x, y, -80) || inEllipse(WOODS, x, y, 70) || Math.hypot(x - HOME.x, y - HOME.y) < 160) continue;
+      trees.push({ x, y, r: 22, palm: true }); n++;
+    }
+    trees.sort((a, b) => a.y - b.y);
+    for (const t of trees) {
+      g.fillStyle = 'rgba(0,0,0,0.15)';
+      g.beginPath(); g.ellipse(t.x + 6, t.y + t.r * 0.6, t.r, t.r * 0.6, 0, 0, Math.PI * 2); g.fill();
+      g.fillStyle = t.palm ? '#7a5a34' : '#2f6b34';
+      g.beginPath(); g.arc(t.x, t.y, t.palm ? 5 : t.r, 0, Math.PI * 2); g.fill();
+      if (t.palm) {
+        g.fillStyle = '#3f9a45';
+        for (let a = 0; a < 6; a++) {
+          g.beginPath();
+          g.ellipse(t.x + Math.cos(a * 1.05) * 16, t.y + Math.sin(a * 1.05) * 16, 18, 6, a * 1.05, 0, Math.PI * 2);
+          g.fill();
+        }
+      } else {
+        g.fillStyle = '#3f8a42';
+        g.beginPath(); g.arc(t.x - t.r * 0.2, t.y - t.r * 0.2, t.r * 0.65, 0, Math.PI * 2); g.fill();
+      }
+    }
+    // Home: rock pile (fixed landmark; level art comes with upgrades).
+    for (const [dx, dy, r] of [[-34, 6, 26], [8, 14, 30], [40, 0, 22], [-8, -22, 24], [22, -20, 18]]) {
+      g.fillStyle = '#7d7d82'; g.beginPath(); g.arc(HOME.x + dx, HOME.y + dy, r, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#9a9aa0'; g.beginPath(); g.arc(HOME.x + dx - 4, HOME.y + dy - 5, r * 0.6, 0, Math.PI * 2); g.fill();
+    }
+    return c;
+  }
+  const worldArt = buildWorld();
+
+  // Camera: centers on the turtle, clamped so the view never shows past the world edge.
+  let camX = 0, camY = 0;
+  function updateCamera() {
+    camX = Math.max(0, Math.min(WORLD_W - VIEW_W, turtle.x - VIEW_W / 2));
+    camY = Math.max(0, Math.min(WORLD_H - VIEW_H, turtle.y - VIEW_H / 2));
+  }
 
   // Walk cycle = first 4 cells of row 0 in the sheet (8 cols x 5 rows); sprite faces up.
   // Other rows: 2 asleep+zzz (cols 0-3), 3 stun (cols 2-3 blink the dizzy dashes), 4 closed shell (col 0).
@@ -178,9 +272,10 @@
     ctx.save();
     ctx.translate(offX, offY);
     ctx.scale(scale, scale);
-    ctx.beginPath(); ctx.rect(0, 0, WORLD_W, WORLD_H); ctx.clip();
-    ctx.fillStyle = '#f2dfa7'; // placeholder sand
-    ctx.fillRect(0, 0, WORLD_W, WORLD_H);
+    ctx.beginPath(); ctx.rect(0, 0, VIEW_W, VIEW_H); ctx.clip();
+    updateCamera();
+    ctx.translate(-camX, -camY);
+    ctx.drawImage(worldArt, 0, 0);
     drawTurtle();
     ctx.restore();
 
