@@ -141,6 +141,7 @@
     ctx.save();
     ctx.translate(turtle.x, turtle.y);
     ctx.rotate(turtle.angle + Math.PI / 2); // art faces up, angle 0 = right
+    if (f === 3) ctx.scale(-1, 1); // mirror the last frame so the head swings left (sheet only has right)
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(sprite, f * fw, 0, fw, fh, -dw / 2, -SPRITE_H / 2, dw, SPRITE_H);
     ctx.restore();
