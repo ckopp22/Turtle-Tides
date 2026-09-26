@@ -19,10 +19,16 @@
 
   // ---- Input -> normalized direction vector (length 0..1) ----
   const keys = new Set();
+  // Turtle state: 'normal' | 'stunned' | 'sleeping' | 'shell'. Non-normal states can't move.
+  // TODO: real triggers (bird hit, hunger/night, hide button); keys 1-4 are a debug switch for now.
+  let state = 'normal';
+  let stateTime = 0;
+  const DEBUG_STATES = { 1: 'normal', 2: 'stunned', 3: 'sleeping', 4: 'shell' };
   const joy = { active: false, id: null, ox: 0, oy: 0, x: 0, y: 0 };
 
   const KEY_MAP = { w: 'up', a: 'left', s: 'down', d: 'right' };
   window.addEventListener('keydown', e => {
+    if (DEBUG_STATES[e.key]) { state = DEBUG_STATES[e.key]; stateTime = 0; return; }
     const k = KEY_MAP[e.key.toLowerCase()];
     if (k) { keys.add(k); e.preventDefault(); }
   });
@@ -74,7 +80,8 @@
 
   // ---- Update ----
   function update(dt) {
-    const dir = getDirection();
+    stateTime += dt;
+    const dir = state === 'normal' ? getDirection() : { x: 0, y: 0 };
     const tvx = dir.x * MAX_SPEED, tvy = dir.y * MAX_SPEED;
     const hasInput = dir.x !== 0 || dir.y !== 0;
     const rate = (hasInput ? ACCEL : DECEL) * dt;
@@ -124,7 +131,7 @@
   resize();
 
   // Walk cycle = first 4 cells of row 0 in the sheet (8 cols x 5 rows); sprite faces up.
-  // TODO: other rows: 1 sleep, 2 asleep+zzz, 3 action/stun, 4 shell (death).
+  // Other rows: 2 asleep+zzz (cols 0-3), 3 stun (cols 2-3 blink the dizzy dashes), 4 closed shell (col 0).
   const sprite = new Image();
   sprite.src = 'assets/turtle-sheet.png';
   const FRAMES = 4;
@@ -137,13 +144,16 @@
     if (!sprite.complete || !sprite.naturalWidth) return;
     const fw = sprite.naturalWidth / SHEET_COLS, fh = sprite.naturalHeight / SHEET_ROWS;
     const dw = SPRITE_H * fw / fh;
-    const f = Math.floor(walkFrame) % FRAMES;
+    let row = 0, f = Math.floor(walkFrame) % FRAMES;
+    if (state === 'sleeping') { row = 2; f = Math.floor(stateTime * 2) % FRAMES; }
+    else if (state === 'stunned') { row = 3; f = 2 + Math.floor(stateTime * 4) % 2; }
+    else if (state === 'shell') { row = 4; f = 0; }
     ctx.save();
     ctx.translate(turtle.x, turtle.y);
     ctx.rotate(turtle.angle + Math.PI / 2); // art faces up, angle 0 = right
-    if (f === 3) ctx.scale(-1, 1); // mirror the last frame so the head swings left (sheet only has right)
+    if (state === 'normal' && f === 3) ctx.scale(-1, 1); // mirror the last frame so the head swings left (sheet only has right)
     ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(sprite, f * fw, 0, fw, fh, -dw / 2, -SPRITE_H / 2, dw, SPRITE_H);
+    ctx.drawImage(sprite, f * fw, row * fh, fw, fh, -dw / 2, -SPRITE_H / 2, dw, SPRITE_H);
     ctx.restore();
   }
 
