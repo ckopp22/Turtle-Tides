@@ -23,7 +23,16 @@
   const JOY_RADIUS = 60;   // CSS px: drag distance for full speed
   const JOY_DEADZONE = 0.12;
 
-  const turtle = { x: HOME.x, y: HOME.y - 90, vx: 0, vy: 0, angle: 0 };
+  // Spawn point in world units (near home); set for real once the canvas has its final size (below),
+  // not here at script-parse time, so a slow/first load can never leave the turtle at 0,0.
+  const turtle = { x: 0, y: 0, vx: 0, vy: 0, angle: 0 };
+  let spawned = false;
+  function spawnTurtle() {
+    turtle.x = HOME.x;
+    turtle.y = HOME.y - 90;
+    turtle.vx = 0; turtle.vy = 0;
+    spawned = true;
+  }
 
   // ---- Input -> normalized direction vector (length 0..1) ----
   const keys = new Set();
@@ -126,6 +135,12 @@
   // ---- Render ----
   let scale = 1, offX = 0, offY = 0, dpr = 1;
 
+  function clampToWorld() {
+    const r = TURTLE_RADIUS;
+    turtle.x = Math.max(r, Math.min(WORLD_W - r, turtle.x));
+    turtle.y = Math.max(r, Math.min(WORLD_H - r, turtle.y));
+  }
+
   function resize() {
     dpr = window.devicePixelRatio || 1;
     const w = window.innerWidth, h = window.innerHeight;
@@ -134,9 +149,10 @@
     scale = Math.min(w / VIEW_W, h / VIEW_H);
     offX = (w - VIEW_W * scale) / 2;
     offY = (h - VIEW_H * scale) / 2;
+    if (spawned) clampToWorld(); // keep the turtle in bounds after a phone rotation, etc.
   }
   window.addEventListener('resize', resize);
-  resize();
+  window.addEventListener('orientationchange', resize);
 
   // ---- World art (placeholder flat shapes, pre-rendered once to an offscreen canvas) ----
   // Simple seeded RNG so the layout is the same every load.
@@ -282,7 +298,7 @@
     drawJoystick(); // screen space
   }
 
-  let last = performance.now();
+  let last;
   function frame(now) {
     const dt = Math.min((now - last) / 1000, 0.05);
     last = now;
@@ -290,5 +306,17 @@
     render();
     requestAnimationFrame(frame);
   }
-  requestAnimationFrame(frame);
+
+  // Start only once the window (and canvas) has real dimensions, so the very first resize()/spawn
+  // never runs against a 0x0 layout. If innerWidth/Height still isn't ready, wait one more frame
+  // rather than spawn at the origin.
+  function start() {
+    resize();
+    if (!window.innerWidth || !window.innerHeight) { requestAnimationFrame(start); return; }
+    spawnTurtle();
+    last = performance.now();
+    requestAnimationFrame(frame);
+  }
+  if (document.readyState === 'complete') start();
+  else window.addEventListener('load', start);
 })();
