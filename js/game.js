@@ -4,10 +4,9 @@
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
 
-  // Visible area in world units; canvas scales to fit while keeping aspect ratio.
-  const VIEW_W = 800;
-  const VIEW_H = 600;
-  // Explorable world: 3x the view (assumption; MDD gives no size). Turtle is clamped to its edges.
+  // The canvas fills the window; 1 world unit = 1 CSS px, so the viewport (viewW x viewH,
+  // set in resize()) just shows more world on a wide screen and more on a tall one — no letterboxing.
+  // Explorable world: 3x a nominal 800x600 view (assumption; MDD gives no size). Turtle is clamped to its edges.
   const WORLD_W = 2400;
   const WORLD_H = 1800;
   // Island layout (MDD s3): beach/home ring around a woods interior, ocean beyond.
@@ -133,7 +132,7 @@
   }
 
   // ---- Render ----
-  let scale = 1, offX = 0, offY = 0, dpr = 1;
+  let dpr = 1, viewW = 0, viewH = 0;
 
   function clampToWorld() {
     const r = TURTLE_RADIUS;
@@ -143,12 +142,11 @@
 
   function resize() {
     dpr = window.devicePixelRatio || 1;
-    const w = window.innerWidth, h = window.innerHeight;
-    canvas.width = Math.round(w * dpr);
-    canvas.height = Math.round(h * dpr);
-    scale = Math.min(w / VIEW_W, h / VIEW_H);
-    offX = (w - VIEW_W * scale) / 2;
-    offY = (h - VIEW_H * scale) / 2;
+    viewW = window.innerWidth;
+    viewH = window.innerHeight;
+    // Backing store scales up for retina sharpness; CSS size (set in style.css) stays at window size.
+    canvas.width = Math.round(viewW * dpr);
+    canvas.height = Math.round(viewH * dpr);
     if (spawned) clampToWorld(); // keep the turtle in bounds after a phone rotation, etc.
   }
   window.addEventListener('resize', resize);
@@ -234,10 +232,11 @@
   const worldArt = buildWorld();
 
   // Camera: centers on the turtle, clamped so the view never shows past the world edge.
+  // (If the viewport is ever bigger than the world, e.g. a very wide monitor, center the world instead.)
   let camX = 0, camY = 0;
   function updateCamera() {
-    camX = Math.max(0, Math.min(WORLD_W - VIEW_W, turtle.x - VIEW_W / 2));
-    camY = Math.max(0, Math.min(WORLD_H - VIEW_H, turtle.y - VIEW_H / 2));
+    camX = WORLD_W <= viewW ? (WORLD_W - viewW) / 2 : Math.max(0, Math.min(WORLD_W - viewW, turtle.x - viewW / 2));
+    camY = WORLD_H <= viewH ? (WORLD_H - viewH) / 2 : Math.max(0, Math.min(WORLD_H - viewH, turtle.y - viewH / 2));
   }
 
   // Walk cycle = first 4 cells of row 0 in the sheet (8 cols x 5 rows); sprite faces up.
@@ -281,14 +280,12 @@
   }
 
   function render() {
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // 1 ctx unit = 1 CSS px; backing store already has the dpr scale-up
     ctx.fillStyle = '#0b3d4f';
-    ctx.fillRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+    ctx.fillRect(0, 0, viewW, viewH);
 
     ctx.save();
-    ctx.translate(offX, offY);
-    ctx.scale(scale, scale);
-    ctx.beginPath(); ctx.rect(0, 0, VIEW_W, VIEW_H); ctx.clip();
+    ctx.beginPath(); ctx.rect(0, 0, viewW, viewH); ctx.clip();
     updateCamera();
     ctx.translate(-camX, -camY);
     ctx.drawImage(worldArt, 0, 0);
