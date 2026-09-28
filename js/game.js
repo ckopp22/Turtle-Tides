@@ -307,11 +307,11 @@
       markPlaced(x, y, spacing);
 
       if (biome === 'beach' && rand() < 0.25) {
-        scenery.push({ x, y, r: 16, type: 'rock', collide: true });
+        scenery.push({ x, y, r: 16, cr: 9, type: 'rock', collide: true });
       } else if (biome === 'beach' && rand() < 0.14) {
         scenery.push({ x, y, r: 20, type: 'sprite', sprite: 'driftwood_stick', h: 60, collide: false });
       } else if (biome === 'beach' && rand() < 0.1) {
-        scenery.push({ x, y, r: 20, type: 'palm', collide: true });
+        scenery.push({ x, y, r: 20, cr: 10, type: 'palm', collide: true });
       } else if (biome === 'beach' && rand() < 0.06) {
         // rare beach flourish, straight off the reference sheet
         scenery.push({ x, y, r: 24, type: 'sprite', sprite: 'sandcastle_big', h: 140, collide: false });
@@ -324,7 +324,9 @@
       } else {
         const t = pickTree(biome);
         const r = biome === 'forestThick' ? 14 : 12;
-        scenery.push({ x, y, r, type: 'sprite', sprite: t.sprite, h: t.h * (0.85 + rand() * 0.3), collide: true });
+        // Collision radius is much smaller than the drawn trunk radius `r` (used for the shadow),
+        // so the turtle only bumps the trunk itself and can pass close by/behind the canopy.
+        scenery.push({ x, y, r, cr: r * 0.45, type: 'sprite', sprite: t.sprite, h: t.h * (0.85 + rand() * 0.3), collide: true });
         // A little undergrowth around forest/dead-tree trees, purely decorative.
         if (biome !== 'beach' && rand() < 0.12) {
           const bush = biome === 'deadTrees' ? 'bush_dead' : (biome === 'forestThick' ? 'bush_round' : 'bush_flowering');
@@ -361,7 +363,7 @@
   function resolveObstacleCollisions() {
     for (const s of nearbyObstacles(turtle.x, turtle.y, TURTLE_RADIUS + 20)) {
       const dx = turtle.x - s.x, dy = turtle.y - s.y;
-      const minDist = TURTLE_RADIUS + s.r;
+      const minDist = TURTLE_RADIUS + (s.cr ?? s.r);
       const dist = Math.hypot(dx, dy) || 0.001;
       if (dist < minDist) {
         const push = (minDist - dist) / dist;
@@ -371,15 +373,26 @@
     }
   }
 
-  function drawScenery(list) {
+  // Depth-sorts the turtle in with visible scenery by y so tall sprites (trees) draw over the
+  // turtle when its anchor point is above their base — i.e. the turtle can duck behind the
+  // canopy — while collision (much smaller `cr` radius) still stops it at the trunk itself.
+  function drawSceneryWithTurtle(list) {
     list.sort((a, b) => a.y - b.y); // cheap back-to-front depth sort of the (small) visible set
+    let drawnTurtle = false;
     for (const s of list) {
+      if (!drawnTurtle && turtle.y < s.y) { drawTurtle(); drawnTurtle = true; }
+      drawScenerySprite(s);
+    }
+    if (!drawnTurtle) drawTurtle();
+  }
+
+  function drawScenerySprite(s) {
       ctx.fillStyle = 'rgba(0,0,0,0.18)';
       ctx.beginPath(); ctx.ellipse(s.x + 4, s.y + 4, s.r * 1.4, s.r * 0.8, 0, 0, Math.PI * 2); ctx.fill();
 
       if (s.type === 'sprite') {
         const img = SPRITES[s.sprite];
-        if (!img.complete || !img.naturalWidth) continue; // not loaded yet; skip a frame rather than block
+        if (!img.complete || !img.naturalWidth) return; // not loaded yet; skip a frame rather than block
         const dh = s.h, dw = dh * (img.naturalWidth / img.naturalHeight);
         // Anchor the sprite's base (trunk/foot) at (x, y) — the same point used for collision.
         ctx.drawImage(img, s.x - dw / 2, s.y - dh, dw, dh);
@@ -395,7 +408,6 @@
           ctx.fill();
         }
       }
-    }
   }
 
   // ---- Update ----
@@ -540,9 +552,7 @@
     const vw = viewW / ZOOM, vh = viewH / ZOOM, margin = 80;
     const visible = scenery.filter(s =>
       s.x > camX - margin && s.x < camX + vw + margin && s.y > camY - margin && s.y < camY + vh + margin);
-    drawScenery(visible);
-
-    drawTurtle();
+    drawSceneryWithTurtle(visible);
     ctx.restore();
 
     drawJoystick(); // screen space
