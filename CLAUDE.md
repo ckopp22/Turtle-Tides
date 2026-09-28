@@ -40,3 +40,9 @@
   before considering the step done.
 - For touch/joystick behavior that can't be fully verified in this environment, 
   note how I should test it manually rather than assuming it works.
+
+## Deploy
+- Before pushing any commit that changes `css/style.css` or `js/game.js`, bump 
+  the `?v=` cache-busting query string on their `<link>`/`<script>` tags in 
+  `index.html` so browsers and phones on GitHub Pages pick up the new files 
+  right away instead of serving a stale cache.
