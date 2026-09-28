@@ -21,6 +21,25 @@
                                                      // bounds clamp) already reads WORLD_W/WORLD_H
   const HOME = { x: CENTER.x, y: CENTER.y + 90 };
 
+  // ---- Shoreline rendering (visual only — gameplay still uses the perfect-circle ISLAND_R /
+  // WATER_OUTER_R above for collision, speed and biome logic; none of that changes here). ----
+  const SHORE_DEEP_COLOR = [20, 90, 160];    // open water, far from any shore
+  const SHORE_SHALLOW_COLOR = [70, 190, 210]; // water near the shoreline
+  const SHORE_WET_SAND_COLOR = [190, 170, 120]; // sand just past the waterline
+  const SHORE_DRY_SAND_COLOR = [235, 215, 160]; // sand further inland (the island's ground color)
+  const SHORE_DEEP_BAND = 90;   // world px of water past the shoreline before it reads as full "deep"
+  const SHORE_WET_BAND = 40;    // world px of land past the shoreline that reads as wet sand
+  const SHORE_DRY_BAND = 50;    // world px past the wet band that fades wet sand into dry sand/biome
+  const SHORE_NOISE_AMPLITUDE = 40; // +/- world px the shoreline wanders from its base radius
+  // Two independent angle-noise samples (different frequency + offset into the same seeded noise
+  // field) so the island and mainland coastlines wobble differently rather than looking identical.
+  const ISLAND_SHORE_FREQ = 3.2, ISLAND_SHORE_SEED_OFFSET = 0;
+  const OUTER_SHORE_FREQ = 5.5, OUTER_SHORE_SEED_OFFSET = 97;
+  const FOAM_WIDTH = 3, FOAM_ALPHA = 0.5;       // thin, semi-transparent waterline stroke
+  const FOAM_PULSE_AMPLITUDE = 6;               // world px the foam line breathes in/out
+  const FOAM_PULSE_SPEED = 1.2;                 // radians/sec
+  const FOAM_ANGLE_STEPS = 180;                 // resolution the shoreline is traced at (2deg steps)
+
   const TURTLE_RADIUS = 36;
   const MAX_SPEED = 180;   // px/s, base speed before the water/land multiplier below
   const WATER_SPEED_MULT = 1.15; // turtle swims a bit faster than it walks
@@ -121,6 +140,15 @@
     return (n00 * (1 - sx) + n10 * sx) * (1 - sy) + (n01 * (1 - sx) + n11 * sx) * sy;
   }
 
+  // Generic color-math helpers used by the shoreline gradient below.
+  function smoothstep(edge0, edge1, x) {
+    const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
+    return t * t * (3 - 2 * t);
+  }
+  function lerpColor(a, b, t) {
+    return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+  }
+
   // ---- Biomes ----
   // Angle from the world center (0 = east, clockwise since screen y grows downward) picks the
   // biome, with low-frequency noise nudging the angle so borders wander instead of cutting
@@ -153,53 +181,104 @@
     return dist > ISLAND_R && dist <= WATER_OUTER_R;
   }
   // TODO: reuse dominantBiome()/isWater() for future bird patrol & item-spawn zone logic.
+  const BIOME_COLOR = {
+    beach: [230, 214, 168],       // north
+    forestOpen: [138, 196, 108],  // east
+    deadTrees: [84, 122, 70],     // south — same tone as the grass ground tile (all 3 tree
+                                  // biomes use grass; only the beach uses sand)
+    forestThick: [42, 78, 46],    // west
+  };
 
-  // ---- Terrain: a small low-res color grid, blended per-pixel once at load, then drawn scaled up
-  // each frame only for the visible camera slice. Keeps memory small even at this world size and
-  // gets biome-border blending "for free" via drawImage's bilinear scaling. ----
-  const TERRAIN_CELL = 20; // world px per terrain grid cell
-  function buildTerrain() {
+  // ---- Shoreline shape: the island and mainland coasts are each a circle whose radius wanders
+  // with seeded noise sampled by angle (cos/sin keeps it seamless at the 0/2*PI wrap), so the
+  // coastline reads as a natural wobble instead of a perfect circle. Purely visual — isWater() and
+  // biome logic above still use the exact ISLAND_R/WATER_OUTER_R circles, untouched. ----
+  function shoreWobble(angle, seedOffset, freq) {
+    const nx = Math.cos(angle) * freq + seedOffset, ny = Math.sin(angle) * freq + seedOffset;
+    return (noise2(nx, ny) - 0.5) * 2 * SHORE_NOISE_AMPLITUDE;
+  }
+  // Signed distance from whichever shoreline (island or mainland) is nearer this point — negative
+  // on land, positive in water — plus which shore that was. Shared by the color blend below and by
+  // groundTileFor(), so tiled ground art only appears where the water/sand blend has fully
+  // resolved to land, never floating over water on the noisy side of the old perfect-circle radius.
+  function shoreSignedDist(x, y) {
+    const dx = x - CENTER.x, dy = y - CENTER.y;
+    const dist = Math.hypot(dx, dy);
+    const angle = Math.atan2(dy, dx);
+    const rIsland = ISLAND_R + shoreWobble(angle, ISLAND_SHORE_SEED_OFFSET, ISLAND_SHORE_FREQ);
+    const rOuter = WATER_OUTER_R + shoreWobble(angle, OUTER_SHORE_SEED_OFFSET, OUTER_SHORE_FREQ);
+    const nearIsland = dist < (rIsland + rOuter) / 2;
+    return { d: nearIsland ? dist - rIsland : rOuter - dist, nearIsland }; // negative land, positive water
+  }
+
+  // The blended ground color at one point: gets its distance from the nearer shoreline and
+  // smoothsteps through deep water -> shallow water -> wet sand -> dry sand/biome color across it.
+  function shorelineGroundColor(x, y) {
+    const { d, nearIsland } = shoreSignedDist(x, y);
+
+    if (d >= SHORE_DEEP_BAND) return SHORE_DEEP_COLOR;
+    if (d >= 0) return lerpColor(SHORE_SHALLOW_COLOR, SHORE_DEEP_COLOR, smoothstep(0, SHORE_DEEP_BAND, d));
+    if (d >= -SHORE_WET_BAND) {
+      return lerpColor(SHORE_WET_SAND_COLOR, SHORE_SHALLOW_COLOR, smoothstep(-SHORE_WET_BAND, 0, d));
+    }
+    // Past the wet-sand band: the island is sand all the way to its center, but the mainland's
+    // land color depends on which biome this angle falls in, same blend buildTerrain always used.
+    let landColor;
+    if (nearIsland) {
+      landColor = SHORE_DRY_SAND_COLOR;
+    } else {
+      const dx = x - CENTER.x, dy = y - CENTER.y;
+      const w = biomeWeights(Math.atan2(dy, dx) + biomeAngleNoise(x, y));
+      landColor = [0, 0, 0];
+      for (const k in w) {
+        landColor[0] += BIOME_COLOR[k][0] * w[k];
+        landColor[1] += BIOME_COLOR[k][1] * w[k];
+        landColor[2] += BIOME_COLOR[k][2] * w[k];
+      }
+    }
+    const dryEnd = -(SHORE_WET_BAND + SHORE_DRY_BAND);
+    if (d >= dryEnd) return lerpColor(landColor, SHORE_WET_SAND_COLOR, smoothstep(dryEnd, -SHORE_WET_BAND, d));
+    return landColor;
+  }
+
+  // ---- Terrain: a color grid, blended per-pixel once at load, then drawn scaled up each frame
+  // only for the visible camera slice. Fine enough resolution (4 world px/cell) that the shoreline
+  // bands above look smooth rather than blocky; built in row chunks (a setTimeout each) so the
+  // ~1.7M-pixel canvas never freezes the page or a phone while it loads. ----
+  const TERRAIN_CELL = 4;          // world px per terrain grid cell
+  const TERRAIN_ROWS_PER_CHUNK = 40; // rows computed per chunk while building
+  const FOG_COLOR = [8, 28, 36];
+  function buildTerrainChunked() {
     const cols = Math.ceil(WORLD_SIZE / TERRAIN_CELL), rows = cols;
     const c = document.createElement('canvas');
     c.width = cols; c.height = rows;
     const g = c.getContext('2d');
     const img = g.createImageData(cols, rows);
-    const WATER = [26, 132, 158], ISLAND_SAND = [242, 223, 167], FOG = [8, 28, 36];
-    const BIOME_COLOR = {
-      beach: [230, 214, 168],       // north
-      forestOpen: [138, 196, 108],  // east
-      deadTrees: [84, 122, 70],     // south — same tone as the grass ground tile (all 3 tree
-                                    // biomes use grass; only the beach uses sand)
-      forestThick: [42, 78, 46],    // west
-    };
-    for (let ry = 0; ry < rows; ry++) {
-      for (let rx = 0; rx < cols; rx++) {
-        const x = rx * TERRAIN_CELL, y = ry * TERRAIN_CELL;
-        const dx = x - CENTER.x, dy = y - CENTER.y;
-        const dist = Math.hypot(dx, dy);
-        let col;
-        if (dist <= ISLAND_R) col = ISLAND_SAND;
-        else if (dist <= WATER_OUTER_R) col = WATER;
-        else {
-          const angle = Math.atan2(dy, dx) + biomeAngleNoise(x, y);
-          const w = biomeWeights(angle);
-          col = [0, 0, 0];
-          for (const k in w) { col[0] += BIOME_COLOR[k][0] * w[k]; col[1] += BIOME_COLOR[k][1] * w[k]; col[2] += BIOME_COLOR[k][2] * w[k]; }
+
+    let ry = 0;
+    function step() {
+      const end = Math.min(ry + TERRAIN_ROWS_PER_CHUNK, rows);
+      for (; ry < end; ry++) {
+        const y = ry * TERRAIN_CELL;
+        for (let rx = 0; rx < cols; rx++) {
+          const x = rx * TERRAIN_CELL;
+          let col = shorelineGroundColor(x, y);
+          // Deep-water/fog fringe at the world border so the edge reads as a boundary, not a cliff.
+          const edgeDist = Math.min(x, y, WORLD_SIZE - x, WORLD_SIZE - y);
+          if (edgeDist < EDGE_FOG_WIDTH) col = lerpColor(col, FOG_COLOR, 1 - edgeDist / EDGE_FOG_WIDTH);
+          const i = (ry * cols + rx) * 4;
+          img.data[i] = col[0]; img.data[i + 1] = col[1]; img.data[i + 2] = col[2]; img.data[i + 3] = 255;
         }
-        // Deep-water/fog fringe at the world border so the edge reads as a boundary, not a cliff.
-        const edgeDist = Math.min(x, y, WORLD_SIZE - x, WORLD_SIZE - y);
-        if (edgeDist < EDGE_FOG_WIDTH) {
-          const t = 1 - edgeDist / EDGE_FOG_WIDTH;
-          col = [col[0] + (FOG[0] - col[0]) * t, col[1] + (FOG[1] - col[1]) * t, col[2] + (FOG[2] - col[2]) * t];
-        }
-        const i = (ry * cols + rx) * 4;
-        img.data[i] = col[0]; img.data[i + 1] = col[1]; img.data[i + 2] = col[2]; img.data[i + 3] = 255;
       }
+      g.putImageData(img, 0, 0); // flush progress so the page shows the map filling in, not a freeze
+      if (ry < rows) setTimeout(step, 0);
     }
-    g.putImageData(img, 0, 0);
+    step();
     return c;
   }
-  const terrainCanvas = buildTerrain();
+  // Built once at load (reused as-is on resize); rebuilding only makes sense if WORLD_SIZE or the
+  // noise seed ever changes, neither of which happens at runtime.
+  const terrainCanvas = buildTerrainChunked();
 
   function drawTerrain() {
     // Map the visible world rect straight onto the low-res grid and let drawImage scale it up —
@@ -207,6 +286,7 @@
     const vw = viewW / ZOOM, vh = viewH / ZOOM;
     const sx = camX / TERRAIN_CELL, sy = camY / TERRAIN_CELL;
     const sw = vw / TERRAIN_CELL, sh = vh / TERRAIN_CELL;
+    ctx.imageSmoothingEnabled = true; // let the upscale add extra softness to the shoreline blend
     ctx.drawImage(terrainCanvas, sx, sy, sw, sh, camX, camY, vw, vh);
   }
 
@@ -220,14 +300,21 @@
     img.src = `assets/tiles/${name}.png`;
     GROUND_TILES[name] = img;
   }
-  function groundImageFor(x, y) {
-    if (Math.hypot(x - CENTER.x, y - CENTER.y) <= ISLAND_R) return null; // island art handles this
-    if (isWater(x, y)) return null; // water stays a flat color + shimmer, no tile
+  const GROUND_TILE_FADE = 90; // world px inland over which tiles fade up to full opacity
+  // Returns the tile for this point and how opaque it should be: tiles start past the shoreline's
+  // wet/dry sand blend (using the same noisy shoreline as the color blend, not the old perfect
+  // circle) and fade up from there, so the grid never cuts a hard edge across the beach.
+  function groundTileFor(x, y) {
+    const { d, nearIsland } = shoreSignedDist(x, y);
+    if (nearIsland) return null; // island art handles its own ground, no tile
+    const tileStart = -(SHORE_WET_BAND + SHORE_DRY_BAND);
+    if (d > tileStart) return null; // still in the water/sand blend band
     const biome = dominantBiome(x, y).biome;
     const variant = hash2(Math.floor(x / GROUND_TILE_PX), Math.floor(y / GROUND_TILE_PX)) < 0.5;
-    if (biome === 'beach') return variant ? GROUND_TILES.sand1 : GROUND_TILES.sand2;
-    return variant ? GROUND_TILES.grass1 : GROUND_TILES.grass2; // all 3 tree biomes: forestOpen,
-                                                                 // forestThick, deadTrees
+    const img = biome === 'beach'
+      ? (variant ? GROUND_TILES.sand1 : GROUND_TILES.sand2)
+      : (variant ? GROUND_TILES.grass1 : GROUND_TILES.grass2); // forestOpen/forestThick/deadTrees
+    return { img, alpha: smoothstep(tileStart, tileStart - GROUND_TILE_FADE, d) };
   }
   function drawGroundTextures() {
     const vw = viewW / ZOOM, vh = viewH / ZOOM;
@@ -235,12 +322,14 @@
     const y0 = Math.floor(camY / GROUND_TILE_PX) * GROUND_TILE_PX;
     for (let y = y0; y < camY + vh; y += GROUND_TILE_PX) {
       for (let x = x0; x < camX + vw; x += GROUND_TILE_PX) {
-        const img = groundImageFor(x + GROUND_TILE_PX / 2, y + GROUND_TILE_PX / 2);
-        if (img && img.complete && img.naturalWidth) {
-          ctx.drawImage(img, x, y, GROUND_TILE_PX, GROUND_TILE_PX);
+        const tile = groundTileFor(x + GROUND_TILE_PX / 2, y + GROUND_TILE_PX / 2);
+        if (tile && tile.img.complete && tile.img.naturalWidth) {
+          ctx.globalAlpha = tile.alpha;
+          ctx.drawImage(tile.img, x, y, GROUND_TILE_PX, GROUND_TILE_PX);
         }
       }
     }
+    ctx.globalAlpha = 1;
   }
 
   // ---- Home island detail: sand, dunes, tide pools, the home rock pile — pre-rendered once to a
@@ -254,7 +343,8 @@
     const cx = size / 2, cy = size / 2;
     const homeX = cx + (HOME.x - CENTER.x), homeY = cy + (HOME.y - CENTER.y);
 
-    g.beginPath(); g.arc(cx, cy, ISLAND_R, 0, Math.PI * 2); g.fillStyle = '#f2dfa7'; g.fill();
+    // No base sand fill here: the terrain canvas now paints the island's ground color itself
+    // (including its noisy shoreline blend), so this transparent layer only adds texture on top.
 
     // Dunes: soft darker sand bumps.
     for (let i = 0, n = 0; n < 14 && i < 400; i++) {
@@ -572,6 +662,40 @@
     ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.fill();
   }
 
+  // Animated foam line traced along both noisy shorelines (island + mainland). Cheap: a fixed
+  // handful of angle samples per shore per frame, and only the segments that land inside the
+  // current camera view are added to the stroked path.
+  // TODO: if this ever shows up as a frame-rate drop on low-end phones, gate it behind a quick
+  // device check and skip the call entirely rather than tuning it further.
+  function traceFoamShoreline(baseR, seedOffset, freq, t, left, right, top, bottom) {
+    let drawing = false;
+    for (let i = 0; i <= FOAM_ANGLE_STEPS; i++) {
+      const angle = (i / FOAM_ANGLE_STEPS) * Math.PI * 2;
+      const r = baseR + shoreWobble(angle, seedOffset, freq)
+        + Math.sin(t * FOAM_PULSE_SPEED + angle * 2) * FOAM_PULSE_AMPLITUDE;
+      const x = CENTER.x + Math.cos(angle) * r, y = CENTER.y + Math.sin(angle) * r;
+      if (x >= left && x <= right && y >= top && y <= bottom) {
+        if (drawing) ctx.lineTo(x, y); else { ctx.moveTo(x, y); drawing = true; }
+      } else {
+        drawing = false;
+      }
+    }
+  }
+  function drawFoam(t) {
+    const vw = viewW / ZOOM, vh = viewH / ZOOM;
+    const margin = FOAM_PULSE_AMPLITUDE + FOAM_WIDTH + 4;
+    const left = camX - margin, right = camX + vw + margin, top = camY - margin, bottom = camY + vh + margin;
+    ctx.save();
+    ctx.strokeStyle = `rgba(255,255,255,${FOAM_ALPHA})`;
+    ctx.lineWidth = FOAM_WIDTH;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    traceFoamShoreline(ISLAND_R, ISLAND_SHORE_SEED_OFFSET, ISLAND_SHORE_FREQ, t, left, right, top, bottom);
+    traceFoamShoreline(WATER_OUTER_R, OUTER_SHORE_SEED_OFFSET, OUTER_SHORE_FREQ, t, left, right, top, bottom);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   // Lightweight animated shimmer on the water ring around the island (a few pulsing rings; cheap).
   function drawWaterShimmer(t) {
     const bands = 3;
@@ -598,6 +722,7 @@
     drawTerrain();
     drawGroundTextures();
     drawWaterShimmer(t);
+    drawFoam(t);
     ctx.drawImage(islandDetail.canvas, islandDetail.worldX, islandDetail.worldY);
 
     // Cull scenery to the visible world rect (plus a small margin) so a big world with lots of
@@ -613,7 +738,10 @@
 
   let last;
   function frame(now) {
-    const dt = Math.min((now - last) / 1000, 0.05);
+    // Clamp to >= 0: the first rAF timestamp can predate the performance.now() start() recorded,
+    // and a negative dt made the accel branch below evaluate 0/0, poisoning the turtle's velocity
+    // (and then its position, and the camera) with NaN for the rest of the session.
+    const dt = Math.min(Math.max(0, (now - last) / 1000), 0.05);
     last = now;
     update(dt);
     render(now / 1000);
