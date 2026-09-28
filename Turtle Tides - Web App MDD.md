@@ -31,10 +31,19 @@ A calm, beach-themed exploration and collection game starring a turtle who gathe
 
 ## 3. World & Zones
 
-**Layout:** A single, continuous top-down island map (no separate loading screens between areas) made of two zones:
+**Layout (revised 2026-09-28):** A single, continuous top-down world (no separate loading screens between areas), made of a small home island surrounded by water, which is in turn surrounded by a mainland the player can swim to in any direction:
 
-- **Beach / Home zone** — the area immediately around the turtle's rock-pile home. Safe: no birds spawn or patrol here. Coconuts and shells still spawn here, but more sparsely than the woods (a lower-risk, lower-reward area for cautious play).
-- **Woods zone** — the interior/far side of the island, denser with coconuts and shells (higher reward), but this is where birds patrol (see Section 6). The boundary between beach and woods should be visually clear (tree line, terrain change) so the player always knows which zone they're in.
+- **Home island** — a small sandy/grassy patch at the world center, with the turtle's rock-pile home. Safe: no birds spawn or patrol here. Coconuts and shells still spawn here, but more sparsely than the mainland (a lower-risk, lower-reward area for cautious play). Big enough to feel like a safe starting area, small enough to leave quickly.
+- **Water ring** — separates the home island from the mainland. Visually distinct from land (color, subtle animated shimmer). The turtle swims freely across it; no items or birds spawn here.
+- **Mainland (woods zone equivalent)** — a ring of land wrapping all the way around the water, denser with coconuts and shells (higher reward), and where birds patrol (see Section 6), same as the woods zone in earlier drafts. It's split into four biomes by compass direction from the island center, each visually distinct:
+  - **North — Beach:** sand, shoreline, rocks, driftwood, a few palm trees.
+  - **East — Open forest:** grass, widely spaced healthy trees, bright and easy to move through.
+  - **South — Dead trees:** dry, dull-colored ground, bare/dead trees and stumps, sparse and eerie.
+  - **West — Thick forest:** dense, tall trees packed close together, darker ground, heavy canopy.
+  - Biome borders (NE/SE/SW/NW) blend smoothly (angle from the island center plus noise), not hard straight lines, so the transition feels natural rather than tiled.
+- The boundary between the home island/water and the mainland should be visually clear so the player always knows which zone they're in (per Section 6, birds are mainland-only, matching the old beach-vs-woods safety split).
+
+**World sizing (placeholder, tune freely):** mainland outer edge roughly 4-6x the screen size in each direction from the island center; island radius, water ring width, and world size are defined as constants so they're easy to retune.
 
 **Movement:** Continuous, free-roam 2D movement (not tile-by-tile or turn-based) — touch/drag or an on-screen virtual joystick on mobile, arrow keys/WASD on desktop. The turtle has a single, gentle movement speed (no sprint/dash for v1, keeping with the calm tone).
 
