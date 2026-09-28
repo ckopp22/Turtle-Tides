@@ -209,9 +209,71 @@
     ctx.drawImage(terrainCanvas, sx, sy, sw, sh, camX, camY, vw, vh);
   }
 
-  // TODO: tried a tiled ground-texture overlay here using the reference sheet art; it read as a
-  // harsh repeating grid against the existing smooth color-blended terrain, so it's shelved for now
-  // in favor of using that art as scattered ground-clutter sprites (see SPRITES/placeScenery) instead.
+  // ---- Ground texture tiles: real art laid over the flat-color terrain blend above. Each tile is
+  // stamped at a random 90deg rotation (keyed off its own grid position, so it's stable frame to
+  // frame) which is enough to break up the repeating look of a directional texture like water or
+  // wood grain without needing more source variants. Right at a biome/water border, where a single
+  // big tile would cut a hard straight edge, the cell is subdivided into smaller tiles instead —
+  // each sampling the map at its own center — so the seam dissolves into a finer, ragged blend. ----
+  const GROUND_TILE_PX = 96;
+  const GROUND_SUB_PX = GROUND_TILE_PX / 3; // subdivision used only where a cell straddles a border
+  const GROUND_TILES = {};
+  for (const name of ['water', 'sand1', 'sand2', 'grass1', 'grass2', 'dirt1']) {
+    const img = new Image();
+    img.src = `assets/tiles/${name}.png`;
+    GROUND_TILES[name] = img;
+  }
+  // The category at a point: null inside the island (buildIslandDetail draws that separately),
+  // otherwise 'water' or the biome name. Two adjacent samples returning different categories is
+  // exactly what triggers the finer blend subdivision below.
+  function groundCategoryAt(x, y) {
+    if (Math.hypot(x - CENTER.x, y - CENTER.y) <= ISLAND_R) return null;
+    if (isWater(x, y)) return 'water';
+    return dominantBiome(x, y).biome;
+  }
+  function groundImageFor(category, gx, gy) {
+    if (category === 'water') return GROUND_TILES.water;
+    if (category === 'beach') return hash2(gx, gy) < 0.5 ? GROUND_TILES.sand1 : GROUND_TILES.sand2;
+    if (category === 'deadTrees') return GROUND_TILES.dirt1;
+    return hash2(gx, gy) < 0.5 ? GROUND_TILES.grass1 : GROUND_TILES.grass2; // forestOpen + forestThick
+  }
+  function drawGroundTile(img, x, y, size, gx, gy) {
+    if (!img.complete || !img.naturalWidth) return;
+    const rot = Math.floor(hash2(gx + 500, gy + 500) * 4) * (Math.PI / 2); // 0/90/180/270, stable per cell
+    ctx.save();
+    ctx.translate(x + size / 2, y + size / 2);
+    ctx.rotate(rot);
+    ctx.drawImage(img, -size / 2, -size / 2, size, size);
+    ctx.restore();
+  }
+  function drawGroundTextures() {
+    const vw = viewW / ZOOM, vh = viewH / ZOOM;
+    const x0 = Math.floor(camX / GROUND_TILE_PX) * GROUND_TILE_PX;
+    const y0 = Math.floor(camY / GROUND_TILE_PX) * GROUND_TILE_PX;
+    for (let y = y0; y < camY + vh; y += GROUND_TILE_PX) {
+      for (let x = x0; x < camX + vw; x += GROUND_TILE_PX) {
+        // Sample a 3x3 grid of sub-cell centers up front: if they all agree, the whole cell is
+        // deep inside one biome and gets a single cheap full-size tile; any disagreement means a
+        // border crosses this cell, so fall through and draw each sub-cell independently.
+        const cats = [];
+        for (let sy = 0; sy < 3; sy++) for (let sx = 0; sx < 3; sx++) {
+          cats.push(groundCategoryAt(x + (sx + 0.5) * GROUND_SUB_PX, y + (sy + 0.5) * GROUND_SUB_PX));
+        }
+        const gx = x / GROUND_TILE_PX, gy = y / GROUND_TILE_PX;
+        if (cats.every(c => c === cats[0])) {
+          if (cats[0]) drawGroundTile(groundImageFor(cats[0], gx, gy), x, y, GROUND_TILE_PX, gx, gy);
+        } else {
+          for (let sy = 0; sy < 3; sy++) for (let sx = 0; sx < 3; sx++) {
+            const cat = cats[sy * 3 + sx];
+            if (!cat) continue;
+            const sgx = (x + sx * GROUND_SUB_PX) / GROUND_SUB_PX, sgy = (y + sy * GROUND_SUB_PX) / GROUND_SUB_PX;
+            drawGroundTile(groundImageFor(cat, sgx, sgy), x + sx * GROUND_SUB_PX, y + sy * GROUND_SUB_PX,
+              GROUND_SUB_PX, sgx, sgy);
+          }
+        }
+      }
+    }
+  }
 
   // ---- Home island detail: sand, dunes, tide pools, the home rock pile — pre-rendered once to a
   // small canvas (island-sized, not world-sized) and stamped at the island's world position. ----
@@ -566,6 +628,7 @@
     ctx.translate(-camX, -camY);
 
     drawTerrain();
+    drawGroundTextures();
     drawWaterShimmer(t);
     ctx.drawImage(islandDetail.canvas, islandDetail.worldX, islandDetail.worldY);
 
