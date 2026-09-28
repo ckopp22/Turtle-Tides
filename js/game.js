@@ -156,7 +156,12 @@
   // (NE/SE/SW/NW) rather than hard-switching at a threshold.
   const DEG = Math.PI / 180;
   const BIOME_CENTER_ANGLE = { forestOpen: 0, deadTrees: 90 * DEG, forestThick: 180 * DEG, beach: -90 * DEG };
-  function biomeAngleNoise(x, y) { return (noise2(x / 480, y / 480) - 0.5) * 70 * DEG; }
+  // +-15deg swing (was +-35deg): the old amplitude was enough to flip the argmax winner even 40+deg
+  // inside a neighboring sector's own territory (e.g. 'beach' briefly outscoring 'forestThick' in a
+  // spot that's 80%+ forestThick by geometry alone), which stamped a stray sand-tile "island" deep
+  // in the west forest. +-15deg still wanders the border noticeably without flipping sectors outright.
+  const BIOME_ANGLE_NOISE_DEG = 30;
+  function biomeAngleNoise(x, y) { return (noise2(x / 480, y / 480) - 0.5) * BIOME_ANGLE_NOISE_DEG * DEG; }
   function biomeWeights(angle) {
     const w = {}; let sum = 0;
     for (const k in BIOME_CENTER_ANGLE) {
@@ -291,30 +296,37 @@
   }
 
   // ---- Ground texture tiles: real art laid over the flat-color terrain blend above (water stays
-  // plain color + shimmer, no tile). Plain, regular repeating tiles — one biome's texture per
-  // grid cell, full opacity, no rotation, no blur. ----
+  // plain color + shimmer, no tile). Beach (north) only now — the 3 grass biomes use the
+  // pattern-based drawGrassTextures() below instead of a tiled grid. Plain, regular repeating
+  // tiles, full opacity, no rotation, no blur. ----
   const GROUND_TILE_PX = 96;
   const GROUND_TILES = {};
-  for (const name of ['sand1', 'sand2', 'grass1', 'grass2']) {
+  for (const name of ['sand1', 'sand2']) {
     const img = new Image();
     img.src = `assets/tiles/${name}.png`;
     GROUND_TILES[name] = img;
   }
   const GROUND_TILE_FADE = 90; // world px inland over which tiles fade up to full opacity
-  // Returns the tile for this point and how opaque it should be: tiles start past the shoreline's
-  // wet/dry sand blend (using the same noisy shoreline as the color blend, not the old perfect
-  // circle) and fade up from there, so the grid never cuts a hard edge across the beach.
+  // Returns the sand tile for this point and how opaque it should be: tiles start past the
+  // shoreline's wet/dry sand blend (using the same noisy shoreline as the color blend, not the old
+  // perfect circle) and fade up from there, so the grid never cuts a hard edge across the beach.
   function groundTileFor(x, y) {
     const { d, nearIsland } = shoreSignedDist(x, y);
     if (nearIsland) return null; // island art handles its own ground, no tile
     const tileStart = -(SHORE_WET_BAND + SHORE_DRY_BAND);
     if (d > tileStart) return null; // still in the water/sand blend band
-    const biome = dominantBiome(x, y).biome;
+    // Fade the tile by beach's own (non-argmax) weight, the same way drawGrassTextures() fades its
+    // 3 biomes, rather than gating on which biome wins. The angle noise is strong enough (+-35deg)
+    // that 'beach' can win the argmax well inside forestThick's own sector — that stamped a stray
+    // full-opacity sand block mid-forest, since the underlying color blend below is a soft weighted
+    // average but the old argmax check turned it into a hard on/off switch.
+    const dx = x - CENTER.x, dy = y - CENTER.y;
+    const beachWeight = biomeWeights(Math.atan2(dy, dx) + biomeAngleNoise(x, y)).beach;
+    const biomeFade = smoothstep(0.35, 0.65, beachWeight);
+    if (biomeFade <= 0) return null;
     const variant = hash2(Math.floor(x / GROUND_TILE_PX), Math.floor(y / GROUND_TILE_PX)) < 0.5;
-    const img = biome === 'beach'
-      ? (variant ? GROUND_TILES.sand1 : GROUND_TILES.sand2)
-      : (variant ? GROUND_TILES.grass1 : GROUND_TILES.grass2); // forestOpen/forestThick/deadTrees
-    return { img, alpha: smoothstep(tileStart, tileStart - GROUND_TILE_FADE, d) };
+    const img = variant ? GROUND_TILES.sand1 : GROUND_TILES.sand2;
+    return { img, alpha: smoothstep(tileStart, tileStart - GROUND_TILE_FADE, d) * biomeFade };
   }
   function drawGroundTextures() {
     const vw = viewW / ZOOM, vh = viewH / ZOOM;
@@ -330,6 +342,160 @@
       }
     }
     ctx.globalAlpha = 1;
+  }
+
+  // ---- Grass biome textures (east/west/south only — north beach keeps sand, untouched above).
+  // Per-biome config so each is easy to tweak; grass1/grass2 aren't seamless tiles (see note below),
+  // so both are reused across biomes and differentiated with a tint wash + opacity instead of
+  // needing 3 distinct source images.
+  // NOTE: grass1.png and grass2.png show a visible repeat seam when tiled with createPattern (their
+  // edge pixels don't match their opposite edge) — most noticeable on grass2. Flagging per the
+  // brief rather than working around it; swap in seamless tiles if the seam bothers you in-game.
+  const GRASS_BIOMES = {
+    forestOpen:  { img: 'assets/tiles/grass1.png', tintColor: null,           tintAlpha: 0,    opacity: 1.0 }, // east: bright, healthy green
+    forestThick: { img: 'assets/tiles/grass2.png', tintColor: [12, 46, 18],   tintAlpha: 0.4,  opacity: 1.0 }, // west: darker, denser
+    deadTrees:   { img: 'assets/tiles/grass1.png', tintColor: [168, 130, 60], tintAlpha: 0.5,  opacity: 0.8 }, // south: dry, patchy, yellow-brown
+  };
+  let grassImagesLoaded = 0;
+  const GRASS_BIOME_KEYS = Object.keys(GRASS_BIOMES);
+  let grassReady = false;
+  for (const key of GRASS_BIOME_KEYS) {
+    const cfg = GRASS_BIOMES[key];
+    const img = new Image();
+    img.onload = () => { grassImagesLoaded++; if (grassImagesLoaded >= GRASS_BIOME_KEYS.length) grassReady = true; };
+    img.src = cfg.img;
+    cfg.imgEl = img;
+  }
+
+  // Low-res per-biome mask (alpha = that biome's weight, faded to 0 by the same shoreline band the
+  // sand tiles use, so grass always stops before the wet sand — see groundTileFor above) and a
+  // matching low-opacity color-variation layer (soft light/dark patches from the seeded noise, to
+  // break up the repeating pattern). Built once from world geometry; only world size/seed changing
+  // would invalidate it, and neither changes at runtime.
+  const GRASS_CELL = 8;
+  const GRASS_VARIATION_COLORS = {
+    forestOpen:  { dark: [96, 156, 76],  light: [176, 216, 134] },
+    forestThick: { dark: [24, 50, 28],   light: [66, 104, 56] },
+    deadTrees:   { dark: [110, 88, 48],  light: [200, 172, 104] },
+  };
+  function buildGrassLayers() {
+    const cols = Math.ceil(WORLD_SIZE / GRASS_CELL), rows = cols;
+    const layers = {};
+    for (const key of GRASS_BIOME_KEYS) {
+      const maskC = document.createElement('canvas'); maskC.width = cols; maskC.height = rows;
+      const varC = document.createElement('canvas'); varC.width = cols; varC.height = rows;
+      layers[key] = {
+        maskCtx: maskC.getContext('2d'), maskImg: maskC.getContext('2d').createImageData(cols, rows), maskCanvas: maskC,
+        varCtx: varC.getContext('2d'), varImg: varC.getContext('2d').createImageData(cols, rows), varCanvas: varC,
+      };
+    }
+    const tileStart = -(SHORE_WET_BAND + SHORE_DRY_BAND);
+    for (let ry = 0; ry < rows; ry++) {
+      const y = ry * GRASS_CELL;
+      for (let rx = 0; rx < cols; rx++) {
+        const x = rx * GRASS_CELL;
+        const { d, nearIsland } = shoreSignedDist(x, y);
+        const i = (ry * cols + rx) * 4;
+        let w = null, landFade = 0;
+        if (!nearIsland && d <= tileStart) {
+          landFade = smoothstep(tileStart, tileStart - GROUND_TILE_FADE, d);
+          if (landFade > 0) {
+            const dx = x - CENTER.x, dy = y - CENTER.y;
+            w = biomeWeights(Math.atan2(dy, dx) + biomeAngleNoise(x, y));
+          }
+        }
+        const patch = noise2(x / 260 + 500, y / 260 + 500); // soft, large-scale color variation
+        for (const key of GRASS_BIOME_KEYS) {
+          const l = layers[key];
+          const alpha = w ? w[key] * landFade : 0;
+          l.maskImg.data[i] = l.maskImg.data[i + 1] = l.maskImg.data[i + 2] = 255;
+          l.maskImg.data[i + 3] = Math.round(alpha * 255);
+          const c = GRASS_VARIATION_COLORS[key];
+          const col = lerpColor(c.dark, c.light, patch);
+          l.varImg.data[i] = col[0]; l.varImg.data[i + 1] = col[1]; l.varImg.data[i + 2] = col[2];
+          l.varImg.data[i + 3] = Math.round(0.15 * 255); // low opacity, clipped to the mask at draw time
+        }
+      }
+    }
+    for (const key of GRASS_BIOME_KEYS) {
+      layers[key].maskCtx.putImageData(layers[key].maskImg, 0, 0);
+      layers[key].varCtx.putImageData(layers[key].varImg, 0, 0);
+    }
+    return layers;
+  }
+  const grassLayers = buildGrassLayers();
+  const grassPatterns = {};
+  function getGrassPattern(key) {
+    if (grassPatterns[key]) return grassPatterns[key];
+    const img = GRASS_BIOMES[key].imgEl;
+    if (!img.complete || !img.naturalWidth) return null;
+    return (grassPatterns[key] = ctx.createPattern(img, 'repeat'));
+  }
+  // Cheap presence check (a few sample points) so a biome with nothing in view this frame is
+  // skipped entirely rather than compositing an empty viewport-sized layer.
+  function grassBiomeInView(key, rcx, rcy, vw, vh) {
+    const pts = [[rcx, rcy], [rcx + vw, rcy], [rcx, rcy + vh], [rcx + vw, rcy + vh], [rcx + vw / 2, rcy + vh / 2]];
+    for (const [x, y] of pts) {
+      const dx = x - CENTER.x, dy = y - CENTER.y;
+      if (biomeWeights(Math.atan2(dy, dx) + biomeAngleNoise(x, y))[key] > 0.02) return true;
+    }
+    return false;
+  }
+  let grassScratch = null;
+  function ensureGrassScratch() {
+    if (!grassScratch) grassScratch = document.createElement('canvas');
+    const w = Math.max(1, Math.round(viewW * dpr)), h = Math.max(1, Math.round(viewH * dpr));
+    if (grassScratch.width !== w || grassScratch.height !== h) { grassScratch.width = w; grassScratch.height = h; }
+    return grassScratch;
+  }
+  // Per biome: pattern-fill a scratch canvas, mask it to that biome's blend weight
+  // (destination-in), wash the noise-variation layer and tint over it (source-atop, so both stay
+  // clipped to the mask's alpha), then composite the result over the terrain (source-over) — never
+  // destructive to what's already drawn, so the 3 biomes crossfade naturally at their borders.
+  function drawGrassTextures() {
+    const vw = viewW / ZOOM, vh = viewH / ZOOM;
+    // Whole-pixel camera for the pattern fill only, so it doesn't shimmer while moving; everything
+    // else (terrain, scenery) keeps using the exact sub-pixel camX/camY as before.
+    const rcx = Math.round(camX), rcy = Math.round(camY);
+    const scratch = ensureGrassScratch();
+    const sctx = scratch.getContext('2d');
+
+    for (const key of GRASS_BIOME_KEYS) {
+      if (!grassBiomeInView(key, rcx, rcy, vw, vh)) continue;
+      const pattern = getGrassPattern(key);
+      const layer = grassLayers[key];
+      if (!pattern || !layer) continue;
+      const cfg = GRASS_BIOMES[key];
+
+      sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      sctx.clearRect(0, 0, viewW, viewH);
+      sctx.save();
+      sctx.scale(ZOOM, ZOOM);
+      sctx.translate(-rcx, -rcy);
+      sctx.fillStyle = pattern;
+      sctx.fillRect(rcx, rcy, vw, vh);
+      sctx.restore(); // back to screen space (dpr-only transform)
+
+      const sx = rcx / GRASS_CELL, sy = rcy / GRASS_CELL, sw = vw / GRASS_CELL, sh = vh / GRASS_CELL;
+      sctx.globalCompositeOperation = 'destination-in';
+      sctx.drawImage(layer.maskCanvas, sx, sy, sw, sh, 0, 0, viewW, viewH);
+
+      sctx.globalCompositeOperation = 'source-atop';
+      sctx.drawImage(layer.varCanvas, sx, sy, sw, sh, 0, 0, viewW, viewH);
+      if (cfg.tintColor) {
+        sctx.fillStyle = `rgba(${cfg.tintColor[0]}, ${cfg.tintColor[1]}, ${cfg.tintColor[2]}, ${cfg.tintAlpha})`;
+        sctx.fillRect(0, 0, viewW, viewH);
+      }
+      sctx.globalCompositeOperation = 'source-over';
+
+      ctx.save();
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.globalAlpha = cfg.opacity;
+      ctx.drawImage(scratch, 0, 0, viewW, viewH);
+      ctx.restore();
+    }
+    // TODO: if this costs noticeable frame rate on mobile, fall back to drawing each pattern at a
+    // flat reduced alpha straight over the terrain (skip the mask/tint compositing) instead.
   }
 
   // ---- Home island detail: sand, dunes, tide pools, the home rock pile — pre-rendered once to a
@@ -457,11 +623,17 @@
       } else if (biome === 'beach') {
         // none of the beach rolls hit for this spot: leave it bare sand, no tree fallback
       } else if (rand() < 0.08) {
-        // Ground clutter instead of a tree: mushrooms among the dead trees, ferns in the thick
-        // west forest, clover/flowers in the open east forest. Purely decorative.
-        const clutter = biome === 'deadTrees' ? 'mushroom_pair'
-          : biome === 'forestThick' ? 'fern1'
-          : (rand() < 0.5 ? 'clover' : 'flowers_mixed');
+        // Ground clutter matched to each grass biome's mood. Purely decorative.
+        // TODO: no bones/twigs, cracked-dirt, fallen-leaves, or transparent-pebble art yet —
+        // mossy_boulder/bush_dead stand in for moss patches and dead brush until that art exists.
+        // (sand_pebbles.png is an opaque sand-background tile, not a transparent sprite, so it's
+        // left off this list — it only reads right over sand, where it's already used on the beach.)
+        const CLUTTER = {
+          forestOpen: ['grass_tuft', 'clover', 'flowers_mixed'],
+          forestThick: ['fern1', 'fern1', 'mossy_boulder', 'bush_round'],
+          deadTrees: ['mushroom_pair', 'bush_dead', 'bush_dead', 'grass_tuft'],
+        }[biome];
+        const clutter = CLUTTER[Math.floor(rand() * CLUTTER.length)];
         scenery.push({ x, y, r: 8, type: 'sprite', sprite: clutter, h: 30, collide: false });
       } else {
         const t = pickTree(biome);
@@ -721,6 +893,7 @@
 
     drawTerrain();
     drawGroundTextures();
+    drawGrassTextures();
     drawWaterShimmer(t);
     drawFoam(t);
     ctx.drawImage(islandDetail.canvas, islandDetail.worldX, islandDetail.worldY);
@@ -754,6 +927,7 @@
   function start() {
     resize();
     if (!window.innerWidth || !window.innerHeight) { requestAnimationFrame(start); return; }
+    if (!grassReady) { requestAnimationFrame(start); return; } // wait for grass textures so nothing draws untextured
     spawnTurtle();
     last = performance.now();
     requestAnimationFrame(frame);
