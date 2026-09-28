@@ -168,8 +168,8 @@
     const BIOME_COLOR = {
       beach: [230, 214, 168],       // north
       forestOpen: [138, 196, 108],  // east
-      deadTrees: [58, 42, 34],      // south — matches the dark_soil ground tile so its feathered
-                                    // edges fade into this instead of a lighter blend color
+      deadTrees: [84, 122, 70],     // south — same tone as the grass ground tile (all 3 tree
+                                    // biomes use grass; only the beach uses sand)
       forestThick: [42, 78, 46],    // west
     };
     for (let ry = 0; ry < rows; ry++) {
@@ -211,14 +211,11 @@
   }
 
   // ---- Ground texture tiles: real art laid over the flat-color terrain blend above (water stays
-  // plain color + shimmer, no tile). Tiles are drawn edge-to-edge at full opacity, then the whole
-  // pass is stamped through a canvas blur filter, which softens every seam — same-texture grid
-  // lines and biome-border edges alike — into the underlying smooth color blend instead of leaving
-  // a grid of hard-edged squares. ----
+  // plain color + shimmer, no tile). Plain, regular repeating tiles — one biome's texture per
+  // grid cell, full opacity, no rotation, no blur. ----
   const GROUND_TILE_PX = 96;
-  const GROUND_BLUR_PX = 50;
   const GROUND_TILES = {};
-  for (const name of ['sand1', 'sand2', 'grass1', 'grass2', 'dirt1']) {
+  for (const name of ['sand1', 'sand2', 'grass1', 'grass2']) {
     const img = new Image();
     img.src = `assets/tiles/${name}.png`;
     GROUND_TILES[name] = img;
@@ -229,27 +226,21 @@
     const biome = dominantBiome(x, y).biome;
     const variant = hash2(Math.floor(x / GROUND_TILE_PX), Math.floor(y / GROUND_TILE_PX)) < 0.5;
     if (biome === 'beach') return variant ? GROUND_TILES.sand1 : GROUND_TILES.sand2;
-    if (biome === 'deadTrees') return GROUND_TILES.dirt1;
-    return variant ? GROUND_TILES.grass1 : GROUND_TILES.grass2; // forestOpen + forestThick
+    return variant ? GROUND_TILES.grass1 : GROUND_TILES.grass2; // all 3 tree biomes: forestOpen,
+                                                                 // forestThick, deadTrees
   }
   function drawGroundTextures() {
     const vw = viewW / ZOOM, vh = viewH / ZOOM;
-    // A little overdraw on every side so the blur below has real tile content to pull in at the
-    // viewport's own edges, instead of blurring against nothing there.
-    const x0 = Math.floor(camX / GROUND_TILE_PX) * GROUND_TILE_PX - GROUND_TILE_PX;
-    const y0 = Math.floor(camY / GROUND_TILE_PX) * GROUND_TILE_PX - GROUND_TILE_PX;
-    ctx.save();
-    ctx.filter = `blur(${GROUND_BLUR_PX}px)`;
-    for (let y = y0; y < camY + vh + GROUND_TILE_PX; y += GROUND_TILE_PX) {
-      for (let x = x0; x < camX + vw + GROUND_TILE_PX; x += GROUND_TILE_PX) {
-        const cx = x + GROUND_TILE_PX / 2, cy = y + GROUND_TILE_PX / 2;
-        const img = groundImageFor(cx, cy);
+    const x0 = Math.floor(camX / GROUND_TILE_PX) * GROUND_TILE_PX;
+    const y0 = Math.floor(camY / GROUND_TILE_PX) * GROUND_TILE_PX;
+    for (let y = y0; y < camY + vh; y += GROUND_TILE_PX) {
+      for (let x = x0; x < camX + vw; x += GROUND_TILE_PX) {
+        const img = groundImageFor(x + GROUND_TILE_PX / 2, y + GROUND_TILE_PX / 2);
         if (img && img.complete && img.naturalWidth) {
           ctx.drawImage(img, x, y, GROUND_TILE_PX, GROUND_TILE_PX);
         }
       }
     }
-    ctx.restore();
   }
 
   // ---- Home island detail: sand, dunes, tide pools, the home rock pile — pre-rendered once to a
