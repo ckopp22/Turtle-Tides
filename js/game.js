@@ -209,6 +209,10 @@
     ctx.drawImage(terrainCanvas, sx, sy, sw, sh, camX, camY, vw, vh);
   }
 
+  // TODO: tried a tiled ground-texture overlay here using the reference sheet art; it read as a
+  // harsh repeating grid against the existing smooth color-blended terrain, so it's shelved for now
+  // in favor of using that art as scattered ground-clutter sprites (see SPRITES/placeScenery) instead.
+
   // ---- Home island detail: sand, dunes, tide pools, the home rock pile — pre-rendered once to a
   // small canvas (island-sized, not world-sized) and stamped at the island's world position. ----
   function buildIslandDetail() {
@@ -249,7 +253,7 @@
   // ---- Mainland scenery: trees (all 4 biomes) and beach rocks are obstacles (trunk-only circle
   // collision); driftwood is decorative. Placed by dart-throwing so spacing stays natural, with a
   // per-biome minimum distance so the west forest reads dense but the east forest stays open. ----
-  const SPACING = { forestThick: 46, forestOpen: 150, deadTrees: 140, beach: 170 };
+  const SPACING = { forestThick: 100, forestOpen: 150, deadTrees: 140, beach: 170 };
   const scenery = [];       // { x, y, r, h, sprite, type, collide } — everything drawn
   let obstacleGrid;         // built after placement: cell key -> array of scenery indices (collide only)
   const OBSTACLE_CELL = 220;
@@ -263,6 +267,13 @@
     'bush_dead', 'grass_tuft', 'shell_cream', 'shell_pink', 'driftwood_stick', 'sandcastle_big']) {
     const img = new Image();
     img.src = `assets/scenery/${name}.png`;
+    SPRITES[name] = img;
+  }
+  // Decorative ground clutter, cut from the same reference tile sheet as the terrain textures.
+  for (const name of ['fern1', 'clover', 'flowers_mixed', 'mushroom_pair', 'mossy_boulder',
+    'tidepool1', 'sand_pebbles']) {
+    const img = new Image();
+    img.src = `assets/tiles/${name}.png`;
     SPRITES[name] = img;
   }
   // Per-biome tree sprite choices, weighted toward the look each biome calls for.
@@ -307,7 +318,7 @@
       markPlaced(x, y, spacing);
 
       if (biome === 'beach' && rand() < 0.25) {
-        scenery.push({ x, y, r: 16, cr: 9, type: 'rock', collide: true });
+        scenery.push({ x, y, r: 16, cr: 9, type: 'sprite', sprite: 'mossy_boulder', h: 40, collide: true });
       } else if (biome === 'beach' && rand() < 0.14) {
         scenery.push({ x, y, r: 20, type: 'sprite', sprite: 'driftwood_stick', h: 60, collide: false });
       } else if (biome === 'beach' && rand() < 0.1) {
@@ -319,8 +330,19 @@
         scenery.push({ x, y, r: 6, type: 'sprite', sprite: rand() < 0.5 ? 'shell_cream' : 'shell_pink', h: 26, collide: false });
       } else if (biome === 'beach' && rand() < 0.1) {
         scenery.push({ x, y, r: 4, type: 'sprite', sprite: 'grass_tuft', h: 34, collide: false });
+      } else if (biome === 'beach' && rand() < 0.05) {
+        scenery.push({ x, y, r: 14, type: 'sprite', sprite: 'tidepool1', h: 28, collide: false });
+      } else if (biome === 'beach' && rand() < 0.08) {
+        scenery.push({ x, y, r: 10, type: 'sprite', sprite: 'sand_pebbles', h: 22, collide: false });
       } else if (biome === 'beach') {
         // none of the beach rolls hit for this spot: leave it bare sand, no tree fallback
+      } else if (rand() < 0.08) {
+        // Ground clutter instead of a tree: mushrooms among the dead trees, ferns in the thick
+        // west forest, clover/flowers in the open east forest. Purely decorative.
+        const clutter = biome === 'deadTrees' ? 'mushroom_pair'
+          : biome === 'forestThick' ? 'fern1'
+          : (rand() < 0.5 ? 'clover' : 'flowers_mixed');
+        scenery.push({ x, y, r: 8, type: 'sprite', sprite: clutter, h: 30, collide: false });
       } else {
         const t = pickTree(biome);
         const r = biome === 'forestThick' ? 14 : 12;
