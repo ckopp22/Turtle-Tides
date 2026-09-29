@@ -401,13 +401,11 @@
   }
 
   // ---- Grass biome textures (east/west/south only — north beach keeps sand, untouched above).
-  // Per-biome config so each is easy to tweak; grass1/grass2 aren't seamless tiles (see note below),
-  // so both are reused across biomes and differentiated with a tint wash + opacity instead of
-  // needing 3 distinct source images.
-  // grass1.png/grass2.png don't tile cleanly on their own (edge pixels don't match their opposite
-  // edge) — getGrassPattern() below runs each through buildSeamlessTile() before patterning it.
+  // Per-biome config so each is easy to tweak; grass3.png is reused across all 3 biomes and
+  // differentiated with a tint wash + opacity instead of needing 3 distinct source images.
+  // grass3.png doesn't tile cleanly on its own (edge pixels don't match their opposite edge) —
+  // getGrassPattern() below runs it through buildSeamlessTile() before patterning it.
   const GRASS_BIOMES = {
-    // TODO: preview swap to grass3.png (new repeating texture) for all 3 biomes — revert or keep per feedback.
     forestOpen:  { img: 'assets/tiles/grass3.png', tintColor: null,           tintAlpha: 0,    opacity: 1.0 }, // east: bright, healthy green
     forestThick: { img: 'assets/tiles/grass3.png', tintColor: [12, 46, 18],   tintAlpha: 0.4,  opacity: 1.0 }, // west: darker, denser
     deadTrees:   { img: 'assets/tiles/grass3.png', tintColor: [168, 130, 60], tintAlpha: 0.5,  opacity: 0.8 }, // south: dry, patchy, yellow-brown
@@ -582,11 +580,10 @@
     // flat reduced alpha straight over the terrain (skip the mask/tint compositing) instead.
   }
 
-  // ---- Home island detail: sand, dunes, tide pools, the home rock pile — pre-rendered once to a
-  // small canvas (island-sized, not world-sized) and stamped at the island's world position. Dune
-  // ("sand spot") and tide pool positions are randomized once and cached, so refreshIslandSand()
-  // (called once the sand3 tile image finishes loading) can redraw the same layout with the tile
-  // pattern instead of re-rolling new positions. ----
+  // ---- Home island detail: sand dunes — pre-rendered once to a small canvas (island-sized, not
+  // world-sized) and stamped at the island's world position. Dune ("sand spot") positions are
+  // randomized once and cached, so refreshIslandSand() (called once the sand3 tile image finishes
+  // loading) can redraw the same layout with the tile pattern instead of re-rolling new positions. ----
   function buildIslandDetail(cached) {
     const pad = 80;
     const size = (ISLAND_R + pad) * 2;
@@ -594,7 +591,6 @@
     c.width = size; c.height = size;
     const g = c.getContext('2d');
     const cx = size / 2, cy = size / 2;
-    const homeX = cx + (HOME.x - CENTER.x), homeY = cy + (HOME.y - CENTER.y);
 
     // No base sand fill here: the terrain canvas now paints the island's ground color itself
     // (including its noisy shoreline blend), so this transparent layer only adds texture on top.
@@ -619,26 +615,8 @@
         g.fillStyle = '#e8d391'; g.fill();
       }
     }
-    // Tide pools, kept away from home.
-    const pools = cached ? cached.pools : [];
-    if (!cached) {
-      for (let i = 0, n = 0; n < 3 && i < 400; i++) {
-        const ang = rand() * Math.PI * 2, rr = rand() * (ISLAND_R - 90);
-        const x = cx + Math.cos(ang) * rr, y = cy + Math.sin(ang) * rr;
-        if (Math.hypot(x - homeX, y - homeY) < 160) continue;
-        pools.push({ x, y }); n++;
-      }
-    }
-    for (const p of pools) {
-      g.beginPath(); g.ellipse(p.x, p.y, 26, 16, 0, 0, Math.PI * 2); g.fillStyle = '#c9b57a'; g.fill();
-      g.beginPath(); g.ellipse(p.x, p.y, 19, 11, 0, 0, Math.PI * 2); g.fillStyle = '#5ec8d0'; g.fill();
-    }
-    // Home: rock pile (fixed landmark; level art comes with upgrades).
-    for (const [dx, dy, r] of [[-34, 6, 26], [8, 14, 30], [40, 0, 22], [-8, -22, 24], [22, -20, 18]]) {
-      g.fillStyle = '#7d7d82'; g.beginPath(); g.arc(homeX + dx, homeY + dy, r, 0, Math.PI * 2); g.fill();
-      g.fillStyle = '#9a9aa0'; g.beginPath(); g.arc(homeX + dx - 4, homeY + dy - 5, r * 0.6, 0, Math.PI * 2); g.fill();
-    }
-    return { canvas: c, worldX: CENTER.x - cx, worldY: CENTER.y - cy, size, dunes, pools };
+    // TODO: tide pools and home rock pile removed per feedback; landmark art for home comes with upgrades.
+    return { canvas: c, worldX: CENTER.x - cx, worldY: CENTER.y - cy, size, dunes };
   }
   let islandDetail = buildIslandDetail();
   function refreshIslandSand() { islandDetail = buildIslandDetail(islandDetail); }
@@ -657,17 +635,17 @@
   const SPRITES = {};
   for (const name of ['pine_tall', 'oak_tree', 'tree_cluster3', 'round_tree_med', 'round_tree_single',
     'pine_sapling', 'dead_tree_med', 'dead_tree_small', 'round_tree_small', 'bush_round', 'bush_flowering',
-    'bush_dead', 'grass_tuft', 'shell_cream', 'shell_pink', 'driftwood_stick', 'sandcastle_big']) {
+    'bush_dead', 'driftwood_stick', 'sandcastle_big']) {
     const img = new Image();
     img.src = `assets/scenery/${name}.png`;
     SPRITES[name] = img;
   }
-  // Decorative ground clutter, cut from the same reference tile sheet as the terrain textures.
-  for (const name of ['fern1', 'clover', 'flowers_mixed', 'mushroom_pair', 'mossy_boulder',
-    'tidepool1', 'sand_pebbles']) {
+  // flowers_mixed lives with the terrain tile art, not the scenery sheet, but is placed as
+  // ground clutter just like the sprites above.
+  {
     const img = new Image();
-    img.src = `assets/tiles/${name}.png`;
-    SPRITES[name] = img;
+    img.src = 'assets/tiles/flowers_mixed.png';
+    SPRITES.flowers_mixed = img;
   }
   // Per-biome tree sprite choices, weighted toward the look each biome calls for.
   const BIOME_TREES = {
@@ -711,36 +689,30 @@
       if (tooClose(x, y, spacing)) continue;
       markPlaced(x, y, spacing);
 
-      if (biome === 'beach' && rand() < 0.25) {
-        scenery.push({ x, y, r: 16, cr: 9, type: 'sprite', sprite: 'mossy_boulder', h: 40, collide: true });
-      } else if (biome === 'beach' && rand() < 0.14) {
+      // TODO: no real beach-rock art yet — beach rock obstacles removed with mossy_boulder
+      // (was standing in for them); re-add once dedicated rock art exists.
+      if (biome === 'beach' && rand() < 0.14) {
         scenery.push({ x, y, r: 20, type: 'sprite', sprite: 'driftwood_stick', h: 60, collide: false });
       } else if (biome === 'beach' && rand() < 0.06) {
         // rare beach flourish, straight off the reference sheet
         scenery.push({ x, y, r: 24, type: 'sprite', sprite: 'sandcastle_big', h: 140, collide: false });
-      } else if (biome === 'beach' && rand() < 0.08) {
-        scenery.push({ x, y, r: 6, type: 'sprite', sprite: rand() < 0.5 ? 'shell_cream' : 'shell_pink', h: 26, collide: false });
-      } else if (biome === 'beach' && rand() < 0.1) {
-        scenery.push({ x, y, r: 4, type: 'sprite', sprite: 'grass_tuft', h: 34, collide: false });
-      } else if (biome === 'beach' && rand() < 0.05) {
-        scenery.push({ x, y, r: 14, type: 'sprite', sprite: 'tidepool1', h: 28, collide: false });
-      } else if (biome === 'beach' && rand() < 0.08) {
-        scenery.push({ x, y, r: 10, type: 'sprite', sprite: 'sand_pebbles', h: 22, collide: false });
       } else if (biome === 'beach') {
         // none of the beach rolls hit for this spot: leave it bare sand, no tree fallback
       } else if (rand() < 0.08) {
         // Ground clutter matched to each grass biome's mood. Purely decorative.
-        // TODO: no bones/twigs, cracked-dirt, fallen-leaves, or transparent-pebble art yet —
-        // mossy_boulder/bush_dead stand in for moss patches and dead brush until that art exists.
-        // (sand_pebbles.png is an opaque sand-background tile, not a transparent sprite, so it's
-        // left off this list — it only reads right over sand, where it's already used on the beach.)
+        // TODO: no bones/twigs, cracked-dirt, or fallen-leaves art yet — bush_dead/bush_round
+        // stand in for dead brush/moss until that art exists.
         const CLUTTER = {
-          forestOpen: ['grass_tuft', 'clover', 'flowers_mixed'],
-          forestThick: ['fern1', 'fern1', 'mossy_boulder', 'bush_round'],
-          deadTrees: ['mushroom_pair', 'bush_dead', 'bush_dead', 'grass_tuft'],
+          forestOpen: ['flowers_mixed'],
+          forestThick: ['bush_round'],
+          deadTrees: ['bush_dead', 'bush_dead'],
         }[biome];
-        const clutter = CLUTTER[Math.floor(rand() * CLUTTER.length)];
-        scenery.push({ x, y, r: 8, type: 'sprite', sprite: clutter, h: 30, collide: false });
+        if (CLUTTER) {
+          const clutter = CLUTTER[Math.floor(rand() * CLUTTER.length)];
+          // bush_dead enlarged per feedback — reads too small next to the other clutter otherwise.
+          const clutterH = clutter === 'bush_dead' ? 48 : 30;
+          scenery.push({ x, y, r: 8, type: 'sprite', sprite: clutter, h: clutterH, collide: false });
+        }
       } else if (shoreSignedDist(x, y).d > SHORE_SAND_BAND) {
         // Inside the mainland's outer sand ring (every coastline gets one, not just the beach
         // biome) — leave it bare, no trees on sand.
@@ -753,7 +725,8 @@
         // A little undergrowth around forest/dead-tree trees, purely decorative.
         if (biome !== 'beach' && rand() < 0.12) {
           const bush = biome === 'deadTrees' ? 'bush_dead' : (biome === 'forestThick' ? 'bush_round' : 'bush_flowering');
-          scenery.push({ x: x + (rand() * 2 - 1) * 40, y: y + (rand() * 2 - 1) * 40, r: 6, type: 'sprite', sprite: bush, h: 36, collide: false });
+          const bushH = bush === 'bush_dead' ? 54 : 36; // bush_dead enlarged per feedback
+          scenery.push({ x: x + (rand() * 2 - 1) * 40, y: y + (rand() * 2 - 1) * 40, r: 6, type: 'sprite', sprite: bush, h: bushH, collide: false });
         }
       }
     }
