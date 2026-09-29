@@ -295,6 +295,24 @@
     ctx.drawImage(terrainCanvas, sx, sy, sw, sh, camX, camY, vw, vh);
   }
 
+  // None of the tile art (sand1/2, grass1/2) tiles cleanly on its own — opposite edges don't match,
+  // which showed up as a hard seam line wherever two tiles met. buildSeamlessTile() fixes that per
+  // image, once, at load: roll the image by half its width/height (wraparound) so the original edge
+  // seam lands in a cross through the middle instead — the new outer edges are just adjacent source
+  // pixels, so they already tile. No blur/feather — leave the seam cross sharp like the rest of the
+  // texture.
+  function buildSeamlessTile(img) {
+    const w = img.naturalWidth, h = img.naturalHeight;
+    const hw = Math.round(w / 2), hh = Math.round(h / 2);
+    const rolled = document.createElement('canvas'); rolled.width = w; rolled.height = h;
+    const rctx = rolled.getContext('2d');
+    rctx.drawImage(img, -hw, -hh);
+    rctx.drawImage(img, w - hw, -hh);
+    rctx.drawImage(img, -hw, h - hh);
+    rctx.drawImage(img, w - hw, h - hh);
+    return rolled;
+  }
+
   // ---- Ground texture tiles: real art laid over the flat-color terrain blend above (water stays
   // plain color + shimmer, no tile). Beach (north) only now — the 3 grass biomes use the
   // pattern-based drawGrassTextures() below instead of a tiled grid. Plain, regular repeating
@@ -303,8 +321,10 @@
   const GROUND_TILES = {};
   for (const name of ['sand1', 'sand2']) {
     const img = new Image();
+    const entry = { canvas: null };
+    img.onload = () => { entry.canvas = buildSeamlessTile(img); };
     img.src = `assets/tiles/${name}.png`;
-    GROUND_TILES[name] = img;
+    GROUND_TILES[name] = entry;
   }
   const GROUND_TILE_FADE = 90; // world px inland over which tiles fade up to full opacity
   // Returns the sand tile for this point and how opaque it should be: tiles start past the
@@ -325,8 +345,8 @@
     const biomeFade = smoothstep(0.35, 0.65, beachWeight);
     if (biomeFade <= 0) return null;
     const variant = hash2(Math.floor(x / GROUND_TILE_PX), Math.floor(y / GROUND_TILE_PX)) < 0.5;
-    const img = variant ? GROUND_TILES.sand1 : GROUND_TILES.sand2;
-    return { img, alpha: smoothstep(tileStart, tileStart - GROUND_TILE_FADE, d) * biomeFade };
+    const tile = variant ? GROUND_TILES.sand1 : GROUND_TILES.sand2;
+    return { tile, alpha: smoothstep(tileStart, tileStart - GROUND_TILE_FADE, d) * biomeFade };
   }
   function drawGroundTextures() {
     const vw = viewW / ZOOM, vh = viewH / ZOOM;
@@ -334,10 +354,10 @@
     const y0 = Math.floor(camY / GROUND_TILE_PX) * GROUND_TILE_PX;
     for (let y = y0; y < camY + vh; y += GROUND_TILE_PX) {
       for (let x = x0; x < camX + vw; x += GROUND_TILE_PX) {
-        const tile = groundTileFor(x + GROUND_TILE_PX / 2, y + GROUND_TILE_PX / 2);
-        if (tile && tile.img.complete && tile.img.naturalWidth) {
-          ctx.globalAlpha = tile.alpha;
-          ctx.drawImage(tile.img, x, y, GROUND_TILE_PX, GROUND_TILE_PX);
+        const t = groundTileFor(x + GROUND_TILE_PX / 2, y + GROUND_TILE_PX / 2);
+        if (t && t.tile.canvas) {
+          ctx.globalAlpha = t.alpha;
+          ctx.drawImage(t.tile.canvas, x, y, GROUND_TILE_PX, GROUND_TILE_PX);
         }
       }
     }
@@ -348,13 +368,13 @@
   // Per-biome config so each is easy to tweak; grass1/grass2 aren't seamless tiles (see note below),
   // so both are reused across biomes and differentiated with a tint wash + opacity instead of
   // needing 3 distinct source images.
-  // NOTE: grass1.png and grass2.png show a visible repeat seam when tiled with createPattern (their
-  // edge pixels don't match their opposite edge) — most noticeable on grass2. Flagging per the
-  // brief rather than working around it; swap in seamless tiles if the seam bothers you in-game.
+  // grass1.png/grass2.png don't tile cleanly on their own (edge pixels don't match their opposite
+  // edge) — getGrassPattern() below runs each through buildSeamlessTile() before patterning it.
   const GRASS_BIOMES = {
-    forestOpen:  { img: 'assets/tiles/grass1.png', tintColor: null,           tintAlpha: 0,    opacity: 1.0 }, // east: bright, healthy green
-    forestThick: { img: 'assets/tiles/grass2.png', tintColor: [12, 46, 18],   tintAlpha: 0.4,  opacity: 1.0 }, // west: darker, denser
-    deadTrees:   { img: 'assets/tiles/grass1.png', tintColor: [168, 130, 60], tintAlpha: 0.5,  opacity: 0.8 }, // south: dry, patchy, yellow-brown
+    // TODO: preview swap to grass3.png (new repeating texture) for all 3 biomes — revert or keep per feedback.
+    forestOpen:  { img: 'assets/tiles/grass3.png', tintColor: null,           tintAlpha: 0,    opacity: 1.0 }, // east: bright, healthy green
+    forestThick: { img: 'assets/tiles/grass3.png', tintColor: [12, 46, 18],   tintAlpha: 0.4,  opacity: 1.0 }, // west: darker, denser
+    deadTrees:   { img: 'assets/tiles/grass3.png', tintColor: [168, 130, 60], tintAlpha: 0.5,  opacity: 0.8 }, // south: dry, patchy, yellow-brown
   };
   let grassImagesLoaded = 0;
   const GRASS_BIOME_KEYS = Object.keys(GRASS_BIOMES);
@@ -429,7 +449,7 @@
     if (grassPatterns[key]) return grassPatterns[key];
     const img = GRASS_BIOMES[key].imgEl;
     if (!img.complete || !img.naturalWidth) return null;
-    return (grassPatterns[key] = ctx.createPattern(img, 'repeat'));
+    return (grassPatterns[key] = ctx.createPattern(buildSeamlessTile(img), 'repeat'));
   }
   // Cheap presence check (a few sample points) so a biome with nothing in view this frame is
   // skipped entirely rather than compositing an empty viewport-sized layer.
@@ -701,9 +721,6 @@
   }
 
   function drawScenerySprite(s) {
-      ctx.fillStyle = 'rgba(0,0,0,0.18)';
-      ctx.beginPath(); ctx.ellipse(s.x + 4, s.y + 4, s.r * 1.4, s.r * 0.8, 0, 0, Math.PI * 2); ctx.fill();
-
       if (s.type === 'sprite') {
         const img = SPRITES[s.sprite];
         if (!img.complete || !img.naturalWidth) return; // not loaded yet; skip a frame rather than block
