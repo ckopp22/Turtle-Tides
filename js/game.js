@@ -355,6 +355,9 @@
       isWater: v => v === 1,
       isSand: v => v === 2,
       sandEdge: 'soft',
+      sway: false,     // water texture stays put, waves/foam still animate
+      speed: 0.45,     // faster wave cycles = more frequent lapping
+      waveDepth: 0.24, // waves reach further out, bigger foam crest
     });
   }
   // shore.draw() expects a plain, untransformed ctx (1 canvas px = 1 world px, its own camX/camY
