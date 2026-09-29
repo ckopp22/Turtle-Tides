@@ -47,6 +47,9 @@
   }
   function writeSlot(n, data) { try { localStorage.setItem(slotKey(n), JSON.stringify(data)); } catch {} }
   function deleteSlot(n) { try { localStorage.removeItem(slotKey(n)); } catch {} }
+  // Bridge so progression.js (a separate module/IIFE) can read/write the same save slots without
+  // duplicating the localStorage wrapper above.
+  window.TT_SAVE = { readSlot, writeSlot, slotKey };
 
   // ---- Audio: WebAudio placeholder blips, gated by the mute toggle, started only after the first
   // tap (browsers block audio before user interaction). Replace beep() calls with real <audio> clips
@@ -524,10 +527,9 @@
       ctx.font = '700 20px system-ui, sans-serif';
       ctx.fillText(data.name, r.x + 18, r.y + r.h * 0.34);
       ctx.font = '400 14px system-ui, sans-serif';
-      // TODO: pull real banked coconut/shell counts once carrying/banking exists in game.js —
-      // slots only persist name + dates for now.
-      const c = data.banked?.coconuts ?? 0, s = data.banked?.shells ?? 0;
-      ctx.fillText(`🥥 ${c}   🐚 ${s}   · last played ${formatDate(data.lastPlayedAt)}`, r.x + 18, r.y + r.h * 0.7);
+      const co = data.banked?.coins ?? 0, c = data.banked?.coconuts ?? 0, s = data.banked?.shells ?? 0;
+      const home = data.homeLevel ?? 0;
+      ctx.fillText(`🪙 ${co}  🥥 ${c}  🐚 ${s}  · home Lv${home} · last played ${formatDate(data.lastPlayedAt)}`, r.x + 18, r.y + r.h * 0.7);
       ctx.textAlign = 'center';
       ctx.fillStyle = '#b23a3a'; ctx.font = '700 20px system-ui, sans-serif';
       ctx.fillText('✕', r.x + r.w - 24, r.y + 20);
@@ -606,10 +608,13 @@
     const name = (nameInputEl.value || '').trim();
     if (!name) { nameInputEl.focus(); return; } // validate: not blank
     const now = new Date().toISOString();
+    // Schema matches progression.js's getSaveData()/loadFromSave() — see that file's CONFIG for what
+    // each level means. Progression fills in defaults for any field an older save is missing.
     const data = {
       slotId: slot, name, createdAt: now, lastPlayedAt: now,
-      banked: { coconuts: 0, shells: 0 }, // TODO: wire to real carried/banked inventory once it exists
-      upgrades: { homeLevel: 0, carryCapacityLevel: 0, shellColorId: 'default' },
+      heartsLevel: 0, hungerLevel: 0, hullLevel: 0, homeLevel: 0,
+      banked: { coins: 0, coconuts: 0, shells: 0 },
+      shellCollection: [],
     };
     writeSlot(slot, data);
     closeNameInput();
@@ -630,7 +635,7 @@
     Sound.whoosh();
     startZoom(() => {
       goto('GAME_HANDOFF');
-      if (window.TurtleGame && window.TurtleGame.start) window.TurtleGame.start();
+      if (window.TurtleGame && window.TurtleGame.start) window.TurtleGame.start(slot, data);
     });
   }
 

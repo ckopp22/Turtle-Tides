@@ -78,6 +78,9 @@
     turtle.vx = 0; turtle.vy = 0;
     spawned = true;
   }
+  // Heart-loss respawns (Progression.takeHit hitting 0) snap the turtle back to the home spot the
+  // same way the initial spawn does. Not exercised yet — no enemies call takeHit() until birds exist.
+  window.Progression && window.Progression.setRespawnHandler(spawnTurtle);
 
   // ---- Input -> normalized direction vector (length 0..1) ----
   const keys = new Set();
@@ -218,6 +221,10 @@
   function isWater(x, y) {
     const dist = Math.hypot(x - CENTER.x, y - CENTER.y);
     return dist > ISLAND_R && dist <= WATER_OUTER_R;
+  }
+  // Home/safe zone (MDD s3): the island itself, no birds, hunger doesn't drain, banking happens here.
+  function isHomeIsland(x, y) {
+    return Math.hypot(x - CENTER.x, y - CENTER.y) <= ISLAND_R;
   }
   // TODO: reuse dominantBiome()/isWater() for future bird patrol & item-spawn zone logic.
   const BIOME_COLOR = {
@@ -981,25 +988,17 @@
       }
   }
 
-  // ---- Coins: simple floating currency pickups scattered around the world (island + mainland,
-  // never in water). Collecting one adds to `coinCount` (inventory system TODO: more to come —
-  // shop, spending, loss-on-death, etc. — this is just pickup + respawn for now).
-  const COIN_COUNT = 30;
-  const COIN_PICKUP_RADIUS = 26;   // world px, added to TURTLE_BODY_RADIUS for the pickup check
-  const COIN_RESPAWN_SECONDS = 20; // time a collected coin stays gone before respawning elsewhere
-  const COIN_DRAW_H = 30;          // world px, drawn height of the coin sprite
-  const COIN_BOB_SPEED = 2.4;      // radians/sec
-  const COIN_BOB_AMPLITUDE = 6;    // world px of vertical bob
-  const coinImg = new Image();
-  coinImg.src = 'assets/items/coin.png';
-  const coins = [];
-  let coinCount = 0;
+  // ---- Collectible pickups: coins (currency), coconuts (food), and shells (trophies) — all placed
+  // and animated the same way (dart-thrown across land, never water; bob + respawn after pickup),
+  // so makePickupType() below is shared by all three instead of copy-pasting per item. Pickups route
+  // through window.Progression.tryPickup(), which gates them on hull capacity (MDD s4) — an item
+  // stays on the ground (not consumed) if the hull is full. Coin art is real (coin.png); coconut/
+  // shell use simple canvas-shape placeholders. TODO: real coconut/shell sprites.
   let gameTime = 0;
 
-  // Picks a random spot that's not in water and not on the sand-text patch. Used both for initial
-  // placement and respawning; falls back to whatever the last attempt found if it never finds a
-  // clean spot (extremely unlikely given how little of the world that excludes).
-  function randomCoinSpot() {
+  // Picks a random spot that's not in water and not on the sand-text patch. Shared by every pickup
+  // type for both initial placement and respawning.
+  function randomLandSpot() {
     let x = CENTER.x, y = CENTER.y;
     for (let i = 0; i < 200; i++) {
       x = rand() * WORLD_SIZE;
@@ -1013,73 +1012,88 @@
     return { x, y };
   }
 
-  function respawnCoin(c) {
-    const p = randomCoinSpot();
-    c.x = p.x; c.y = p.y;
-    c.active = true;
-  }
-
-  function initCoins() {
-    for (let i = 0; i < COIN_COUNT; i++) {
-      const p = randomCoinSpot();
-      coins.push({ x: p.x, y: p.y, active: true, respawnAt: 0, bobSeed: rand() * Math.PI * 2 });
+  function makePickupType(key, opts) {
+    const items = [];
+    function respawn(it) {
+      const p = randomLandSpot();
+      it.x = p.x; it.y = p.y; it.active = true;
     }
-  }
-  initCoins();
-
-  function updateCoins(dt) {
-    const pickupDist = TURTLE_BODY_RADIUS + COIN_PICKUP_RADIUS;
-    for (const c of coins) {
-      if (!c.active) {
-        if (gameTime >= c.respawnAt) respawnCoin(c);
-        continue;
-      }
-      if (Math.hypot(turtle.x - c.x, turtle.y - c.y) < pickupDist) {
-        c.active = false;
-        c.respawnAt = gameTime + COIN_RESPAWN_SECONDS;
-        coinCount++;
+    for (let i = 0; i < opts.count; i++) {
+      const p = randomLandSpot();
+      items.push({ x: p.x, y: p.y, active: true, respawnAt: 0, bobSeed: rand() * Math.PI * 2 });
+    }
+    function update() {
+      const pickupDist = TURTLE_BODY_RADIUS + opts.pickupRadius;
+      for (const it of items) {
+        if (!it.active) {
+          if (gameTime >= it.respawnAt) respawn(it);
+          continue;
+        }
+        if (Math.hypot(turtle.x - it.x, turtle.y - it.y) < pickupDist) {
+          if (window.Progression.tryPickup(key)) {
+            it.active = false;
+            it.respawnAt = gameTime + opts.respawnSeconds;
+          }
+          // else: hull is full — leave it active on the ground, Progression flashes the hull-full cue
+        }
       }
     }
+    function draw() {
+      const vw = viewW / ZOOM, vh = viewH / ZOOM, margin = 60;
+      for (const it of items) {
+        if (!it.active) continue;
+        if (it.x < camX - margin || it.x > camX + vw + margin || it.y < camY - margin || it.y > camY + vh + margin) continue;
+        const bob = Math.sin(gameTime * opts.bobSpeed + it.bobSeed) * opts.bobAmplitude;
+        ctx.save();
+        ctx.globalAlpha = 0.25;
+        ctx.fillStyle = '#000';
+        ctx.beginPath(); ctx.ellipse(it.x, it.y + 4, opts.drawH * 0.32, opts.drawH * 0.14, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+        opts.drawItem(it.x, it.y + bob);
+      }
+    }
+    return { update, draw };
   }
 
-  function drawCoins() {
-    if (!coinImg.complete || !coinImg.naturalWidth) return;
-    const dw = COIN_DRAW_H * coinImg.naturalWidth / coinImg.naturalHeight;
-    const vw = viewW / ZOOM, vh = viewH / ZOOM, margin = 60;
-    for (const c of coins) {
-      if (!c.active) continue;
-      if (c.x < camX - margin || c.x > camX + vw + margin || c.y < camY - margin || c.y > camY + vh + margin) continue;
-      const bob = Math.sin(gameTime * COIN_BOB_SPEED + c.bobSeed) * COIN_BOB_AMPLITUDE;
+  const coinImg = new Image();
+  coinImg.src = 'assets/items/coin.png';
+  const coinPickups = makePickupType('coins', {
+    count: 30, pickupRadius: 26, respawnSeconds: 20, drawH: 30, bobSpeed: 2.4, bobAmplitude: 6,
+    drawItem(cx, cy) {
+      if (!coinImg.complete || !coinImg.naturalWidth) return;
+      const dw = 30 * coinImg.naturalWidth / coinImg.naturalHeight;
+      ctx.drawImage(coinImg, cx - dw / 2, cy - 15, dw, 30);
+    },
+  });
+  const coconutPickups = makePickupType('coconuts', {
+    count: 16, pickupRadius: 24, respawnSeconds: 26, drawH: 26, bobSpeed: 2.0, bobAmplitude: 5,
+    drawItem(cx, cy) {
       ctx.save();
-      ctx.globalAlpha = 0.25;
-      ctx.fillStyle = '#000';
-      ctx.beginPath(); ctx.ellipse(c.x, c.y + 4, dw * 0.32, dw * 0.14, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#6b4423';
+      ctx.beginPath(); ctx.ellipse(cx, cy, 15, 13, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = 'rgba(74, 46, 23, 0.7)'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(cx, cy - 13); ctx.lineTo(cx, cy + 13); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx - 7, cy - 9); ctx.lineTo(cx - 3, cy + 9); ctx.stroke();
       ctx.restore();
-      ctx.drawImage(coinImg, c.x - dw / 2, c.y - COIN_DRAW_H / 2 + bob, dw, COIN_DRAW_H);
-    }
-  }
-
-  // Screen-space HUD: coin count, top-left. TODO: fold into a real inventory HUD once the
-  // shell/coconut/carry-capacity systems land per the MDD.
-  function drawCoinHUD() {
-    if (!coinImg.complete || !coinImg.naturalWidth) return;
-    const pad = 14, iconSize = 28;
-    ctx.save();
-    ctx.font = '600 20px system-ui, sans-serif';
-    const label = String(coinCount);
-    const textW = ctx.measureText(label).width;
-    const boxW = iconSize + 10 + textW + pad * 2;
-    const boxH = iconSize + pad;
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
-    ctx.beginPath();
-    ctx.roundRect(pad, pad, boxW, boxH, boxH / 2);
-    ctx.fill();
-    ctx.drawImage(coinImg, pad + pad / 2, pad + boxH / 2 - iconSize / 2, iconSize, iconSize);
-    ctx.fillStyle = '#fff';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(label, pad + pad / 2 + iconSize + 10, pad + boxH / 2 + 1);
-    ctx.restore();
-  }
+    },
+  });
+  const shellPickups = makePickupType('shells', {
+    count: 16, pickupRadius: 24, respawnSeconds: 26, drawH: 24, bobSpeed: 2.2, bobAmplitude: 5,
+    drawItem(cx, cy) {
+      const r = 14;
+      ctx.save();
+      ctx.fillStyle = '#f0d9a8';
+      ctx.beginPath();
+      ctx.moveTo(cx, cy + r);
+      for (let a = -1; a <= 1.001; a += 0.25) ctx.lineTo(cx + Math.sin(a) * r, cy - Math.cos(a) * r * 0.8);
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = '#c9a86a'; ctx.lineWidth = 1;
+      for (let a = -0.8; a <= 0.81; a += 0.4) {
+        ctx.beginPath(); ctx.moveTo(cx, cy + r); ctx.lineTo(cx + Math.sin(a) * r, cy - Math.cos(a) * r * 0.8); ctx.stroke();
+      }
+      ctx.restore();
+    },
+  });
 
   // ---- Water ripples: purely decorative wake while swimming. Spawned in update() (throttled so
   // movement doesn't spam them), aged/pruned each frame, drawn in render() between the water and
@@ -1141,10 +1155,17 @@
   function update(dt) {
     stateTime += dt;
     gameTime += dt;
-    updateCoins(dt);
+    coinPickups.update();
+    coconutPickups.update();
+    shellPickups.update();
+
+    const atHome = isHomeIsland(turtle.x, turtle.y);
+    const hungerSpeedMult = window.Progression.update(dt, !atHome);
+    if (atHome) window.Progression.bankCarried();
+
     const dir = state === 'normal' ? getDirection() : { x: 0, y: 0 };
     const inWater = isWater(turtle.x, turtle.y);
-    const speedMult = inWater ? WATER_SPEED_MULT : LAND_SPEED_MULT;
+    const speedMult = (inWater ? WATER_SPEED_MULT : LAND_SPEED_MULT) * hungerSpeedMult;
     const tvx = dir.x * MAX_SPEED * speedMult, tvy = dir.y * MAX_SPEED * speedMult;
     const hasInput = dir.x !== 0 || dir.y !== 0;
     const rate = (hasInput ? ACCEL : DECEL) * dt;
@@ -1201,6 +1222,11 @@
     if (turtle.x > WORLD_W - r) { turtle.x = WORLD_W - r; turtle.vx = 0; }
     if (turtle.y < r) { turtle.y = r; turtle.vy = 0; }
     if (turtle.y > WORLD_H - r) { turtle.y = WORLD_H - r; turtle.vy = 0; }
+
+    // Re-check home status against this frame's final position (not the pre-movement one used
+    // above for the hunger-penalty speed calc) so the Upgrades button/panel react the instant the
+    // turtle actually crosses onto/off the island, not one frame late.
+    window.Progression.setHomeButtonVisible(isHomeIsland(turtle.x, turtle.y));
 
     // Face movement direction, turning smoothly.
     if (Math.hypot(turtle.vx, turtle.vy) > 10) {
@@ -1309,7 +1335,9 @@
     drawRipples(); // above water, below turtle/scenery
     drawSandText();
     ctx.drawImage(islandDetail.canvas, islandDetail.worldX, islandDetail.worldY);
-    drawCoins();
+    coinPickups.draw();
+    coconutPickups.draw();
+    shellPickups.draw();
 
     // Cull scenery to the visible world rect (plus a small margin) so a big world with lots of
     // trees still draws only a couple dozen-to-hundred objects per frame.
@@ -1321,7 +1349,7 @@
     ctx.restore();
 
     drawJoystick(); // screen space
-    drawCoinHUD();  // screen space
+    window.Progression.drawHUD(ctx); // screen space
   }
 
   let last;
@@ -1344,13 +1372,16 @@
   // and calls TurtleGame.start() once the player has zoomed into the island. `started` guards
   // against a double call (e.g. a stray extra tap on the last save-slot transition).
   let started = false;
-  function start() {
+  // slotId/saveData come from intro.js's save-slot selection, so Progression can load that slot's
+  // banked inventory/upgrade levels before the turtle spawns and starts saving back to it.
+  function start(slotId, saveData) {
     if (started) return;
     started = true;
     resize();
-    if (!window.innerWidth || !window.innerHeight) { started = false; requestAnimationFrame(start); return; }
-    if (!grassReady) { started = false; requestAnimationFrame(start); return; } // wait for grass textures so nothing draws untextured
-    if (!shore) { started = false; requestAnimationFrame(start); return; } // wait for Shore.js's sand/water tiles too
+    if (!window.innerWidth || !window.innerHeight) { started = false; requestAnimationFrame(() => start(slotId, saveData)); return; }
+    if (!grassReady) { started = false; requestAnimationFrame(() => start(slotId, saveData)); return; } // wait for grass textures so nothing draws untextured
+    if (!shore) { started = false; requestAnimationFrame(() => start(slotId, saveData)); return; } // wait for Shore.js's sand/water tiles too
+    window.Progression.attachSlot(slotId, saveData);
     spawnTurtle();
     last = performance.now();
     requestAnimationFrame(frame);

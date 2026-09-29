@@ -72,3 +72,67 @@ html, body {
 .tt-name-actions .tt-cancel {
   background: #ffffff;
 }
+
+/* Upgrade button + panel (progression.js) — shown only while the turtle is on the home island. */
+#tt-upgrade-btn {
+  display: none;
+  position: fixed;
+  right: 14px;
+  top: 14px;
+  z-index: 9;
+  font-size: 15px;
+  font-weight: 700;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 2px solid #7a5a1e;
+  background: #ffb347;
+  min-height: 44px; /* touch-friendly tap target */
+  cursor: pointer;
+}
+.tt-upgrade-box {
+  width: min(360px, 90vw);
+  max-height: 82vh;
+  overflow-y: auto;
+}
+.tt-upgrade-box h3 {
+  margin: 0 0 12px;
+  font-size: 16px;
+  color: #3a2a10;
+}
+.tt-upgrade-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid rgba(122, 90, 30, 0.25);
+}
+.tt-upgrade-row:first-of-type {
+  border-top: none;
+}
+.tt-upgrade-info strong {
+  display: block;
+  font-size: 15px;
+  color: #3a2a10;
+}
+.tt-upgrade-detail {
+  font-size: 12px;
+  color: #6b5b3a;
+}
+.tt-upgrade-buy {
+  flex: none;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 2px solid #7a5a1e;
+  background: #ffb347;
+  min-height: 40px;
+  cursor: pointer;
+}
+.tt-upgrade-buy:disabled {
+  background: #e6ddc6;
+  border-color: #b8ac86;
+  color: #8a8064;
+  cursor: default;
+}
