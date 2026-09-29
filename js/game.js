@@ -21,6 +21,30 @@
                                                      // bounds clamp) already reads WORLD_W/WORLD_H
   const HOME = { x: CENTER.x, y: CENTER.y + 90 };
 
+  // "TURTLE TIDES / by Wesley Kopp" written in the sand, south outer ring (see drawSandText()
+  // below). Defined here, ahead of the shore/grass/scenery generation below, so those can widen the
+  // sand patch under the text and keep trees from spawning over it.
+  const SAND_TEXT_POS = { x: CENTER.x, y: CENTER.y + WATER_OUTER_R + 50 }; // south, just past the wet band
+  const SAND_SUBTEXT_POS = { x: SAND_TEXT_POS.x, y: SAND_TEXT_POS.y + 56 };
+  // Generous rectangle around both lines, padded well past the rendered text so the sand clearly
+  // extends beyond the letters on all sides rather than just grazing them.
+  const SAND_TEXT_ZONE = { x0: CENTER.x - 420, x1: CENTER.x + 420, y0: SAND_TEXT_POS.y - 130, y1: SAND_SUBTEXT_POS.y + 110 };
+  const SAND_TEXT_FRINGE = 110; // world px over which the zone's edge fades/wobbles into grass
+  // Distance outside the rectangle (0 = inside or on the edge), fed into a noisy fade below so the
+  // sand-to-grass transition wanders like a real coastline instead of tracing a straight box.
+  function sandTextBoxDist(x, y) {
+    const dx = Math.max(SAND_TEXT_ZONE.x0 - x, 0, x - SAND_TEXT_ZONE.x1);
+    const dy = Math.max(SAND_TEXT_ZONE.y0 - y, 0, y - SAND_TEXT_ZONE.y1);
+    return Math.hypot(dx, dy);
+  }
+  // 1 = solid sand, 0 = plain grass, with a wobbly noisy fringe in between (uses noise2/smoothstep,
+  // both function declarations defined further down but hoisted, so calling them here is safe).
+  function sandTextFade(x, y) {
+    const wobble = (noise2(x / 90 + 300, y / 90 + 300) - 0.5) * 2 * SAND_TEXT_FRINGE * 0.6;
+    return 1 - smoothstep(0, SAND_TEXT_FRINGE, sandTextBoxDist(x, y) + wobble);
+  }
+  function inSandTextZone(x, y) { return sandTextFade(x, y) > 0.5; }
+
   // ---- Shoreline rendering (visual only — gameplay still uses the perfect-circle ISLAND_R /
   // WATER_OUTER_R above for collision, speed and biome logic; none of that changes here). ----
   const SHORE_DEEP_COLOR = [20, 90, 160];    // open water fallback color, hidden under Shore.js's water tile
@@ -337,7 +361,7 @@
       // weight to clearly dominate (not just edge out the others) avoids that.
       const dx = x - CENTER.x, dy = y - CENTER.y;
       const isBeach = biomeWeights(Math.atan2(dy, dx) + biomeAngleNoise(x, y)).beach > 0.5;
-      row.push((isBeach || d > SHORE_SAND_BAND) ? 2 : 0);
+      row.push((isBeach || d > SHORE_SAND_BAND || inSandTextZone(x, y)) ? 2 : 0);
     }
     shoreMap.push(row);
   }
@@ -430,7 +454,7 @@
         const i = (ry * cols + rx) * 4;
         let w = null, landFade = 0;
         if (!nearIsland && d <= tileStart) {
-          landFade = smoothstep(tileStart, tileStart - GROUND_TILE_FADE, d);
+          landFade = smoothstep(tileStart, tileStart - GROUND_TILE_FADE, d) * (1 - sandTextFade(x, y));
           if (landFade > 0) {
             const dx = x - CENTER.x, dy = y - CENTER.y;
             w = biomeWeights(Math.atan2(dy, dx) + biomeAngleNoise(x, y));
@@ -473,6 +497,34 @@
     }
     return false;
   }
+  // ---- "Turtle Tides" written in the sand, south outer ring (the coastal sand band every biome's
+  // mainland shore gets, see SHORE_SAND_BAND above) — a static decorative easter egg, not gameplay.
+  // Position/zone constants live up top with SAND_TEXT_POS et al., ahead of shore/grass/scenery gen.
+  const SAND_TEXT = 'TURTLE TIDES';
+  const SAND_SUBTEXT = 'by Wesley Kopp';
+  // A dug groove, not printed letters: a wide soft dark stroke (the shadowed underside of the
+  // groove), then a thin bright stroke offset up-left (sand pushed up on the near edge), no fill.
+  function strokeGroove(text, x, y, weight) {
+    ctx.lineWidth = weight;
+    ctx.strokeStyle = 'rgba(110, 82, 44, 0.55)';
+    ctx.strokeText(text, x + 2, y + 2);
+    ctx.lineWidth = Math.max(1, weight * 0.3);
+    ctx.strokeStyle = 'rgba(255, 246, 224, 0.5)';
+    ctx.strokeText(text, x - 1, y - 1);
+  }
+  function drawSandText() {
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    ctx.font = 'italic 72px "Bradley Hand", "Comic Sans MS", cursive';
+    strokeGroove(SAND_TEXT, SAND_TEXT_POS.x, SAND_TEXT_POS.y, 10);
+    // Smaller subtitle needs a proportionally thinner groove, or the strokes swallow the letterforms.
+    ctx.font = 'italic 32px "Bradley Hand", "Comic Sans MS", cursive';
+    strokeGroove(SAND_SUBTEXT, SAND_SUBTEXT_POS.x, SAND_SUBTEXT_POS.y, 2);
+    ctx.restore();
+  }
+
   let grassScratch = null;
   function ensureGrassScratch() {
     if (!grassScratch) grassScratch = document.createElement('canvas');
@@ -652,6 +704,7 @@
       const dist = Math.hypot(x - CENTER.x, y - CENTER.y);
       if (dist <= WATER_OUTER_R + 20) continue;               // never on the island or in the water
       if (dist > WORLD_SIZE / 2 - EDGE_FOG_WIDTH * 0.4) continue; // keep the far fog fringe emptier
+      if (inSandTextZone(x, y)) continue;                     // keep the sand-text patch clear of scenery
       const { biome, weight } = dominantBiome(x, y);
       if (weight < 0.55) continue; // blend zone between two biomes: leave it sparser/transitional
       const spacing = SPACING[biome];
@@ -901,6 +954,7 @@
     drawTerrain();
     drawGrassTextures();
     if (shore) drawShore(t);
+    drawSandText();
     ctx.drawImage(islandDetail.canvas, islandDetail.worldX, islandDetail.worldY);
 
     // Cull scenery to the visible world rect (plus a small margin) so a big world with lots of
