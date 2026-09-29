@@ -32,33 +32,42 @@
       // Full 20-level curve, tuned so each step to level 10 is a small, quick win (cost climbs by
       // a steady +5-15 coins/level), then levels 11-20 climb faster (+65-160/level) for a real but
       // still reachable long-term goal — not a wall. cost[i] = coins to go from level i-1 to i.
+      // `decor` = the one new placeholder piece game.js adds to the home island at this level
+      // (cumulative — game.js draws every decor id from level 0 up to the current homeLevel, never
+      // replacing earlier ones). `skill` = an id into SKILLS below, or null.
+      // level 10 keeps its existing "Hide in Shell" unlock (cabin/shape) exactly where it already
+      // was — everything else slots around it.
       // TODO: the desc/shape fields are still placeholders — real per-level art still needed.
-      // TODO: level 10 reserves the "Hide in Shell" skill (unlockedSkill below) — data slot only,
-      // not wired to gameplay yet. The turtle sprite sheet already has a shell pose (game.js's
-      // state === 'shell') that skill can reuse later.
       levels: [
-        { cost: 0,    desc: 'a pile of rocks',                        shape: 'rocks' },
-        { cost: 20,   desc: 'a woven nest tucked in the rocks',       shape: 'nest' },
-        { cost: 35,   desc: 'a small driftwood hut',                  shape: 'hut' },
-        { cost: 55,   desc: 'a hut with a crackling campfire',        shape: 'campfire' },
-        { cost: 80,   desc: 'a hut with a small garden patch',        shape: 'garden' },
-        { cost: 110,  desc: 'shell wind-chimes hung by the door',     shape: 'chimes' },
-        { cost: 145,  desc: 'a covered porch added to the hut',       shape: 'porch' },
-        { cost: 185,  desc: 'a driftwood bookshelf of found books',   shape: 'books' },
-        { cost: 230,  desc: 'lit torches lining the path',            shape: 'torches' },
-        { cost: 280,  desc: 'a woven fence around the camp',          shape: 'fence' },
-        { cost: 335,  desc: 'a proper cabin replaces the hut',        shape: 'cabin', unlockedSkill: 'hideInShell' },
-        { cost: 400,  desc: 'a second story added to the cabin',      shape: 'cabin2' },
-        { cost: 470,  desc: 'a stone-lined firepit',                  shape: 'firepit' },
-        { cost: 550,  desc: 'a drying rack for coconuts',             shape: 'dryingRack' },
-        { cost: 640,  desc: 'a lookout perch',                        shape: 'lookout' },
-        { cost: 740,  desc: 'a garden terrace',                       shape: 'terrace' },
-        { cost: 850,  desc: 'string lights strung between posts',     shape: 'lights' },
-        { cost: 970,  desc: 'a small dock out over the water',        shape: 'dock' },
-        { cost: 1100, desc: 'a stone path connects the whole camp',   shape: 'path' },
-        { cost: 1240, desc: 'a bell tower to call the turtle home',   shape: 'bellTower' },
-        { cost: 1400, desc: 'the full camp, home at last',            shape: 'fullCamp' },
+        { cost: 0,    desc: 'a pile of rocks',                          decor: 'rocks',        skill: null },
+        { cost: 20,   desc: 'a woven nest tucked in the rocks',         decor: 'nest',          skill: null },
+        { cost: 35,   desc: 'a driftwood bed to sleep in',              decor: 'bed',           skill: 'sleep' },
+        { cost: 55,   desc: 'a crackling campfire',                     decor: 'campfire',      skill: null },
+        { cost: 80,   desc: 'the frame of a hut going up',              decor: 'hutFrame',      skill: 'turtleShop' },
+        { cost: 110,  desc: 'swim fins drying by the hut',              decor: 'swimFins',      skill: 'swimSpeed1' },
+        { cost: 145,  desc: 'torches lit along the path',               decor: 'torches',       skill: 'dayNight' },
+        { cost: 185,  desc: 'a small reading nook with books',          decor: 'books',         skill: 'moveSpeed1' },
+        { cost: 230,  desc: 'the hut, finally finished',                decor: 'hutComplete',   skill: null },
+        { cost: 280,  desc: 'a covered porch added to the hut',         decor: 'porch',         skill: null },
+        { cost: 335,  desc: 'a proper cabin replaces the hut',          decor: 'cabin',         skill: 'hideInShell' },
+        { cost: 400,  desc: 'lanterns hung by the door',                decor: 'lanterns',      skill: null },
+        { cost: 470,  desc: 'a woven rug laid out front',               decor: 'rug',           skill: null },
+        { cost: 550,  desc: 'a driftwood table',                        decor: 'table',         skill: 'swimSpeed2' },
+        { cost: 640,  desc: 'a hammock strung between posts',           decor: 'hammock',       skill: null },
+        { cost: 740,  desc: 'a small garden patch',                     decor: 'garden',        skill: null },
+        { cost: 850,  desc: 'string flags fluttering overhead',         decor: 'flags',         skill: 'moveSpeed2' },
+        { cost: 970,  desc: 'a stone-lined firepit ring',                decor: 'firepitRing',   skill: null },
+        { cost: 1100, desc: 'a stone path connects the camp',           decor: 'path',          skill: null },
+        { cost: 1240, desc: 'string lights strung between posts',       decor: 'lights',        skill: null },
+        { cost: 1400, desc: 'the full camp, home at last',              decor: 'fullCamp',      skill: null },
       ],
+    },
+    sleep: {
+      idleSecondsToTrigger: 1.5, // stand still near the bed this long before the turtle lies down
+      triggerRadius: 55,         // world px from the bed decor that counts as "near" it
+      heartsPerSecond: 0.12,     // fractional heart recovery/sec while asleep (accumulates, see state.heartRecoverAccum)
+      // No hunger recovery — sleeping only heals hearts, hunger still just sits flat (no drain,
+      // same as anywhere else on the home island).
     },
     invulnSeconds: 1.2,           // blink window after a heart is lost
     hullFullFlashSeconds: 1.4,
@@ -67,6 +76,26 @@
     // Flip the persistence in getSaveData()/loadFromSave() if you'd rather keep an in-progress trip.
     loseUnbankedOnClose: true,
   };
+
+  // ---- Skills: gated purely by home level. Each has an id (used by game.js to branch behavior),
+  // a label (for the Home Perks panel/celebration toast), and the homeLevel at which it unlocks.
+  // Keep this modular — a new skill is just one more row here plus its own enable/disable logic
+  // wherever it lives (game.js for movement/animation skills, progression.js for anything stat-y).
+  const SKILLS = [
+    { id: 'sleep',       label: 'Sleep',            unlockLevel: 2 },
+    { id: 'turtleShop',  label: 'Turtle Shop',      unlockLevel: 4 },
+    { id: 'swimSpeed1',  label: 'Swim Speed I',     unlockLevel: 5 },
+    { id: 'dayNight',    label: 'Day/Night Toggle', unlockLevel: 6 },
+    { id: 'moveSpeed1',  label: 'Move Speed I',     unlockLevel: 7 },
+    { id: 'hideInShell', label: 'Hide in Shell',    unlockLevel: 10 },
+    { id: 'swimSpeed2',  label: 'Swim Speed II',    unlockLevel: 13 },
+    { id: 'moveSpeed2',  label: 'Move Speed II',    unlockLevel: 16 },
+  ];
+  function hasSkill(id) {
+    const s = SKILLS.find(s => s.id === id);
+    return !!s && state.homeLevel >= s.unlockLevel;
+  }
+  function skillAtLevel(level) { return SKILLS.find(s => s.unlockLevel === level) || null; }
 
   const state = {
     hearts: CONFIG.hearts.startMax,
@@ -80,6 +109,7 @@
     shellCollection: [], // banked shell trophies; TODO: shell variety/color once that system exists
     hungerZeroTimer: 0,  // seconds spent at 0 hunger (grace + repeat heart-loss ticking)
     hungerHeartTicks: 0,
+    heartRecoverAccum: 0, // fractional heart progress while sleeping (see updateSleep)
     invulnTimer: 0,
     hullFullFlash: 0,
     lastLostMessage: null, // { text, timer } shown briefly after a death
@@ -92,6 +122,7 @@
   function hullCap() { return CONFIG.hull.capTiers[state.hullLevel]; }
   function carriedTotal() { return state.carried.coins + state.carried.coconuts + state.carried.shells; }
   function homeLevelDef() { return CONFIG.home.levels[Math.min(state.homeLevel, CONFIG.home.levels.length - 1)]; }
+  function getHomeLevels() { return CONFIG.home.levels; } // read-only by convention, same as `state`
 
   // ---- Pickup / bank / loss ----
   // Returns false (and flashes the hull-full cue) if the hull has no room; caller should leave the
@@ -184,6 +215,20 @@
     return speedMult;
   }
 
+  // Called by game.js every frame while state === 'sleeping'. Recovers hearts only (fractionally);
+  // hunger is untouched — it already doesn't drain on the home island (see update() above), and
+  // sleep doesn't add active hunger regen on top of that.
+  function updateSleep(dt) {
+    if (state.hearts < maxHearts()) {
+      state.heartRecoverAccum += CONFIG.sleep.heartsPerSecond * dt;
+      while (state.heartRecoverAccum >= 1 && state.hearts < maxHearts()) {
+        state.hearts++;
+        state.heartRecoverAccum -= 1;
+      }
+    }
+  }
+  function getSleepConfig() { return CONFIG.sleep; }
+
   // ---- Upgrades ----
   const TRACKS = {
     hearts: {
@@ -250,6 +295,7 @@
     state.invulnTimer = 0;
     state.hullFullFlash = 0;
     state.lastLostMessage = null;
+    state.heartRecoverAccum = 0;
   }
   function getSaveData() {
     return {
@@ -394,9 +440,10 @@
 
   window.Progression = {
     tryPickup, bankCarried, takeHit, isInvulnerable, setRespawnHandler,
-    update, drawHUD, setHomeButtonVisible,
+    update, updateSleep, getSleepConfig, drawHUD, setHomeButtonVisible,
     buyUpgrade, canUpgrade,
     attachSlot, getSaveData, persist,
+    SKILLS, hasSkill, skillAtLevel, getHomeLevels,
     state, // read-only-by-convention access (e.g. debug/future HUD tweaks)
   };
 })();

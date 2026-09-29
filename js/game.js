@@ -91,6 +91,17 @@
   const DEBUG_STATES = { 1: 'normal', 2: 'stunned', 3: 'sleeping', 4: 'shell' };
   const joy = { active: false, id: null, ox: 0, oy: 0, x: 0, y: 0 };
 
+  // ---- Sleep skill (home level 2+, see progression.js SKILLS): standing still near the bed decor
+  // on the home island for a bit lies the turtle down; any input wakes it back up. See update()'s
+  // sleep block for the trigger, and progression.js CONFIG.sleep for the recovery-rate tunables.
+  let sleepIdleTimer = 0;
+  function wakeUp() {
+    if (state !== 'sleeping') return;
+    state = 'normal';
+    stateTime = 0;
+    sleepIdleTimer = 0;
+  }
+
   // Walk vs swim animation, picked from isWater() each frame rather than a key. Debounced so
   // stepping right at the shoreline doesn't flicker the animation back and forth.
   let moveMode = 'walk';           // 'walk' | 'swim' — only used while state === 'normal'
@@ -109,7 +120,7 @@
     if (typingInField()) return;
     if (DEBUG_STATES[e.key]) { state = DEBUG_STATES[e.key]; stateTime = 0; return; }
     const k = KEY_MAP[e.key.toLowerCase()];
-    if (k) { keys.add(k); e.preventDefault(); }
+    if (k) { wakeUp(); keys.add(k); e.preventDefault(); }
   });
   window.addEventListener('keyup', e => {
     if (typingInField()) return;
@@ -120,11 +131,13 @@
 
   canvas.addEventListener('touchstart', e => {
     e.preventDefault();
+    wakeUp();
     if (joy.active) return;
     const t = e.changedTouches[0];
     joy.active = true; joy.id = t.identifier;
     joy.ox = joy.x = t.clientX; joy.oy = joy.y = t.clientY;
   }, { passive: false });
+  canvas.addEventListener('mousedown', wakeUp); // desktop "click" wakes it too (no other click mechanic exists yet)
   canvas.addEventListener('touchmove', e => {
     e.preventDefault();
     for (const t of e.changedTouches) {
@@ -985,7 +998,183 @@
           ctx.ellipse(s.x + Math.cos(a * 1.05) * 16, s.y + Math.sin(a * 1.05) * 16, 18, 6, a * 1.05, 0, Math.PI * 2);
           ctx.fill();
         }
+      } else if (s.type === 'custom') {
+        s.draw(ctx, s.x, s.y);
       }
+  }
+
+  // ---- Home island decor: one canvas-drawn placeholder per CONFIG.home.levels entry (see
+  // progression.js), positioned at a fixed spot near HOME so the camp fills in as homeLevel rises.
+  // Decor accumulates (earlier pieces stay) except the hut's own structural stages, which visibly
+  // replace each other (frame -> completed -> cabin is one building, not three) per the MDD desc
+  // text ("a proper cabin replaces the hut"). All placeholder shapes — TODO: real per-piece art.
+  const HUT_STAGE_IDS = ['hutFrame', 'hutComplete', 'cabin'];
+  const DECOR_LAYOUT = {
+    rocks:       { dx: -90,  dy: 80 },
+    nest:        { dx: 80,   dy: 90 },
+    bed:         { dx: -150, dy: 10 },
+    campfire:    { dx: 0,    dy: 130 },
+    hutFrame:    { dx: 130,  dy: -10 },
+    hutComplete: { dx: 130,  dy: -10 },
+    cabin:       { dx: 130,  dy: -10 },
+    swimFins:    { dx: -40,  dy: 155 },
+    torches:     { dx: -180, dy: 90 },  // drawn as a pair (left + right, see draw fn)
+    books:       { dx: -110, dy: 155 },
+    porch:       { dx: 150,  dy: 55 },
+    lanterns:    { dx: -190, dy: 140 },
+    rug:         { dx: 10,   dy: 175 },
+    table:       { dx: 70,   dy: 165 },
+    hammock:     { dx: -150, dy: 175 },
+    garden:      { dx: 130,  dy: 175 },
+    flags:       { dx: 30,   dy: -60 },
+    firepitRing: { dx: 0,    dy: 130 }, // same spot as campfire: a ring built around the existing fire
+    path:        { dx: 0,    dy: 60 },
+    lights:      { dx: 130,  dy: -55 },
+    fullCamp:    { dx: 0,    dy: -100 },
+  };
+  const DECOR_DRAW = {
+    rocks(ctx, x, y) {
+      ctx.fillStyle = '#8a8a8f';
+      for (const [ox, oy, r] of [[-10, 0, 14], [8, -4, 11], [0, 8, 9]]) {
+        ctx.beginPath(); ctx.arc(x + ox, y + oy, r, 0, Math.PI * 2); ctx.fill();
+      }
+    },
+    nest(ctx, x, y) {
+      ctx.strokeStyle = '#a9793f'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2;
+        ctx.beginPath(); ctx.moveTo(x - Math.cos(a) * 16, y - Math.sin(a) * 8);
+        ctx.lineTo(x + Math.cos(a) * 16, y + Math.sin(a) * 8); ctx.stroke();
+      }
+    },
+    bed(ctx, x, y) {
+      ctx.fillStyle = '#8a6a3f'; ctx.fillRect(x - 26, y - 14, 52, 16); // driftwood frame
+      ctx.fillStyle = '#e8ded0'; ctx.fillRect(x - 22, y - 20, 44, 10); // blanket
+    },
+    campfire(ctx, x, y) {
+      ctx.fillStyle = '#5a4632';
+      for (const a of [0, 1, 2, 3]) ctx.fillRect(x - 12 + a * 8, y - 3, 3, 6);
+      ctx.fillStyle = '#ff9a3d';
+      ctx.beginPath(); ctx.moveTo(x, y - 22); ctx.quadraticCurveTo(x + 9, y - 8, x, y); ctx.quadraticCurveTo(x - 9, y - 8, x, y - 22); ctx.fill();
+      ctx.fillStyle = '#ffd27a';
+      ctx.beginPath(); ctx.moveTo(x, y - 14); ctx.quadraticCurveTo(x + 5, y - 6, x, y); ctx.quadraticCurveTo(x - 5, y - 6, x, y - 14); ctx.fill();
+    },
+    hutFrame(ctx, x, y) {
+      ctx.strokeStyle = '#8a6a3f'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(x - 30, y); ctx.lineTo(x, y - 46); ctx.lineTo(x + 30, y); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x - 15, y); ctx.lineTo(x - 15, y - 23); ctx.moveTo(x + 15, y); ctx.lineTo(x + 15, y - 23); ctx.stroke();
+    },
+    hutComplete(ctx, x, y) {
+      ctx.fillStyle = '#c9a86a'; ctx.beginPath(); ctx.moveTo(x - 34, y); ctx.lineTo(x, y - 50); ctx.lineTo(x + 34, y); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#8a6a3f'; ctx.fillRect(x - 28, y - 28, 56, 28);
+      ctx.fillStyle = '#4a3624'; ctx.fillRect(x - 8, y - 18, 16, 18); // doorway
+    },
+    cabin(ctx, x, y) {
+      ctx.fillStyle = '#9a7a4a'; ctx.beginPath(); ctx.moveTo(x - 38, y); ctx.lineTo(x, y - 56); ctx.lineTo(x + 38, y); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#6b4e2f'; ctx.fillRect(x - 32, y - 34, 64, 34);
+      ctx.fillStyle = '#4a3624'; ctx.fillRect(x - 8, y - 20, 16, 20); // doorway
+      ctx.fillStyle = '#cfe6f0'; ctx.fillRect(x - 24, y - 24, 10, 10); ctx.fillRect(x + 14, y - 24, 10, 10); // windows
+    },
+    swimFins(ctx, x, y) {
+      ctx.strokeStyle = '#7a5a34'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x - 20, y); ctx.lineTo(x + 20, y); ctx.stroke();
+      ctx.fillStyle = '#3a8fb0';
+      for (const ox of [-14, -2, 10]) { ctx.beginPath(); ctx.ellipse(x + ox, y - 12, 6, 12, 0, 0, Math.PI * 2); ctx.fill(); }
+    },
+    torches(ctx, x, y) {
+      const draw1 = ox => {
+        ctx.strokeStyle = '#6b4423'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(x + ox, y); ctx.lineTo(x + ox, y - 30); ctx.stroke();
+        ctx.fillStyle = '#ffb14d'; ctx.beginPath(); ctx.arc(x + ox, y - 34, 7, 0, Math.PI * 2); ctx.fill();
+      };
+      draw1(0); draw1(360); // left + right of the path (DECOR_LAYOUT.torches.dx is the left torch's x)
+    },
+    books(ctx, x, y) {
+      ctx.fillStyle = '#8a6a3f'; ctx.fillRect(x - 22, y - 26, 44, 26); // shelf
+      const colors = ['#c0524a', '#4a7a9a', '#e0a83f', '#5a9a6a'];
+      colors.forEach((c, i) => { ctx.fillStyle = c; ctx.fillRect(x - 18 + i * 10, y - 22, 8, 18); });
+    },
+    porch(ctx, x, y) {
+      ctx.fillStyle = '#7a5a34';
+      ctx.fillRect(x - 30, y - 30, 4, 30); ctx.fillRect(x + 26, y - 30, 4, 30);
+      ctx.fillRect(x - 32, y - 32, 66, 6); // roof beam
+    },
+    lanterns(ctx, x, y) {
+      const draw1 = ox => {
+        ctx.strokeStyle = '#5a4632'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x + ox, y - 30); ctx.lineTo(x + ox, y - 14); ctx.stroke();
+        ctx.fillStyle = '#ffd27a'; ctx.beginPath(); ctx.roundRect(x + ox - 6, y - 14, 12, 14, 3); ctx.fill();
+      };
+      draw1(0); draw1(30);
+    },
+    rug(ctx, x, y) {
+      ctx.fillStyle = '#c0524a';
+      ctx.beginPath(); ctx.ellipse(x, y, 34, 14, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#e8ded0'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.ellipse(x, y, 24, 9, 0, 0, Math.PI * 2); ctx.stroke();
+    },
+    table(ctx, x, y) {
+      ctx.fillStyle = '#8a6a3f'; ctx.beginPath(); ctx.ellipse(x, y - 14, 20, 8, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#6b4e2f'; ctx.fillRect(x - 16, y - 10, 4, 12); ctx.fillRect(x + 12, y - 10, 4, 12);
+    },
+    hammock(ctx, x, y) {
+      ctx.fillStyle = '#7a5a34'; ctx.fillRect(x - 28, y - 34, 4, 34); ctx.fillRect(x + 24, y - 34, 4, 34);
+      ctx.strokeStyle = '#e0a83f'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(x - 26, y - 24); ctx.quadraticCurveTo(x, y - 4, x + 26, y - 24); ctx.stroke();
+    },
+    garden(ctx, x, y) {
+      const colors = ['#c0524a', '#e0a83f', '#e06a9a'];
+      ctx.fillStyle = '#3f7a3f'; ctx.beginPath(); ctx.ellipse(x, y, 28, 12, 0, 0, Math.PI * 2); ctx.fill();
+      for (let i = 0; i < 6; i++) {
+        ctx.fillStyle = colors[i % colors.length];
+        ctx.beginPath(); ctx.arc(x - 20 + i * 8, y - 4 + (i % 2) * 6, 3.5, 0, Math.PI * 2); ctx.fill();
+      }
+    },
+    flags(ctx, x, y) {
+      ctx.strokeStyle = '#8a6a3f'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x - 60, y); ctx.lineTo(x + 60, y); ctx.stroke();
+      const colors = ['#c0524a', '#4a7a9a', '#e0a83f', '#5a9a6a', '#e06a9a'];
+      colors.forEach((c, i) => {
+        const fx = x - 50 + i * 25;
+        ctx.fillStyle = c;
+        ctx.beginPath(); ctx.moveTo(fx, y); ctx.lineTo(fx + 10, y + 10); ctx.lineTo(fx - 10, y + 10); ctx.closePath(); ctx.fill();
+      });
+    },
+    firepitRing(ctx, x, y) {
+      ctx.strokeStyle = '#6a6a6a'; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(x, y, 24, 0, Math.PI * 2); ctx.stroke();
+    },
+    path(ctx, x, y) {
+      ctx.fillStyle = '#c9bfa8';
+      for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.ellipse(x + i * 20, y + (i % 2) * 6, 9, 6, 0, 0, Math.PI * 2); ctx.fill(); }
+    },
+    lights(ctx, x, y) {
+      ctx.strokeStyle = '#5a4632'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x - 40, y); ctx.lineTo(x + 40, y); ctx.stroke();
+      ctx.fillStyle = '#ffe89a';
+      for (let i = -1; i <= 1; i++) { ctx.beginPath(); ctx.arc(x + i * 26, y + 4, 4, 0, Math.PI * 2); ctx.fill(); }
+    },
+    fullCamp(ctx, x, y) {
+      ctx.strokeStyle = '#7a5a34'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y - 40); ctx.stroke();
+      ctx.fillStyle = '#e0a83f';
+      ctx.beginPath(); ctx.moveTo(x, y - 40); ctx.lineTo(x + 24, y - 32); ctx.lineTo(x, y - 24); ctx.closePath(); ctx.fill();
+    },
+  };
+  // Rebuilt only when homeLevel changes (cheap array build, cached the rest of the time).
+  let homeDecorList = [];
+  let homeDecorAtLevel = -1;
+  function rebuildHomeDecorIfNeeded() {
+    const lvl = window.Progression.state.homeLevel;
+    if (lvl === homeDecorAtLevel) return;
+    homeDecorAtLevel = lvl;
+    const levels = window.Progression.getHomeLevels();
+    const ids = [];
+    let hutStage = null;
+    for (let i = 0; i <= lvl && i < levels.length; i++) {
+      const id = levels[i].decor;
+      if (!id) continue;
+      if (HUT_STAGE_IDS.includes(id)) hutStage = id; // latest hut stage wins, replaces earlier ones
+      else if (!ids.includes(id)) ids.push(id);
+    }
+    if (hutStage) ids.push(hutStage);
+    homeDecorList = ids.filter(id => DECOR_LAYOUT[id] && DECOR_DRAW[id]).map(id => {
+      const { dx, dy } = DECOR_LAYOUT[id];
+      return { x: HOME.x + dx, y: HOME.y + dy, type: 'custom', draw: DECOR_DRAW[id], collide: false };
+    });
   }
 
   // ---- Collectible pickups: coins (currency), coconuts (food), and shells (trophies) — all placed
@@ -1170,6 +1359,29 @@
     const hasInput = dir.x !== 0 || dir.y !== 0;
     const rate = (hasInput ? ACCEL : DECEL) * dt;
 
+    // Sleep skill: stand still near the bed on the home island and the turtle lies down on its own
+    // (wakeUp() above handles the reverse — any input). Heals hearts only, not hunger. Safe by
+    // construction since it only ever triggers on the home island, same as the hunger drain/bird
+    // exemption there.
+    if (state === 'normal' && atHome && window.Progression.hasSkill('sleep')) {
+      const sleepCfg = window.Progression.getSleepConfig();
+      const bed = DECOR_LAYOUT.bed;
+      const bedX = HOME.x + bed.dx, bedY = HOME.y + bed.dy;
+      const nearBed = Math.hypot(turtle.x - bedX, turtle.y - bedY) < sleepCfg.triggerRadius;
+      if (nearBed && !hasInput) {
+        sleepIdleTimer += dt;
+        if (sleepIdleTimer >= sleepCfg.idleSecondsToTrigger) {
+          turtle.x = bedX; turtle.y = bedY; turtle.vx = 0; turtle.vy = 0;
+          state = 'sleeping'; stateTime = 0; sleepIdleTimer = 0;
+        }
+      } else {
+        sleepIdleTimer = 0;
+      }
+    } else if (state !== 'sleeping') {
+      sleepIdleTimer = 0;
+    }
+    if (state === 'sleeping') window.Progression.updateSleep(dt);
+
     // Move velocity toward target by at most `rate` (smooth accel/decel, any angle).
     const dvx = tvx - turtle.vx, dvy = tvy - turtle.vy;
     const dl = Math.hypot(dvx, dvy);
@@ -1341,9 +1553,10 @@
 
     // Cull scenery to the visible world rect (plus a small margin) so a big world with lots of
     // trees still draws only a couple dozen-to-hundred objects per frame.
+    rebuildHomeDecorIfNeeded();
     const vw = viewW / ZOOM, vh = viewH / ZOOM, margin = 80;
-    const visible = scenery.filter(s =>
-      s.x > camX - margin && s.x < camX + vw + margin && s.y > camY - margin && s.y < camY + vh + margin);
+    const inView = s => s.x > camX - margin && s.x < camX + vw + margin && s.y > camY - margin && s.y < camY + vh + margin;
+    const visible = scenery.filter(inView).concat(homeDecorList.filter(inView));
     drawSceneryWithTurtle(visible);
     if (DEBUG_HITBOXES) drawDebugHitboxes(visible);
     ctx.restore();
