@@ -1173,8 +1173,74 @@
     if (hutStage) ids.push(hutStage);
     homeDecorList = ids.filter(id => DECOR_LAYOUT[id] && DECOR_DRAW[id]).map(id => {
       const { dx, dy } = DECOR_LAYOUT[id];
-      return { x: HOME.x + dx, y: HOME.y + dy, type: 'custom', draw: DECOR_DRAW[id], collide: false };
+      return { id, x: HOME.x + dx, y: HOME.y + dy, type: 'custom', draw: DECOR_DRAW[id], collide: false };
     });
+  }
+
+  // ---- Day/Night toggle (L7 skill, see progression.js CONFIG/state.isNight) ----
+  // nightAmount eases toward the target over NIGHT_FADE_SPEED (full fade takes ~1/NIGHT_FADE_SPEED
+  // seconds) so flipping the toggle fades the sky/glow rather than cutting hard, per the spec.
+  let nightAmount = 0;
+  const NIGHT_FADE_SPEED = 0.5; // fraction of the fade per second
+  function updateNightFade(dt) {
+    const target = window.Progression.state.isNight ? 1 : 0;
+    if (nightAmount < target) nightAmount = Math.min(target, nightAmount + NIGHT_FADE_SPEED * dt);
+    else if (nightAmount > target) nightAmount = Math.max(target, nightAmount - NIGHT_FADE_SPEED * dt);
+  }
+
+  // Fixed-fraction star field (not absolute px) so it holds up across a resize; twinkle is driven
+  // by gameTime so it needs no per-star update step.
+  const NIGHT_STARS = Array.from({ length: 70 }, () => ({
+    fx: rand(), fy: rand() * 0.55, r: 1 + rand() * 1.4, seed: rand() * 10, speed: 1 + rand() * 2,
+  }));
+  function drawNightSky() {
+    if (nightAmount <= 0.001) return;
+    ctx.save();
+    ctx.fillStyle = `rgba(6, 14, 30, ${0.55 * nightAmount})`;
+    ctx.fillRect(0, 0, viewW, viewH);
+    ctx.fillStyle = '#fff';
+    for (const st of NIGHT_STARS) {
+      const twinkle = 0.6 + 0.4 * Math.sin(gameTime * st.speed + st.seed);
+      ctx.globalAlpha = nightAmount * twinkle;
+      ctx.beginPath(); ctx.arc(st.fx * viewW, st.fy * viewH, st.r, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = nightAmount;
+    const mx = viewW * 0.84, my = viewH * 0.16, mr = 24;
+    ctx.fillStyle = '#f0ecd8';
+    ctx.beginPath(); ctx.arc(mx, my, mr, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(6, 14, 30, 0.45)';
+    ctx.beginPath(); ctx.arc(mx - 8, my - 4, mr * 0.82, 0, Math.PI * 2); ctx.fill(); // crescent shading
+    ctx.restore();
+  }
+
+  // Warm glow halos on the home island's fire/light decor once it's dark — drawn in world space so
+  // they sit with the decor itself. Offsets mirror each DECOR_DRAW fn's own internal ox/oy so the
+  // glow lands on the actual flame/bulb, not the decor's base anchor point.
+  const NIGHT_GLOW_SPOTS = {
+    campfire:    [{ dx: 0, dy: -14, r: 55 }],
+    hutFrame:    [], hutComplete: [], cabin: [], // no light source of their own yet
+    torches:     [{ dx: 0, dy: -34, r: 44 }, { dx: 360, dy: -34, r: 44 }],
+    lanterns:    [{ dx: 0, dy: -14, r: 30 }, { dx: 30, dy: -14, r: 30 }],
+    firepitRing: [{ dx: 0, dy: -4, r: 55 }],
+    lights:      [{ dx: -26, dy: 4, r: 24 }, { dx: 0, dy: 4, r: 24 }, { dx: 26, dy: 4, r: 24 }],
+  };
+  function drawNightGlows() {
+    if (nightAmount <= 0.001) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const d of homeDecorList) {
+      const spots = NIGHT_GLOW_SPOTS[d.id];
+      if (!spots) continue;
+      for (const sp of spots) {
+        const gx = d.x + sp.dx, gy = d.y + sp.dy;
+        const grad = ctx.createRadialGradient(gx, gy, 0, gx, gy, sp.r);
+        grad.addColorStop(0, `rgba(255, 190, 110, ${0.55 * nightAmount})`);
+        grad.addColorStop(1, 'rgba(255, 190, 110, 0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath(); ctx.arc(gx, gy, sp.r, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    ctx.restore();
   }
 
   // ---- Collectible pickups: coins (currency), coconuts (food), and shells (trophies) — all placed
@@ -1344,6 +1410,7 @@
   function update(dt) {
     stateTime += dt;
     gameTime += dt;
+    updateNightFade(dt);
     coinPickups.update();
     coconutPickups.update();
     shellPickups.update();
@@ -1354,7 +1421,10 @@
 
     const dir = state === 'normal' ? getDirection() : { x: 0, y: 0 };
     const inWater = isWater(turtle.x, turtle.y);
-    const speedMult = (inWater ? WATER_SPEED_MULT : LAND_SPEED_MULT) * hungerSpeedMult;
+    // Swim Speed only boosts water movement, Move Speed only boosts land movement (see
+    // progression.js CONFIG.speed) — domains never overlap, so nothing to stack.
+    const skillSpeedMult = inWater ? window.Progression.swimSpeedMultiplier() : window.Progression.moveSpeedMultiplier();
+    const speedMult = (inWater ? WATER_SPEED_MULT : LAND_SPEED_MULT) * skillSpeedMult * hungerSpeedMult;
     const tvx = dir.x * MAX_SPEED * speedMult, tvy = dir.y * MAX_SPEED * speedMult;
     const hasInput = dir.x !== 0 || dir.y !== 0;
     const rate = (hasInput ? ACCEL : DECEL) * dt;
@@ -1514,7 +1584,50 @@
     if (state === 'normal' && moveMode === 'walk' && f === 3) ctx.scale(-1, 1); // mirror the last walk frame so the head swings left (sheet only has right)
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(sprite, f * fw, row * fh, fw, fh, -dw / 2, -SPRITE_H / 2, dw, SPRITE_H);
-    ctx.restore();
+    drawEquippedCosmetics(ctx, dw); // Turtle Shop: color tint + hat/clothes/accessory, same local
+    ctx.restore();                  // space as the sprite draw above so it stays attached in every state
+  }
+
+  // Turtle Shop rendering: color tint composites onto just the sprite's opaque pixels, then
+  // hat/clothes/accessory are drawn as extra shapes on top — both driven by progression.js's owned
+  // item data (this is only the "how to draw it" half; see progression.js COSMETIC_DRAW/COLOR_TINTS
+  // for what each item looks like and how equip/unequip/buy work).
+  function drawEquippedCosmetics(ctx, dw, overrideEquipped) {
+    const tint = window.Progression.getEquippedColorTint(overrideEquipped);
+    if (tint) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'source-atop';
+      ctx.fillStyle = tint;
+      ctx.fillRect(-dw / 2, -SPRITE_H / 2, dw, SPRITE_H);
+      ctx.restore();
+    }
+    window.Progression.drawEquippedCosmetics(ctx, dw, SPRITE_H, overrideEquipped);
+  }
+
+  // Shop-panel live preview (progression.js calls this by canvas element, no world state involved):
+  // draws the idle walk frame at a fixed pose so the player can see exactly what's currently
+  // equipped without needing to leave the menu.
+  function renderCosmeticPreview(canvasEl) {
+    if (!sprite.complete || !sprite.naturalWidth) { requestAnimationFrame(() => renderCosmeticPreview(canvasEl)); return; }
+    const pctx = canvasEl.getContext('2d');
+    const w = canvasEl.width, h = canvasEl.height;
+    pctx.clearRect(0, 0, w, h);
+    const fw = sprite.naturalWidth / SHEET_COLS, fh = sprite.naturalHeight / SHEET_ROWS;
+    const spriteH = h * 0.8, dw = spriteH * fw / fh;
+    pctx.save();
+    pctx.translate(w / 2, h / 2 + spriteH * 0.05);
+    pctx.imageSmoothingQuality = 'high';
+    pctx.drawImage(sprite, 0, 0, fw, fh, -dw / 2, -spriteH / 2, dw, spriteH); // row 0 col 0: idle frame
+    const tint = window.Progression.getEquippedColorTint();
+    if (tint) {
+      pctx.save();
+      pctx.globalCompositeOperation = 'source-atop';
+      pctx.fillStyle = tint;
+      pctx.fillRect(-dw / 2, -spriteH / 2, dw, spriteH);
+      pctx.restore();
+    }
+    window.Progression.drawEquippedCosmetics(pctx, dw, spriteH);
+    pctx.restore();
   }
 
   function drawJoystick() {
@@ -1558,9 +1671,11 @@
     const inView = s => s.x > camX - margin && s.x < camX + vw + margin && s.y > camY - margin && s.y < camY + vh + margin;
     const visible = scenery.filter(inView).concat(homeDecorList.filter(inView));
     drawSceneryWithTurtle(visible);
+    drawNightGlows(); // world space, on top of the decor it's lighting
     if (DEBUG_HITBOXES) drawDebugHitboxes(visible);
     ctx.restore();
 
+    drawNightSky(); // screen space, under the HUD/joystick so they stay fully readable
     drawJoystick(); // screen space
     window.Progression.drawHUD(ctx); // screen space
   }
@@ -1599,5 +1714,5 @@
     last = performance.now();
     requestAnimationFrame(frame);
   }
-  window.TurtleGame = { start };
+  window.TurtleGame = { start, renderCosmeticPreview };
 })();

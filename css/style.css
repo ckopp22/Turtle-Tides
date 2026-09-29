@@ -136,3 +136,72 @@ html, body {
   color: #8a8064;
   cursor: default;
 }
+
+/* Shop button (progression.js) — shown only at home, once the skill unlocks (home level 5+);
+   stacked under the Upgrades button. */
+#tt-shop-btn {
+  display: none;
+  position: fixed;
+  right: 14px;
+  top: 64px;
+  z-index: 9;
+  font-size: 15px;
+  font-weight: 700;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 2px solid #7a5a1e;
+  background: #ffb347;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+/* Day/Night toggle button (game.js) — shown everywhere, not just at home, once the skill unlocks
+   (home level 7+); stacked under the Shop button so none of the three ever overlap. */
+#tt-daynight-btn {
+  display: none;
+  position: fixed;
+  right: 14px;
+  top: 114px;
+  z-index: 9;
+  font-size: 15px;
+  font-weight: 700;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 2px solid #7a5a1e;
+  background: #ffb347;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+/* Turtle Shop panel (progression.js) */
+.tt-shop-preview {
+  display: block;
+  margin: 0 auto 10px;
+  background: #cfe9f5;
+  border-radius: 10px;
+  border: 2px solid #cbb87c;
+}
+.tt-shop-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.tt-shop-tab {
+  flex: 1 1 auto;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px 6px;
+  border-radius: 8px;
+  border: 2px solid #cbb87c;
+  background: #fdf6e3;
+  cursor: pointer;
+}
+.tt-shop-tab.active {
+  background: #ffb347;
+  border-color: #7a5a1e;
+}
+.tt-shop-items {
+  max-height: 40vh;
+  overflow-y: auto;
+}

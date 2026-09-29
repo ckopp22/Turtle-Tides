@@ -62,6 +62,37 @@
         { cost: 1400, desc: 'the full camp, home at last',              decor: 'fullCamp',      skill: null },
       ],
     },
+    // Turtle Shop (L5 skill): buy with banked coins, equip freely once owned. One equipped item
+    // per category ('color' | 'hat' | 'clothes' | 'accessory'); 'color_default' is always owned
+    // and is the baseline equipped color (no "none" state for that category — every turtle has
+    // *some* color). Add a new item by adding a row here plus a matching entry in COSMETIC_DRAW/
+    // COLOR_TINTS below — nothing else needs to change.
+    // TODO: every item is a canvas-shape placeholder — real per-item art still needed for all 11.
+    shop: {
+      items: [
+        { id: 'color_default',       category: 'color',     label: 'Natural Shell', cost: 0 },
+        { id: 'color_coral',         category: 'color',     label: 'Coral Shell',   cost: 60 },
+        { id: 'color_indigo',        category: 'color',     label: 'Indigo Shell',  cost: 60 },
+        { id: 'color_gold',          category: 'color',     label: 'Golden Shell',  cost: 90 },
+        { id: 'hat_straw',           category: 'hat',       label: 'Straw Hat',     cost: 40 },
+        { id: 'hat_sailor',          category: 'hat',       label: 'Sailor Cap',    cost: 55 },
+        { id: 'hat_flower',          category: 'hat',       label: 'Flower Crown',  cost: 70 },
+        { id: 'clothes_bandana',     category: 'clothes',   label: 'Bandana',       cost: 35 },
+        { id: 'clothes_vest',        category: 'clothes',   label: 'Life Vest',     cost: 65 },
+        { id: 'accessory_sunglasses',category: 'accessory', label: 'Sunglasses',    cost: 30 },
+        { id: 'accessory_bowtie',    category: 'accessory', label: 'Bow Tie',       cost: 25 },
+        { id: 'accessory_scarf',     category: 'accessory', label: 'Scarf',         cost: 45 },
+      ],
+    },
+    speed: {
+      // Swim Speed multiplies water movement only; Move Speed multiplies land movement only (see
+      // game.js's WATER_SPEED_MULT/LAND_SPEED_MULT). They never apply at the same time — the
+      // turtle is either on land or in water, never both — so there's no compounding to worry
+      // about. Within one domain, tier II replaces tier I rather than multiplying on top of it
+      // (index 1 is the full boost once both are unlocked, not I*II).
+      swimSpeedTiers: [1.2, 1.4],  // [Swim Speed I, Swim Speed II]
+      moveSpeedTiers: [1.2, 1.4],  // [Move Speed I, Move Speed II]
+    },
     sleep: {
       idleSecondsToTrigger: 1.5, // stand still near the bed this long before the turtle lies down
       triggerRadius: 55,         // world px from the bed decor that counts as "near" it
@@ -97,6 +128,117 @@
   }
   function skillAtLevel(level) { return SKILLS.find(s => s.unlockLevel === level) || null; }
 
+  // ---- Turtle Shop (L5 skill) ----
+  const SHOP_CATEGORIES = ['color', 'hat', 'clothes', 'accessory'];
+  function shopItem(id) { return CONFIG.shop.items.find(i => i.id === id) || null; }
+  function shopItemsByCategory(category) { return CONFIG.shop.items.filter(i => i.category === category); }
+  function ownsCosmetic(id) { return state.cosmetics.owned.includes(id); }
+  function equippedIn(category) { return state.cosmetics.equipped[category] || null; }
+  function buyCosmetic(id) {
+    const item = shopItem(id);
+    if (!item || ownsCosmetic(id) || state.banked.coins < item.cost) return false;
+    state.banked.coins -= item.cost;
+    state.cosmetics.owned.push(id);
+    persist();
+    return true;
+  }
+  function equipCosmetic(id) {
+    const item = shopItem(id);
+    if (!item || !ownsCosmetic(id)) return false;
+    state.cosmetics.equipped[item.category] = id;
+    persist();
+    return true;
+  }
+  // Every category but 'color' can go back to "nothing equipped" — a turtle always has some color.
+  function unequipCategory(category) {
+    if (category === 'color') return false;
+    state.cosmetics.equipped[category] = null;
+    persist();
+    return true;
+  }
+
+  // ---- Cosmetic rendering: color tint composites onto the sprite itself (game.js applies it via
+  // getEquippedColorTint), hat/clothes/accessory are drawn as extra shapes in the turtle's own
+  // local space (game.js calls drawEquippedCosmetics from inside drawTurtle(), after the sprite
+  // draw and any mirror flip, so cosmetics automatically stay attached through every state/frame —
+  // sleeping, shell, walking, swimming — without each one needing its own positioning logic).
+  const COLOR_TINTS = {
+    color_coral: 'rgba(224, 102, 74, 0.4)',
+    color_indigo: 'rgba(90, 78, 203, 0.4)',
+    color_gold: 'rgba(232, 194, 63, 0.4)',
+  };
+  function getEquippedColorTint(overrideEquipped) {
+    const id = (overrideEquipped || state.cosmetics.equipped).color;
+    return COLOR_TINTS[id] || null; // null/'color_default' -> no tint, natural sprite color
+  }
+  // dw/spriteH = the sprite's drawn width/height in the caller's local space (already translated +
+  // rotated to the turtle/preview center at (0,0), origin at the sprite's own center).
+  const COSMETIC_DRAW = {
+    hat_straw(ctx, dw, h) {
+      const y = -h * 0.42;
+      ctx.fillStyle = '#e0c26a';
+      ctx.beginPath(); ctx.ellipse(0, y, dw * 0.34, dw * 0.12, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#c9a84f';
+      ctx.beginPath(); ctx.ellipse(0, y - dw * 0.1, dw * 0.18, dw * 0.14, 0, Math.PI, 0); ctx.fill();
+    },
+    hat_sailor(ctx, dw, h) {
+      const y = -h * 0.4;
+      ctx.fillStyle = '#2f5f8a';
+      ctx.beginPath(); ctx.arc(0, y, dw * 0.2, Math.PI, 0); ctx.fill();
+      ctx.fillStyle = '#1f4463'; ctx.fillRect(-dw * 0.22, y, dw * 0.44, dw * 0.06);
+    },
+    hat_flower(ctx, dw, h) {
+      const y = -h * 0.38, r = dw * 0.24;
+      const colors = ['#e0668a', '#e8c23f', '#7ab0e0', '#e0664a', '#8fd66b'];
+      for (let i = 0; i < colors.length; i++) {
+        const a = (i / colors.length) * Math.PI * 2;
+        ctx.fillStyle = colors[i];
+        ctx.beginPath(); ctx.arc(Math.cos(a) * r, y + Math.sin(a) * r * 0.5, dw * 0.06, 0, Math.PI * 2); ctx.fill();
+      }
+    },
+    clothes_bandana(ctx, dw, h) {
+      const y = -h * 0.14;
+      ctx.fillStyle = '#c0524a';
+      ctx.beginPath(); ctx.moveTo(-dw * 0.2, y); ctx.lineTo(dw * 0.2, y); ctx.lineTo(0, y + dw * 0.22); ctx.closePath(); ctx.fill();
+    },
+    clothes_vest(ctx, dw, h) {
+      ctx.fillStyle = '#e0a83f';
+      ctx.beginPath(); ctx.roundRect(-dw * 0.22, -h * 0.06, dw * 0.44, h * 0.28, 6); ctx.fill();
+      ctx.strokeStyle = '#b8842a'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(0, -h * 0.06); ctx.lineTo(0, h * 0.22); ctx.stroke();
+    },
+    accessory_sunglasses(ctx, dw, h) {
+      const y = -h * 0.3;
+      ctx.fillStyle = '#1a1a1a';
+      ctx.beginPath(); ctx.ellipse(-dw * 0.1, y, dw * 0.09, dw * 0.06, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(dw * 0.1, y, dw * 0.09, dw * 0.06, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#1a1a1a'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(-dw * 0.02, y); ctx.lineTo(dw * 0.02, y); ctx.stroke();
+    },
+    accessory_bowtie(ctx, dw, h) {
+      const y = -h * 0.1, s = dw * 0.09;
+      ctx.fillStyle = '#c0524a';
+      ctx.beginPath(); ctx.moveTo(-s, y - s); ctx.lineTo(-s, y + s); ctx.lineTo(0, y); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(s, y - s); ctx.lineTo(s, y + s); ctx.lineTo(0, y); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#8a3a34'; ctx.beginPath(); ctx.arc(0, y, s * 0.4, 0, Math.PI * 2); ctx.fill();
+    },
+    accessory_scarf(ctx, dw, h) {
+      const y = -h * 0.12;
+      ctx.fillStyle = '#4a7a9a';
+      ctx.beginPath(); ctx.ellipse(0, y, dw * 0.24, dw * 0.08, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillRect(dw * 0.1, y, dw * 0.06, h * 0.16); // trailing end
+    },
+  };
+  function drawEquippedCosmetics(ctx, dw, spriteH, overrideEquipped) {
+    const equipped = overrideEquipped || state.cosmetics.equipped;
+    for (const cat of SHOP_CATEGORIES) {
+      if (cat === 'color') continue; // handled by getEquippedColorTint, not a drawn shape
+      const id = equipped[cat];
+      const draw = id && COSMETIC_DRAW[id];
+      if (draw) draw(ctx, dw, spriteH);
+    }
+  }
+
   const state = {
     hearts: CONFIG.hearts.startMax,
     heartsLevel: 0,
@@ -110,6 +252,11 @@
     hungerZeroTimer: 0,  // seconds spent at 0 hunger (grace + repeat heart-loss ticking)
     hungerHeartTicks: 0,
     heartRecoverAccum: 0, // fractional heart progress while sleeping (see updateSleep)
+    isNight: false, // Day/Night toggle (L7 skill) — game.js eases its sky render toward this target
+    cosmetics: {
+      owned: ['color_default'],
+      equipped: { color: 'color_default', hat: null, clothes: null, accessory: null },
+    },
     invulnTimer: 0,
     hullFullFlash: 0,
     lastLostMessage: null, // { text, timer } shown briefly after a death
@@ -186,6 +333,7 @@
   // (safe on the home island, same as birds never spawning there). Returns a speed multiplier
   // game.js multiplies into its own water/land speed calc.
   function update(dt, awayFromHome) {
+    ensureDayNightButton();
     if (state.invulnTimer > 0) state.invulnTimer = Math.max(0, state.invulnTimer - dt);
     if (state.hullFullFlash > 0) state.hullFullFlash = Math.max(0, state.hullFullFlash - dt);
     if (state.lastLostMessage) {
@@ -228,6 +376,26 @@
     }
   }
   function getSleepConfig() { return CONFIG.sleep; }
+
+  // ---- Day/Night toggle (L7 skill) — game.js owns the actual fade/render, this just holds and
+  // persists the player's last chosen setting per save slot. ----
+  function toggleDayNight() {
+    if (!hasSkill('dayNight')) return;
+    state.isNight = !state.isNight;
+    persist();
+  }
+
+  // ---- Speed skills (game.js multiplies these into its water/land speed calc each frame) ----
+  function swimSpeedMultiplier() {
+    if (hasSkill('swimSpeed2')) return CONFIG.speed.swimSpeedTiers[1];
+    if (hasSkill('swimSpeed1')) return CONFIG.speed.swimSpeedTiers[0];
+    return 1;
+  }
+  function moveSpeedMultiplier() {
+    if (hasSkill('moveSpeed2')) return CONFIG.speed.moveSpeedTiers[1];
+    if (hasSkill('moveSpeed1')) return CONFIG.speed.moveSpeedTiers[0];
+    return 1;
+  }
 
   // ---- Upgrades ----
   const TRACKS = {
@@ -286,6 +454,22 @@
       shells: data.banked?.shells || 0,
     };
     state.shellCollection = Array.isArray(data.shellCollection) ? data.shellCollection : [];
+    state.isNight = typeof data.isNight === 'boolean' ? data.isNight : false; // missing on old saves -> default day
+    // Cosmetics: old saves have no `cosmetics` field at all — default to just the free color owned/
+    // equipped and nothing else. A save with a partial/corrupt object still gets safe defaults per field.
+    const c = data.cosmetics || {};
+    const owned = Array.isArray(c.owned) ? c.owned.filter(id => shopItem(id)) : [];
+    if (!owned.includes('color_default')) owned.push('color_default');
+    const eq = c.equipped || {};
+    state.cosmetics = {
+      owned,
+      equipped: {
+        color: (eq.color && owned.includes(eq.color)) ? eq.color : 'color_default',
+        hat: (eq.hat && owned.includes(eq.hat)) ? eq.hat : null,
+        clothes: (eq.clothes && owned.includes(eq.clothes)) ? eq.clothes : null,
+        accessory: (eq.accessory && owned.includes(eq.accessory)) ? eq.accessory : null,
+      },
+    };
     // Never restore carried items from a save — see loseUnbankedOnClose above.
     state.carried = { coins: 0, coconuts: 0, shells: 0 };
     state.hearts = maxHearts();
@@ -305,6 +489,8 @@
       homeLevel: state.homeLevel,
       banked: { ...state.banked },
       shellCollection: state.shellCollection.slice(),
+      isNight: state.isNight,
+      cosmetics: { owned: state.cosmetics.owned.slice(), equipped: { ...state.cosmetics.equipped } },
     };
   }
   function attachSlot(slotId, existingData) {
@@ -404,7 +590,106 @@
     ensureUpgradeButton();
     upgradeBtn.style.display = visible ? 'block' : 'none';
     if (!visible) closeUpgradePanel();
+    ensureShopButton();
+    if (shopBtn) {
+      shopBtn.style.display = visible ? 'block' : 'none';
+      if (!visible) closeShopPanel();
+    }
   }
+  // Day/Night toggle button — same fixed-position DOM-button pattern as the Upgrades button above,
+  // but shown everywhere (not just at home) once unlocked, since it's a global setting. Ensured
+  // (created once, label kept in sync) from update() below so nothing else has to remember to call it.
+  let dayNightBtn = null;
+  function updateDayNightButtonLabel() {
+    if (dayNightBtn) dayNightBtn.textContent = state.isNight ? '☀️ Day' : '🌙 Night';
+  }
+  function ensureDayNightButton() {
+    if (!hasSkill('dayNight') || dayNightBtn) return;
+    dayNightBtn = document.createElement('button');
+    dayNightBtn.id = 'tt-daynight-btn';
+    dayNightBtn.type = 'button';
+    dayNightBtn.style.display = 'block';
+    dayNightBtn.addEventListener('click', () => { toggleDayNight(); updateDayNightButtonLabel(); });
+    document.body.appendChild(dayNightBtn);
+    updateDayNightButtonLabel();
+  }
+
+  // ---- Turtle Shop menu (L5 skill) — same DOM-overlay pattern as the upgrade panel, shown only
+  // while on the home island (see setHomeButtonVisible above). ----
+  const CATEGORY_LABELS = { color: 'Colors', hat: 'Hats', clothes: 'Clothes', accessory: 'Accessories' };
+  let shopBtn = null, shopPanel = null, shopActiveCategory = 'color';
+  function ensureShopButton() {
+    if (shopBtn || !hasSkill('turtleShop')) return;
+    shopBtn = document.createElement('button');
+    shopBtn.id = 'tt-shop-btn';
+    shopBtn.type = 'button';
+    shopBtn.textContent = 'Shop';
+    shopBtn.addEventListener('click', openShopPanel);
+    document.body.appendChild(shopBtn);
+  }
+  function openShopPanel() {
+    closeShopPanel();
+    const wrap = document.createElement('div');
+    wrap.className = 'tt-name-prompt';
+    wrap.innerHTML = `<div class="tt-name-box tt-upgrade-box tt-shop-box">
+      <h3>Turtle Shop — ${state.banked.coins} coins banked</h3>
+      <canvas class="tt-shop-preview" width="140" height="140"></canvas>
+      <div class="tt-shop-tabs">
+        ${SHOP_CATEGORIES.map(c => `<button type="button" class="tt-shop-tab" data-cat="${c}">${CATEGORY_LABELS[c]}</button>`).join('')}
+      </div>
+      <div class="tt-shop-items"></div>
+      <div class="tt-name-actions"><button type="button" class="tt-cancel tt-shop-close">Close</button></div>
+    </div>`;
+    document.body.appendChild(wrap);
+    shopPanel = wrap;
+    wrap.querySelectorAll('.tt-shop-tab').forEach(btn => {
+      btn.addEventListener('click', () => { shopActiveCategory = btn.dataset.cat; renderShopItems(); });
+    });
+    wrap.querySelector('.tt-shop-close').addEventListener('click', closeShopPanel);
+    renderShopItems();
+    refreshShopPreview();
+  }
+  function renderShopItems() {
+    if (!shopPanel) return;
+    shopPanel.querySelectorAll('.tt-shop-tab').forEach(btn => btn.classList.toggle('active', btn.dataset.cat === shopActiveCategory));
+    const container = shopPanel.querySelector('.tt-shop-items');
+    container.innerHTML = shopItemsByCategory(shopActiveCategory).map(item => {
+      const owned = ownsCosmetic(item.id);
+      const equipped = equippedIn(item.category) === item.id;
+      const isColor = item.category === 'color';
+      let label = `Buy — ${item.cost}`, disabled = state.banked.coins < item.cost;
+      if (owned) { label = equipped ? (isColor ? 'Equipped' : 'Unequip') : 'Equip'; disabled = isColor && equipped; }
+      return `<div class="tt-upgrade-row">
+        <div class="tt-upgrade-info">
+          <strong>${item.label}</strong>
+          <div class="tt-upgrade-detail">${owned ? (equipped ? 'Equipped' : 'Owned') : `${item.cost} coins`}</div>
+        </div>
+        <button type="button" class="tt-upgrade-buy" data-id="${item.id}" ${disabled ? 'disabled' : ''}>${label}</button>
+      </div>`;
+    }).join('');
+    container.querySelectorAll('.tt-upgrade-buy').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const item = shopItem(btn.dataset.id);
+        if (!ownsCosmetic(item.id)) buyCosmetic(item.id);
+        else if (equippedIn(item.category) !== item.id) equipCosmetic(item.id);
+        else if (item.category !== 'color') unequipCategory(item.category); // click again to unequip
+        const h3 = shopPanel.querySelector('h3');
+        if (h3) h3.textContent = `Turtle Shop — ${state.banked.coins} coins banked`;
+        renderShopItems();
+        refreshShopPreview();
+      });
+    });
+  }
+  // The turtle sprite/draw code lives in game.js — it exposes this one hook so the shop's preview
+  // canvas can show the actual equipped combo without duplicating any sprite-rendering logic here.
+  function refreshShopPreview() {
+    const canvas = shopPanel && shopPanel.querySelector('.tt-shop-preview');
+    if (canvas && window.TurtleGame && window.TurtleGame.renderCosmeticPreview) window.TurtleGame.renderCosmeticPreview(canvas);
+  }
+  function closeShopPanel() {
+    if (shopPanel) { shopPanel.remove(); shopPanel = null; }
+  }
+
   function openUpgradePanel() {
     closeUpgradePanel();
     const rows = Object.keys(TRACKS).map(key => {
@@ -440,10 +725,11 @@
 
   window.Progression = {
     tryPickup, bankCarried, takeHit, isInvulnerable, setRespawnHandler,
-    update, updateSleep, getSleepConfig, drawHUD, setHomeButtonVisible,
+    update, updateSleep, getSleepConfig, swimSpeedMultiplier, moveSpeedMultiplier, toggleDayNight, drawHUD, setHomeButtonVisible,
     buyUpgrade, canUpgrade,
     attachSlot, getSaveData, persist,
     SKILLS, hasSkill, skillAtLevel, getHomeLevels,
+    SHOP_CATEGORIES, ownsCosmetic, equippedIn, getEquippedColorTint, drawEquippedCosmetics,
     state, // read-only-by-convention access (e.g. debug/future HUD tweaks)
   };
 })();
