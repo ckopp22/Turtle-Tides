@@ -59,6 +59,7 @@
 
   const TURTLE_RADIUS = 36;          // used for world-edge clamping / camera, not obstacle collision
   const TURTLE_BODY_RADIUS = 22;     // smaller, body-only circle used for obstacle collision (excludes flippers/tail)
+  const KNOCKBACK_DIST = 16;         // one-time shove away from a sandcastle the instant it's knocked down
   const DEBUG_HITBOXES = false;      // true: draw red outlines for every collision hitbox in view
   const MAX_SPEED = 180;   // px/s, base speed before the water/land multiplier below
   const WATER_SPEED_MULT = 1.15; // turtle swims a bit faster than it walks
@@ -832,8 +833,9 @@
       } else if (biome === 'beach' && rand() < 0.14) {
         scenery.push({ x, y, r: 12, cr: 18, type: 'sprite', sprite: 'driftwood_stick', h: 60, collide: true });
       } else if (biome === 'beach' && rand() < 0.06) {
-        // rare beach flourish, straight off the reference sheet
-        scenery.push({ x, y, r: 24, cr: 38, type: 'sprite', sprite: 'sandcastle_big', h: 90, collide: true });
+        // rare beach flourish, straight off the reference sheet. knockable: turtle bumping into it
+        // flattens it into a walkable rubble pile — see resolveObstacleCollisions/drawScenerySprite.
+        scenery.push({ x, y, r: 24, cr: 38, type: 'sprite', sprite: 'sandcastle_big', h: 90, collide: true, knockable: true, knocked: false });
       } else if (biome === 'beach') {
         // none of the beach rolls hit for this spot: leave it bare sand, no tree fallback
       } else if (shoreSignedDist(x, y).d > SHORE_SAND_BAND) {
@@ -895,6 +897,22 @@
   // for a sprite whose bbox hasn't finished loading yet, so nothing is collision-free on first frame.
   function resolveObstacleCollisions() {
     for (const s of nearbyObstacles(turtle.x, turtle.y, TURTLE_RADIUS + 60)) {
+      if (!s.collide) continue; // e.g. a sandcastle already knocked flat — walk right over it
+      if (s.knockable && !s.knocked) {
+        const dx0 = turtle.x - s.x, dy0 = turtle.y - s.y;
+        const dist0 = Math.hypot(dx0, dy0);
+        if (dist0 < TURTLE_BODY_RADIUS + s.cr) {
+          // First bump knocks it down: swap to the rubble pile, stop colliding, and give the turtle
+          // a little kickback + screen shake so the impact reads before it walks on through.
+          s.knocked = true;
+          s.collide = false;
+          const nx = dist0 > 0.001 ? dx0 / dist0 : 0, ny = dist0 > 0.001 ? dy0 / dist0 : -1;
+          turtle.x += nx * KNOCKBACK_DIST;
+          turtle.y += ny * KNOCKBACK_DIST;
+          triggerShake(6, 0.25);
+          continue;
+        }
+      }
       const box = getSpriteWorldBox(s);
       if (!box) {
         if (s.poly) {
@@ -981,6 +999,30 @@
   }
 
   function drawScenerySprite(s) {
+      if (s.knocked) {
+        // Flattened rubble pile left behind once the turtle bumps a sandcastle — a low, uneven sand
+        // mound with a few crumbled block edges, walkable (see resolveObstacleCollisions).
+        ctx.fillStyle = '#d8b988';
+        ctx.beginPath();
+        ctx.ellipse(s.x, s.y, s.r * 1.5, s.r * 0.55, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#c7a475';
+        ctx.beginPath();
+        ctx.ellipse(s.x - s.r * 0.4, s.y - s.r * 0.1, s.r * 0.6, s.r * 0.3, 0.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(s.x + s.r * 0.5, s.y + s.r * 0.05, s.r * 0.5, s.r * 0.25, -0.3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#b08f60';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(s.x - s.r * 0.3, s.y - s.r * 0.2);
+        ctx.lineTo(s.x + s.r * 0.1, s.y - s.r * 0.05);
+        ctx.moveTo(s.x - s.r * 0.6, s.y + s.r * 0.15);
+        ctx.lineTo(s.x - s.r * 0.2, s.y + s.r * 0.25);
+        ctx.stroke();
+        return;
+      }
       if (s.type === 'sprite') {
         const img = SPRITES[s.sprite];
         if (!img.complete || !img.naturalWidth) return; // not loaded yet; skip a frame rather than block
@@ -1403,6 +1445,7 @@
   function update(dt) {
     stateTime += dt;
     gameTime += dt;
+    if (shakeTime > 0) shakeTime = Math.max(0, shakeTime - dt);
     updateNightFade(dt);
     coinPickups.update();
     coconutPickups.update();
@@ -1537,10 +1580,19 @@
   // (If the viewport is ever bigger than the world, e.g. a very wide monitor, center the world instead.)
   const ZOOM = 0.85; // slightly zoomed out so the player sees more of the map around the turtle
   let camX = 0, camY = 0;
+  // Brief screen shake (e.g. knocking down a sandcastle) — shakeTime counts down to 0 in update(dt);
+  // shakeDuration is its starting value, so shakeTime/shakeDuration fades the offset out linearly.
+  let shakeTime = 0, shakeDuration = 0, shakeStrength = 0;
+  function triggerShake(strength, duration) { shakeTime = shakeDuration = duration; shakeStrength = strength; }
   function updateCamera() {
     const vw = viewW / ZOOM, vh = viewH / ZOOM;
     camX = WORLD_W <= vw ? (WORLD_W - vw) / 2 : Math.max(0, Math.min(WORLD_W - vw, turtle.x - vw / 2));
     camY = WORLD_H <= vh ? (WORLD_H - vh) / 2 : Math.max(0, Math.min(WORLD_H - vh, turtle.y - vh / 2));
+    if (shakeTime > 0) {
+      const falloff = shakeTime / shakeDuration;
+      camX += (rand() - 0.5) * shakeStrength * falloff;
+      camY += (rand() - 0.5) * shakeStrength * falloff;
+    }
   }
 
   // Walk cycle = first 4 cells of row 0 in the sheet (8 cols x 5 rows); sprite faces up.
