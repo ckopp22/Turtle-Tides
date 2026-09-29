@@ -798,6 +798,62 @@
       }
   }
 
+  // ---- Water ripples: purely decorative wake while swimming. Spawned in update() (throttled so
+  // movement doesn't spam them), aged/pruned each frame, drawn in render() between the water and
+  // the turtle/scenery pass. Capped at RIPPLE_MAX so a long swim on mobile stays cheap.
+  const RIPPLE_SPAWN_INTERVAL = 0.12; // seconds of movement between spawns
+  const RIPPLE_LIFETIME = 0.7;        // seconds a ripple lives
+  const RIPPLE_START_R = 8, RIPPLE_END_R = 46;
+  const RIPPLE_MAX = 20;
+  const RIPPLE_BEHIND_OFFSET = 20;    // world px behind the turtle (opposite heading) a ripple spawns
+  const ripples = []; // { x, y, age }
+  let rippleSpawnTimer = 0;
+
+  // A slower, randomized second source of ripples while the turtle just floats in place (not
+  // paddling): bigger, slower-expanding rings spawned right at/around the turtle rather than
+  // trailing a wake.
+  const IDLE_RIPPLE_MIN_GAP = 2.2, IDLE_RIPPLE_MAX_GAP = 3.6; // seconds between idle ripples
+  const IDLE_RIPPLE_SCALE = 1.6;    // idle rings grow this much bigger than wake ripples
+  const IDLE_RIPPLE_LIFETIME = 1.6; // idle rings expand/fade slower than wake ripples
+  let idleRippleTimer = IDLE_RIPPLE_MIN_GAP + rand() * (IDLE_RIPPLE_MAX_GAP - IDLE_RIPPLE_MIN_GAP);
+
+  function spawnRipple() {
+    const x = turtle.x - Math.cos(turtle.angle) * RIPPLE_BEHIND_OFFSET;
+    const y = turtle.y - Math.sin(turtle.angle) * RIPPLE_BEHIND_OFFSET;
+    ripples.push({ x, y, age: 0, scale: 1, lifetime: RIPPLE_LIFETIME });
+    if (ripples.length > RIPPLE_MAX) ripples.shift();
+  }
+  function spawnIdleRipple() {
+    const a = rand() * Math.PI * 2, d = rand() * 10;
+    ripples.push({
+      x: turtle.x + Math.cos(a) * d, y: turtle.y + Math.sin(a) * d,
+      age: 0, scale: IDLE_RIPPLE_SCALE, lifetime: IDLE_RIPPLE_LIFETIME,
+    });
+    if (ripples.length > RIPPLE_MAX) ripples.shift();
+  }
+  function updateRipples(dt) {
+    for (let i = ripples.length - 1; i >= 0; i--) {
+      ripples[i].age += dt;
+      if (ripples[i].age >= ripples[i].lifetime) ripples.splice(i, 1);
+    }
+  }
+  function drawRipples() {
+    for (const r of ripples) {
+      const t = r.age / r.lifetime;
+      const radius = (RIPPLE_START_R + (RIPPLE_END_R - RIPPLE_START_R) * t) * r.scale;
+      const alpha = 0.6 * (1 - t);
+      ctx.save();
+      ctx.translate(r.x, r.y);
+      ctx.scale(1, 0.55); // wider than tall: top-down perspective on an expanding ring
+      ctx.beginPath();
+      ctx.arc(0, 0, radius, 0, Math.PI * 2);
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = `rgba(210, 236, 245, ${alpha})`;
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
   // ---- Update ----
   function update(dt) {
     stateTime += dt;
@@ -827,6 +883,29 @@
     const speed = Math.hypot(turtle.vx, turtle.vy);
     if (speed > 5) walkFrame += speed * dt * FRAMES_PER_SPEED;
     else walkFrame = 0;
+
+    // Wake ripples while actually swimming; slower, occasional ripples while just floating in
+    // place on water. Land gets neither.
+    if (inWater && speed > 5) {
+      rippleSpawnTimer += dt;
+      if (rippleSpawnTimer >= RIPPLE_SPAWN_INTERVAL) { rippleSpawnTimer = 0; spawnRipple(); }
+      idleRippleTimer = IDLE_RIPPLE_MIN_GAP + rand() * (IDLE_RIPPLE_MAX_GAP - IDLE_RIPPLE_MIN_GAP);
+    } else {
+      rippleSpawnTimer = 0;
+    }
+    if (inWater && speed <= 5) {
+      idleRippleTimer -= dt;
+      if (idleRippleTimer <= 0) {
+        spawnIdleRipple();
+        idleRippleTimer = IDLE_RIPPLE_MIN_GAP + rand() * (IDLE_RIPPLE_MAX_GAP - IDLE_RIPPLE_MIN_GAP);
+      }
+    }
+    updateRipples(dt);
+
+    // Gentle bob while floating: a gone-nowhere-fast sine offset applied only in drawTurtle, driven
+    // by this free-running clock (kept separate from stateTime so debug state switches don't reset it).
+    floatClock += dt;
+    floating = inWater && speed <= 5 && state === 'normal';
 
     turtle.x += turtle.vx * dt;
     turtle.y += turtle.vy * dt;
@@ -888,6 +967,14 @@
   const FRAMES_PER_SPEED = 0.03; // frames per px traveled (~5 fps at full speed)
   let walkFrame = 0;
 
+  // Idle-on-water bob: set each frame in update() (floating = stationary + in water + normal
+  // state), floatClock is a free-running seconds counter driving the sine so the bob doesn't jump
+  // or reset whenever floating toggles on/off.
+  let floatClock = 0;
+  let floating = false;
+  const FLOAT_BOB_SPEED = 2.2;   // radians/sec
+  const FLOAT_BOB_AMPLITUDE = 4; // world px of vertical drift
+
   function drawTurtle() {
     if (!sprite.complete || !sprite.naturalWidth) return;
     const fw = sprite.naturalWidth / SHEET_COLS, fh = sprite.naturalHeight / SHEET_ROWS;
@@ -897,8 +984,9 @@
     else if (state === 'stunned') { row = 3; f = 2 + Math.floor(stateTime * 4) % 2; }
     else if (state === 'shell') { row = 4; f = 0; }
     else if (moveMode === 'swim') { row = 1; } // swim cycle; idle float is frame 0, same as walk's idle
+    const bobY = floating ? Math.sin(floatClock * FLOAT_BOB_SPEED) * FLOAT_BOB_AMPLITUDE : 0;
     ctx.save();
-    ctx.translate(turtle.x, turtle.y);
+    ctx.translate(turtle.x, turtle.y + bobY);
     ctx.rotate(turtle.angle + Math.PI / 2); // art faces up, angle 0 = right
     if (state === 'normal' && moveMode === 'walk' && f === 3) ctx.scale(-1, 1); // mirror the last walk frame so the head swings left (sheet only has right)
     ctx.imageSmoothingQuality = 'high';
@@ -933,6 +1021,7 @@
     drawTerrain();
     drawGrassTextures();
     if (shore) drawShore(t);
+    drawRipples(); // above water, below turtle/scenery
     drawSandText();
     ctx.drawImage(islandDetail.canvas, islandDetail.worldX, islandDetail.worldY);
 
