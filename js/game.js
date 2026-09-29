@@ -57,7 +57,9 @@
   const ISLAND_SHORE_FREQ = 3.2, ISLAND_SHORE_SEED_OFFSET = 0;
   const OUTER_SHORE_FREQ = 5.5, OUTER_SHORE_SEED_OFFSET = 97;
 
-  const TURTLE_RADIUS = 36;
+  const TURTLE_RADIUS = 36;          // used for world-edge clamping / camera, not obstacle collision
+  const TURTLE_BODY_RADIUS = 22;     // smaller, body-only circle used for obstacle collision (excludes flippers/tail)
+  const DEBUG_HITBOXES = false;      // true: draw red outlines for every collision hitbox in view
   const MAX_SPEED = 180;   // px/s, base speed before the water/land multiplier below
   const WATER_SPEED_MULT = 1.15; // turtle swims a bit faster than it walks
   const LAND_SPEED_MULT = 0.9;
@@ -631,19 +633,58 @@
   // ---- Mainland scenery: trees (all 4 biomes) and beach rocks are obstacles (trunk-only circle
   // collision); driftwood is decorative. Placed by dart-throwing so spacing stays natural, with a
   // per-biome minimum distance so the west forest reads dense but the east forest stays open. ----
-  const SPACING = { forestThick: 100, forestOpen: 150, deadTrees: 140, beach: 170 };
+  const SPACING = { forestThick: 120, forestOpen: 150, deadTrees: 140, beach: 170 };
   const scenery = [];       // { x, y, r, h, sprite, type, collide } — everything drawn
   let obstacleGrid;         // built after placement: cell key -> array of scenery indices (collide only)
   const OBSTACLE_CELL = 220;
 
   // Pixel-art scenery sprites (sliced from the reference sheet). Each entry is drawn `h` world-px
-  // tall, scaled to its own aspect ratio; collision still uses the small trunk radius `r`, not the
-  // full (much bigger) canopy, per the trunk-only collision spec.
+  // tall, scaled to its own aspect ratio. Collision uses the tight alpha bounding box computed below
+  // (SPRITE_BBOX), not the full padded square each source image ships as, so the turtle's hitbox
+  // matches the visible art instead of the transparent margin around it.
   const SPRITES = {};
+  // name -> { x0, y0, x1, y1 } normalized (0..1) tight box of non-transparent pixels, in the sprite's
+  // own natural-pixel space. Computed once per image on load by computeSpriteBBox(); until it's
+  // ready, collision falls back to the old r/cr circle on that scenery entry.
+  const SPRITE_BBOX = {};
+  const ALPHA_THRESHOLD = 10; // pixels with alpha <= this count as transparent padding
+  // Reused across all bbox scans — never drawn to the page, just read back with getImageData.
+  const bboxScanCanvas = document.createElement('canvas');
+  function computeSpriteBBox(img, name) {
+    const w = img.naturalWidth, h = img.naturalHeight;
+    bboxScanCanvas.width = w; bboxScanCanvas.height = h;
+    const g = bboxScanCanvas.getContext('2d', { willReadFrequently: true });
+    g.clearRect(0, 0, w, h);
+    g.drawImage(img, 0, 0);
+    const data = g.getImageData(0, 0, w, h).data;
+    let minX = w, minY = h, maxX = -1, maxY = -1;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (data[(y * w + x) * 4 + 3] > ALPHA_THRESHOLD) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    // Fully-transparent image (shouldn't happen for real art) — fall back to the full frame.
+    SPRITE_BBOX[name] = maxX < minX
+      ? { x0: 0, y0: 0, x1: 1, y1: 1 }
+      : { x0: minX / w, y0: minY / h, x1: (maxX + 1) / w, y1: (maxY + 1) / h };
+  }
+  // Optional per-sprite manual override, in world px, applied after the alpha bbox is scaled to the
+  // sprite's drawn size — shrinks (positive) or grows (negative) each edge for fine-tuning a hitbox
+  // that still feels off after the automatic trim (e.g. a sprite with faint anti-aliased fringe
+  // pixels just above the alpha threshold). Empty by default.
+  const HITBOX_INSET = {
+    // driftwood_stick: { left: 4, right: 4, top: 2, bottom: 2 },
+  };
   for (const name of ['pine_tall', 'oak_tree', 'tree_cluster3', 'round_tree_med', 'round_tree_single',
-    'pine_sapling', 'dead_tree_med', 'dead_tree_small', 'round_tree_small', 'bush_round',
-    'driftwood_stick', 'sandcastle_big']) {
+    'pine_sapling', 'dead_tree_med', 'dead_tree_small', 'round_tree_small',
+    'driftwood_stick', 'sandcastle_big', 'rock_beach']) {
     const img = new Image();
+    img.onload = () => computeSpriteBBox(img, name);
     img.src = `assets/scenery/${name}.png`;
     SPRITES[name] = img;
   }
@@ -656,6 +697,75 @@
   function pickTree(biome) {
     const opts = BIOME_TREES[biome];
     return opts[Math.floor(rand() * opts.length)];
+  }
+
+  // World-space trunk polygon for a circleOnly scenery entry that carries `s.poly` (currently just
+  // tree_cluster3 — see the circleOnly comment at placement): an array of {dx, dy} points relative
+  // to the sprite's anchor (dx right, dy up), one hitbox shape covering all 3 trunks instead of a
+  // circle per trunk.
+  function getTrunkPolygon(s) {
+    return s.poly.map(p => ({ x: s.x + p.dx, y: s.y + p.dy }));
+  }
+
+  // Push circle (cx, cy, radius) out of convex polygon `poly` ({x,y}[], any winding), in place on
+  // the passed mutable point `out`. Used for the tree-cluster trunk hitbox above, where a single
+  // circle doesn't cover the 3-trunk footprint well.
+  function pushCircleOutOfPolygon(out, radius, poly) {
+    const n = poly.length;
+    // Consistent-winding test: a convex polygon's cross product sign is the same at every vertex
+    // for a point strictly inside it.
+    let inside = true, sign = 0;
+    let closest = null, closestDistSq = Infinity;
+    for (let i = 0; i < n; i++) {
+      const a = poly[i], b = poly[(i + 1) % n];
+      const ex = b.x - a.x, ey = b.y - a.y;
+      const cross = ex * (out.y - a.y) - ey * (out.x - a.x);
+      if (i === 0) sign = Math.sign(cross);
+      else if (cross !== 0 && Math.sign(cross) !== sign) inside = false;
+      // Closest point on this edge segment to `out`, for both the inside and outside cases below.
+      const len2 = ex * ex + ey * ey;
+      let t = len2 > 0 ? ((out.x - a.x) * ex + (out.y - a.y) * ey) / len2 : 0;
+      t = Math.max(0, Math.min(1, t));
+      const px = a.x + ex * t, py = a.y + ey * t;
+      const distSq = (out.x - px) ** 2 + (out.y - py) ** 2;
+      if (distSq < closestDistSq) { closestDistSq = distSq; closest = { x: px, y: py }; }
+    }
+    if (!closest) return;
+    const dist = Math.sqrt(closestDistSq);
+    if (inside) {
+      // Center is inside the triangle (fast movement / corner case): eject it out past the nearest
+      // edge plus the radius, in the direction from that edge point toward the center.
+      const dx = out.x - closest.x, dy = out.y - closest.y;
+      const d = dist || 0.001;
+      out.x = closest.x + (dx / d) * (dist + radius);
+      out.y = closest.y + (dy / d) * (dist + radius);
+    } else if (dist < radius) {
+      const dx = out.x - closest.x, dy = out.y - closest.y;
+      const d = dist || 0.001;
+      out.x = closest.x + (dx / d) * radius;
+      out.y = closest.y + (dy / d) * radius;
+    }
+  }
+
+  // World-space AABB for one scenery sprite's tight alpha bbox, matching exactly how
+  // drawScenerySprite() below places it (same dw/dh math, same base-anchored origin) — so the
+  // hitbox tracks the visible art regardless of each entry's own `h` (trees vary per instance) or
+  // aspect ratio. Returns null if the bbox isn't computed yet (image still loading); callers fall
+  // back to the entry's r/cr circle in that case.
+  function getSpriteWorldBox(s) {
+    if (s.circleOnly) return null; // trees: trunk-base circle only, see the circleOnly comment at placement
+    const img = SPRITES[s.sprite];
+    const bbox = SPRITE_BBOX[s.sprite];
+    if (!img || !bbox || !img.complete || !img.naturalWidth) return null;
+    const dh = s.h, dw = dh * (img.naturalWidth / img.naturalHeight);
+    const originX = s.x - dw / 2, originY = s.y - dh; // drawImage's top-left, see drawScenerySprite()
+    const inset = HITBOX_INSET[s.sprite] || {};
+    return {
+      x0: originX + bbox.x0 * dw + (inset.left || 0),
+      x1: originX + bbox.x1 * dw - (inset.right || 0),
+      y0: originY + bbox.y0 * dh + (inset.top || 0),
+      y1: originY + bbox.y1 * dh - (inset.bottom || 0),
+    };
   }
 
   function placeScenery() {
@@ -689,40 +799,41 @@
       if (tooClose(x, y, spacing)) continue;
       markPlaced(x, y, spacing);
 
-      // TODO: no real beach-rock art yet — beach rock obstacles removed with mossy_boulder
-      // (was standing in for them); re-add once dedicated rock art exists.
-      if (biome === 'beach' && rand() < 0.14) {
-        scenery.push({ x, y, r: 20, type: 'sprite', sprite: 'driftwood_stick', h: 60, collide: false });
+      if (biome === 'beach' && rand() < 0.1) {
+        scenery.push({ x, y, r: 34, cr: 36, type: 'sprite', sprite: 'rock_beach', h: 76, collide: true });
+      } else if (biome === 'beach' && rand() < 0.14) {
+        scenery.push({ x, y, r: 12, cr: 18, type: 'sprite', sprite: 'driftwood_stick', h: 60, collide: true });
       } else if (biome === 'beach' && rand() < 0.06) {
         // rare beach flourish, straight off the reference sheet
-        scenery.push({ x, y, r: 24, type: 'sprite', sprite: 'sandcastle_big', h: 140, collide: false });
+        scenery.push({ x, y, r: 24, cr: 38, type: 'sprite', sprite: 'sandcastle_big', h: 90, collide: true });
       } else if (biome === 'beach') {
         // none of the beach rolls hit for this spot: leave it bare sand, no tree fallback
-      } else if (rand() < 0.08) {
-        // Ground clutter matched to each grass biome's mood. Purely decorative.
-        // TODO: no bones/twigs, cracked-dirt, fallen-leaves, or flower art yet — only forestThick
-        // has clutter art (bush_round) until more exists.
-        const CLUTTER = {
-          forestThick: ['bush_round'],
-        }[biome];
-        if (CLUTTER) {
-          const clutter = CLUTTER[Math.floor(rand() * CLUTTER.length)];
-          scenery.push({ x, y, r: 8, type: 'sprite', sprite: clutter, h: 30, collide: false });
-        }
       } else if (shoreSignedDist(x, y).d > SHORE_SAND_BAND) {
         // Inside the mainland's outer sand ring (every coastline gets one, not just the beach
         // biome) — leave it bare, no trees on sand.
       } else {
         const t = pickTree(biome);
         const r = biome === 'forestThick' ? 14 : 12;
-        // Collision radius is much smaller than the drawn trunk radius `r` (used for the shadow),
-        // so the turtle only bumps the trunk itself and can pass close by/behind the canopy.
-        scenery.push({ x, y, r, cr: r * 0.45, type: 'sprite', sprite: t.sprite, h: t.h * (0.85 + rand() * 0.3), collide: true });
-        // A little undergrowth around forestThick trees, purely decorative.
-        // TODO: no undergrowth art yet for forestOpen/deadTrees biomes.
-        if (biome === 'forestThick' && rand() < 0.12) {
-          scenery.push({ x: x + (rand() * 2 - 1) * 40, y: y + (rand() * 2 - 1) * 40, r: 6, type: 'sprite', sprite: 'bush_round', h: 36, collide: false });
+        // Trees always collide as a small circle at the trunk's base, not the sprite's full alpha
+        // bbox — circleOnly skips the tight-bbox hitbox in resolveObstacleCollisions/debug draw
+        // below, so the turtle can walk behind the canopy and only bumps where the trunk meets the
+        // ground. cy nudges the circle's center up a bit above the anchor point (y), which reads
+        // more like the actual trunk width than one centered right at the ground contact line.
+        // tree_cluster3 is 3 trunks side by side, not 1 — gets a single triangular `poly` hitbox
+        // (see getTrunkPolygon/pushCircleOutOfPolygon) instead of the single cr/cy circle every
+        // other tree uses, point facing down toward the sprite's anchor.
+        const entry = { x, y, r, type: 'sprite', sprite: t.sprite, h: t.h * (0.85 + rand() * 0.3), collide: true, circleOnly: true };
+        if (t.sprite === 'tree_cluster3') {
+          entry.poly = [
+            { dx: 0, dy: -r * 1.0 },        // bottom point, facing down toward the anchor
+            { dx: -r * 4.1, dy: -r * 4.5 }, // top-left corner of the base
+            { dx: r * 4.1, dy: -r * 4.5 },  // top-right corner of the base
+          ];
+        } else {
+          entry.cr = r * 1.15;
+          entry.cy = -r * 0.9;
         }
+        scenery.push(entry);
       }
     }
   }
@@ -750,28 +861,92 @@
     return out;
   }
 
-  // Resolve turtle-vs-obstacle circle collision by pushing the turtle out along the contact normal.
+  // Resolve turtle-vs-obstacle collision by pushing the turtle's body circle out of each obstacle's
+  // tight alpha-bbox rectangle (see getSpriteWorldBox) along the shortest contact vector — standard
+  // closest-point circle-vs-AABB. Falls back to the old circle-vs-circle test (using the entry's r/cr)
+  // for a sprite whose bbox hasn't finished loading yet, so nothing is collision-free on first frame.
   function resolveObstacleCollisions() {
-    for (const s of nearbyObstacles(turtle.x, turtle.y, TURTLE_RADIUS + 20)) {
-      const dx = turtle.x - s.x, dy = turtle.y - s.y;
-      const minDist = TURTLE_RADIUS + (s.cr ?? s.r);
-      const dist = Math.hypot(dx, dy) || 0.001;
-      if (dist < minDist) {
-        const push = (minDist - dist) / dist;
-        turtle.x += dx * push;
-        turtle.y += dy * push;
+    for (const s of nearbyObstacles(turtle.x, turtle.y, TURTLE_RADIUS + 60)) {
+      const box = getSpriteWorldBox(s);
+      if (!box) {
+        if (s.poly) {
+          const out = { x: turtle.x, y: turtle.y };
+          pushCircleOutOfPolygon(out, TURTLE_BODY_RADIUS, getTrunkPolygon(s));
+          turtle.x = out.x; turtle.y = out.y;
+          continue;
+        }
+        const dx = turtle.x - s.x, dy = turtle.y - (s.y + (s.cy || 0));
+        const minDist = TURTLE_BODY_RADIUS + (s.cr ?? s.r);
+        const dist = Math.hypot(dx, dy) || 0.001;
+        if (dist < minDist) {
+          const push = (minDist - dist) / dist;
+          turtle.x += dx * push;
+          turtle.y += dy * push;
+        }
+        continue;
+      }
+      const closestX = Math.min(Math.max(turtle.x, box.x0), box.x1);
+      const closestY = Math.min(Math.max(turtle.y, box.y0), box.y1);
+      let dx = turtle.x - closestX, dy = turtle.y - closestY;
+      let dist = Math.hypot(dx, dy);
+      if (dist >= TURTLE_BODY_RADIUS) continue;
+      if (dist < 0.001) {
+        // Turtle center is inside the box (rare — fast movement/corner case): push out along
+        // whichever edge is closest rather than leaving the push direction undefined.
+        const penLeft = turtle.x - box.x0, penRight = box.x1 - turtle.x;
+        const penTop = turtle.y - box.y0, penBottom = box.y1 - turtle.y;
+        const minPen = Math.min(penLeft, penRight, penTop, penBottom);
+        dx = minPen === penLeft ? -1 : minPen === penRight ? 1 : 0;
+        dy = minPen === penTop ? -1 : minPen === penBottom ? 1 : 0;
+        dist = 1;
+      }
+      const push = (TURTLE_BODY_RADIUS - dist) / dist;
+      turtle.x += dx * push;
+      turtle.y += dy * push;
+    }
+  }
+
+  // ---- Debug: red hitbox outlines (DEBUG_HITBOXES above). Drawn in the same world-transformed
+  // context render() already sets up, right after scenery, so outlines line up with the art exactly.
+  function drawDebugHitboxes(visibleScenery) {
+    ctx.save();
+    ctx.strokeStyle = 'red';
+    ctx.lineWidth = 1.5;
+    for (const s of visibleScenery) {
+      if (!s.collide) continue;
+      const box = getSpriteWorldBox(s);
+      if (box) {
+        ctx.strokeRect(box.x0, box.y0, box.x1 - box.x0, box.y1 - box.y0);
+      } else if (s.poly) {
+        const pts = getTrunkPolygon(s);
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+        ctx.closePath();
+        ctx.stroke();
+      } else {
+        ctx.beginPath(); ctx.arc(s.x, s.y + (s.cy || 0), s.cr ?? s.r, 0, Math.PI * 2); ctx.stroke();
       }
     }
+    ctx.beginPath(); ctx.arc(turtle.x, turtle.y, TURTLE_BODY_RADIUS, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
   }
 
   // Depth-sorts the turtle in with visible scenery by y so tall sprites (trees) draw over the
   // turtle when its anchor point is above their base — i.e. the turtle can duck behind the
   // canopy — while collision (much smaller `cr` radius) still stops it at the trunk itself.
+  // Scenery sprites are anchored at their base (y = ground contact, art only extends upward from
+  // there), but the turtle sprite is centered on turtle.y (it extends both above and below it), so
+  // comparing turtle.y directly understates how far forward the turtle's visible body actually
+  // reaches. TURTLE_DEPTH_FRONT_OFFSET compensates so the turtle reliably draws on top once it's
+  // really in front of an asset's base, instead of a sliver of canopy/trunk art still covering it.
+  const TURTLE_DEPTH_FRONT_OFFSET = 24;
   function drawSceneryWithTurtle(list) {
     list.sort((a, b) => a.y - b.y); // cheap back-to-front depth sort of the (small) visible set
+    const turtleDepthY = turtle.y + TURTLE_DEPTH_FRONT_OFFSET;
     let drawnTurtle = false;
     for (const s of list) {
-      if (!drawnTurtle && turtle.y < s.y) { drawTurtle(); drawnTurtle = true; }
+      if (!drawnTurtle && turtleDepthY < s.y) { drawTurtle(); drawnTurtle = true; }
       drawScenerySprite(s);
     }
     if (!drawnTurtle) drawTurtle();
@@ -1031,6 +1206,7 @@
     const visible = scenery.filter(s =>
       s.x > camX - margin && s.x < camX + vw + margin && s.y > camY - margin && s.y < camY + vh + margin);
     drawSceneryWithTurtle(visible);
+    if (DEBUG_HITBOXES) drawDebugHitboxes(visible);
     ctx.restore();
 
     drawJoystick(); // screen space
