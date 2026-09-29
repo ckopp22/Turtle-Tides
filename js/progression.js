@@ -29,16 +29,35 @@
       upgradeCosts: [25, 60, 120, 220],
     },
     home: {
-      // Stubbed per current scope: only the first few milestones are filled in.
-      // TODO: fill levels 4-19 (books, torches, ... full camp at 20) with real art.
+      // Full 20-level curve, tuned so each step to level 10 is a small, quick win (cost climbs by
+      // a steady +5-15 coins/level), then levels 11-20 climb faster (+65-160/level) for a real but
+      // still reachable long-term goal — not a wall. cost[i] = coins to go from level i-1 to i.
+      // TODO: the desc/shape fields are still placeholders — real per-level art still needed.
       // TODO: level 10 reserves the "Hide in Shell" skill (unlockedSkill below) — data slot only,
       // not wired to gameplay yet. The turtle sprite sheet already has a shell pose (game.js's
       // state === 'shell') that skill can reuse later.
       levels: [
-        { cost: 0,   desc: 'a pile of rocks',                  shape: 'rocks' },
-        { cost: 20,  desc: 'a woven nest tucked in the rocks',  shape: 'nest' },
-        { cost: 50,  desc: 'a small driftwood hut',             shape: 'hut' },
-        { cost: 100, desc: 'a hut with a crackling campfire',   shape: 'campfire', unlockedSkill: null },
+        { cost: 0,    desc: 'a pile of rocks',                        shape: 'rocks' },
+        { cost: 20,   desc: 'a woven nest tucked in the rocks',       shape: 'nest' },
+        { cost: 35,   desc: 'a small driftwood hut',                  shape: 'hut' },
+        { cost: 55,   desc: 'a hut with a crackling campfire',        shape: 'campfire' },
+        { cost: 80,   desc: 'a hut with a small garden patch',        shape: 'garden' },
+        { cost: 110,  desc: 'shell wind-chimes hung by the door',     shape: 'chimes' },
+        { cost: 145,  desc: 'a covered porch added to the hut',       shape: 'porch' },
+        { cost: 185,  desc: 'a driftwood bookshelf of found books',   shape: 'books' },
+        { cost: 230,  desc: 'lit torches lining the path',            shape: 'torches' },
+        { cost: 280,  desc: 'a woven fence around the camp',          shape: 'fence' },
+        { cost: 335,  desc: 'a proper cabin replaces the hut',        shape: 'cabin', unlockedSkill: 'hideInShell' },
+        { cost: 400,  desc: 'a second story added to the cabin',      shape: 'cabin2' },
+        { cost: 470,  desc: 'a stone-lined firepit',                  shape: 'firepit' },
+        { cost: 550,  desc: 'a drying rack for coconuts',             shape: 'dryingRack' },
+        { cost: 640,  desc: 'a lookout perch',                        shape: 'lookout' },
+        { cost: 740,  desc: 'a garden terrace',                       shape: 'terrace' },
+        { cost: 850,  desc: 'string lights strung between posts',     shape: 'lights' },
+        { cost: 970,  desc: 'a small dock out over the water',        shape: 'dock' },
+        { cost: 1100, desc: 'a stone path connects the whole camp',   shape: 'path' },
+        { cost: 1240, desc: 'a bell tower to call the turtle home',   shape: 'bellTower' },
+        { cost: 1400, desc: 'the full camp, home at last',            shape: 'fullCamp' },
       ],
     },
     invulnSeconds: 1.2,           // blink window after a heart is lost
