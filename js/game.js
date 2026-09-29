@@ -981,6 +981,106 @@
       }
   }
 
+  // ---- Coins: simple floating currency pickups scattered around the world (island + mainland,
+  // never in water). Collecting one adds to `coinCount` (inventory system TODO: more to come —
+  // shop, spending, loss-on-death, etc. — this is just pickup + respawn for now).
+  const COIN_COUNT = 30;
+  const COIN_PICKUP_RADIUS = 26;   // world px, added to TURTLE_BODY_RADIUS for the pickup check
+  const COIN_RESPAWN_SECONDS = 20; // time a collected coin stays gone before respawning elsewhere
+  const COIN_DRAW_H = 30;          // world px, drawn height of the coin sprite
+  const COIN_BOB_SPEED = 2.4;      // radians/sec
+  const COIN_BOB_AMPLITUDE = 6;    // world px of vertical bob
+  const coinImg = new Image();
+  coinImg.src = 'assets/items/coin.png';
+  const coins = [];
+  let coinCount = 0;
+  let gameTime = 0;
+
+  // Picks a random spot that's not in water and not on the sand-text patch. Used both for initial
+  // placement and respawning; falls back to whatever the last attempt found if it never finds a
+  // clean spot (extremely unlikely given how little of the world that excludes).
+  function randomCoinSpot() {
+    let x = CENTER.x, y = CENTER.y;
+    for (let i = 0; i < 200; i++) {
+      x = rand() * WORLD_SIZE;
+      y = rand() * WORLD_SIZE;
+      const distFromCenter = Math.hypot(x - CENTER.x, y - CENTER.y);
+      if (distFromCenter > WORLD_SIZE / 2 - EDGE_FOG_WIDTH * 0.4) continue; // keep clear of the far fog fringe
+      if (isWater(x, y)) continue;
+      if (inSandTextZone(x, y)) continue;
+      break;
+    }
+    return { x, y };
+  }
+
+  function respawnCoin(c) {
+    const p = randomCoinSpot();
+    c.x = p.x; c.y = p.y;
+    c.active = true;
+  }
+
+  function initCoins() {
+    for (let i = 0; i < COIN_COUNT; i++) {
+      const p = randomCoinSpot();
+      coins.push({ x: p.x, y: p.y, active: true, respawnAt: 0, bobSeed: rand() * Math.PI * 2 });
+    }
+  }
+  initCoins();
+
+  function updateCoins(dt) {
+    const pickupDist = TURTLE_BODY_RADIUS + COIN_PICKUP_RADIUS;
+    for (const c of coins) {
+      if (!c.active) {
+        if (gameTime >= c.respawnAt) respawnCoin(c);
+        continue;
+      }
+      if (Math.hypot(turtle.x - c.x, turtle.y - c.y) < pickupDist) {
+        c.active = false;
+        c.respawnAt = gameTime + COIN_RESPAWN_SECONDS;
+        coinCount++;
+      }
+    }
+  }
+
+  function drawCoins() {
+    if (!coinImg.complete || !coinImg.naturalWidth) return;
+    const dw = COIN_DRAW_H * coinImg.naturalWidth / coinImg.naturalHeight;
+    const vw = viewW / ZOOM, vh = viewH / ZOOM, margin = 60;
+    for (const c of coins) {
+      if (!c.active) continue;
+      if (c.x < camX - margin || c.x > camX + vw + margin || c.y < camY - margin || c.y > camY + vh + margin) continue;
+      const bob = Math.sin(gameTime * COIN_BOB_SPEED + c.bobSeed) * COIN_BOB_AMPLITUDE;
+      ctx.save();
+      ctx.globalAlpha = 0.25;
+      ctx.fillStyle = '#000';
+      ctx.beginPath(); ctx.ellipse(c.x, c.y + 4, dw * 0.32, dw * 0.14, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      ctx.drawImage(coinImg, c.x - dw / 2, c.y - COIN_DRAW_H / 2 + bob, dw, COIN_DRAW_H);
+    }
+  }
+
+  // Screen-space HUD: coin count, top-left. TODO: fold into a real inventory HUD once the
+  // shell/coconut/carry-capacity systems land per the MDD.
+  function drawCoinHUD() {
+    if (!coinImg.complete || !coinImg.naturalWidth) return;
+    const pad = 14, iconSize = 28;
+    ctx.save();
+    ctx.font = '600 20px system-ui, sans-serif';
+    const label = String(coinCount);
+    const textW = ctx.measureText(label).width;
+    const boxW = iconSize + 10 + textW + pad * 2;
+    const boxH = iconSize + pad;
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath();
+    ctx.roundRect(pad, pad, boxW, boxH, boxH / 2);
+    ctx.fill();
+    ctx.drawImage(coinImg, pad + pad / 2, pad + boxH / 2 - iconSize / 2, iconSize, iconSize);
+    ctx.fillStyle = '#fff';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, pad + pad / 2 + iconSize + 10, pad + boxH / 2 + 1);
+    ctx.restore();
+  }
+
   // ---- Water ripples: purely decorative wake while swimming. Spawned in update() (throttled so
   // movement doesn't spam them), aged/pruned each frame, drawn in render() between the water and
   // the turtle/scenery pass. Capped at RIPPLE_MAX so a long swim on mobile stays cheap.
@@ -1040,6 +1140,8 @@
   // ---- Update ----
   function update(dt) {
     stateTime += dt;
+    gameTime += dt;
+    updateCoins(dt);
     const dir = state === 'normal' ? getDirection() : { x: 0, y: 0 };
     const inWater = isWater(turtle.x, turtle.y);
     const speedMult = inWater ? WATER_SPEED_MULT : LAND_SPEED_MULT;
@@ -1207,6 +1309,7 @@
     drawRipples(); // above water, below turtle/scenery
     drawSandText();
     ctx.drawImage(islandDetail.canvas, islandDetail.worldX, islandDetail.worldY);
+    drawCoins();
 
     // Cull scenery to the visible world rect (plus a small margin) so a big world with lots of
     // trees still draws only a couple dozen-to-hundred objects per frame.
@@ -1218,6 +1321,7 @@
     ctx.restore();
 
     drawJoystick(); // screen space
+    drawCoinHUD();  // screen space
   }
 
   let last;
