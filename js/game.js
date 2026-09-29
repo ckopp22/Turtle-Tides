@@ -96,12 +96,20 @@
   const MODE_SWITCH_FRAMES = 3;    // consecutive frames on the new terrain before switching
 
   const KEY_MAP = { w: 'up', a: 'left', s: 'down', d: 'right' };
+  // Ignore WASD/debug keys while a text field (e.g. intro.js's save-name input) has focus, or
+  // typing a 'w'/'a'/'s'/'d' into it gets eaten as movement input instead of reaching the field.
+  function typingInField() {
+    const el = document.activeElement;
+    return !!el && /^(INPUT|TEXTAREA)$/.test(el.tagName);
+  }
   window.addEventListener('keydown', e => {
+    if (typingInField()) return;
     if (DEBUG_STATES[e.key]) { state = DEBUG_STATES[e.key]; stateTime = 0; return; }
     const k = KEY_MAP[e.key.toLowerCase()];
     if (k) { keys.add(k); e.preventDefault(); }
   });
   window.addEventListener('keyup', e => {
+    if (typingInField()) return;
     const k = KEY_MAP[e.key.toLowerCase()];
     if (k) keys.delete(k);
   });
@@ -1227,15 +1235,21 @@
   // Start only once the window (and canvas) has real dimensions, so the very first resize()/spawn
   // never runs against a 0x0 layout. If innerWidth/Height still isn't ready, wait one more frame
   // rather than spawn at the origin.
+  //
+  // No longer auto-starts on load: intro.js owns the canvas first (egg/hatch/menu/save-slot flow)
+  // and calls TurtleGame.start() once the player has zoomed into the island. `started` guards
+  // against a double call (e.g. a stray extra tap on the last save-slot transition).
+  let started = false;
   function start() {
+    if (started) return;
+    started = true;
     resize();
-    if (!window.innerWidth || !window.innerHeight) { requestAnimationFrame(start); return; }
-    if (!grassReady) { requestAnimationFrame(start); return; } // wait for grass textures so nothing draws untextured
-    if (!shore) { requestAnimationFrame(start); return; } // wait for Shore.js's sand/water tiles too
+    if (!window.innerWidth || !window.innerHeight) { started = false; requestAnimationFrame(start); return; }
+    if (!grassReady) { started = false; requestAnimationFrame(start); return; } // wait for grass textures so nothing draws untextured
+    if (!shore) { started = false; requestAnimationFrame(start); return; } // wait for Shore.js's sand/water tiles too
     spawnTurtle();
     last = performance.now();
     requestAnimationFrame(frame);
   }
-  if (document.readyState === 'complete') start();
-  else window.addEventListener('load', start);
+  window.TurtleGame = { start };
 })();

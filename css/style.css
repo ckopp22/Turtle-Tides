@@ -17,3 +17,58 @@ html, body {
   -webkit-touch-callout: none;
 }
 /* TODO: once HUD elements exist, inset them with env(safe-area-inset-*) to clear notches/rounded corners. */
+
+/* Save-slot naming overlay (intro.js) — the only DOM UI in the game, used for text entry since a
+   real <input> gets IME/mobile-keyboard support a canvas text field can't. */
+.tt-name-prompt {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(11, 61, 79, 0.55);
+  z-index: 10;
+}
+.tt-name-box {
+  background: #fdf6e3;
+  border-radius: 16px;
+  padding: 20px;
+  width: min(320px, 86vw);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  font-family: system-ui, sans-serif;
+}
+.tt-name-box label {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 14px;
+  color: #3a2a10;
+}
+.tt-name-box input {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 18px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 2px solid #cbb87c;
+  margin-bottom: 14px;
+}
+.tt-name-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+.tt-name-actions button {
+  font-size: 16px;
+  padding: 10px 18px;
+  border-radius: 10px;
+  border: 2px solid #7a5a1e;
+  min-height: 44px; /* touch-friendly tap target */
+  cursor: pointer;
+}
+.tt-name-actions .tt-confirm {
+  background: #ffb347;
+  font-weight: 700;
+}
+.tt-name-actions .tt-cancel {
+  background: #ffffff;
+}
