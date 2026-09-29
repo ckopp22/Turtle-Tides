@@ -23,22 +23,15 @@
 
   // ---- Shoreline rendering (visual only — gameplay still uses the perfect-circle ISLAND_R /
   // WATER_OUTER_R above for collision, speed and biome logic; none of that changes here). ----
-  const SHORE_DEEP_COLOR = [20, 90, 160];    // open water, far from any shore
-  const SHORE_SHALLOW_COLOR = [70, 190, 210]; // water near the shoreline
-  const SHORE_WET_SAND_COLOR = [190, 170, 120]; // sand just past the waterline
+  const SHORE_DEEP_COLOR = [20, 90, 160];    // open water fallback color, hidden under Shore.js's water tile
   const SHORE_DRY_SAND_COLOR = [235, 215, 160]; // sand further inland (the island's ground color)
-  const SHORE_DEEP_BAND = 90;   // world px of water past the shoreline before it reads as full "deep"
-  const SHORE_WET_BAND = 40;    // world px of land past the shoreline that reads as wet sand
-  const SHORE_DRY_BAND = 50;    // world px past the wet band that fades wet sand into dry sand/biome
+  const SHORE_WET_BAND = 70;    // world px of land past the shoreline that reads as wet sand
+  const SHORE_DRY_BAND = 150;   // world px past the wet band that fades wet sand into dry sand/biome
   const SHORE_NOISE_AMPLITUDE = 40; // +/- world px the shoreline wanders from its base radius
   // Two independent angle-noise samples (different frequency + offset into the same seeded noise
   // field) so the island and mainland coastlines wobble differently rather than looking identical.
   const ISLAND_SHORE_FREQ = 3.2, ISLAND_SHORE_SEED_OFFSET = 0;
   const OUTER_SHORE_FREQ = 5.5, OUTER_SHORE_SEED_OFFSET = 97;
-  const FOAM_WIDTH = 3, FOAM_ALPHA = 0.5;       // thin, semi-transparent waterline stroke
-  const FOAM_PULSE_AMPLITUDE = 6;               // world px the foam line breathes in/out
-  const FOAM_PULSE_SPEED = 1.2;                 // radians/sec
-  const FOAM_ANGLE_STEPS = 180;                 // resolution the shoreline is traced at (2deg steps)
 
   const TURTLE_RADIUS = 36;
   const MAX_SPEED = 180;   // px/s, base speed before the water/land multiplier below
@@ -204,8 +197,8 @@
   }
   // Signed distance from whichever shoreline (island or mainland) is nearer this point — negative
   // on land, positive in water — plus which shore that was. Shared by the color blend below and by
-  // groundTileFor(), so tiled ground art only appears where the water/sand blend has fully
-  // resolved to land, never floating over water on the noisy side of the old perfect-circle radius.
+  // buildGrassLayers(), so grass never floats over water on the noisy side of the old perfect-circle
+  // radius.
   function shoreSignedDist(x, y) {
     const dx = x - CENTER.x, dy = y - CENTER.y;
     const dist = Math.hypot(dx, dy);
@@ -216,33 +209,23 @@
     return { d: nearIsland ? dist - rIsland : rOuter - dist, nearIsland }; // negative land, positive water
   }
 
-  // The blended ground color at one point: gets its distance from the nearer shoreline and
-  // smoothsteps through deep water -> shallow water -> wet sand -> dry sand/biome color across it.
+  // The base ground color at one point, used only as the flat fill underneath Shore.js's real
+  // water/sand tiles (and, past the sand band, wherever the grass biome textures fade in). The old
+  // hand-blended deep/shallow-water and wet/dry-sand gradient that used to live here is gone —
+  // Shore.js now draws the actual shoreline (see the "Shore.js" section below), so this only needs
+  // to return water's flat fallback color and each biome's flat land color.
   function shorelineGroundColor(x, y) {
     const { d, nearIsland } = shoreSignedDist(x, y);
-
-    if (d >= SHORE_DEEP_BAND) return SHORE_DEEP_COLOR;
-    if (d >= 0) return lerpColor(SHORE_SHALLOW_COLOR, SHORE_DEEP_COLOR, smoothstep(0, SHORE_DEEP_BAND, d));
-    if (d >= -SHORE_WET_BAND) {
-      return lerpColor(SHORE_WET_SAND_COLOR, SHORE_SHALLOW_COLOR, smoothstep(-SHORE_WET_BAND, 0, d));
+    if (d >= 0) return SHORE_DEEP_COLOR;         // water: fully covered by Shore.js's water draw
+    if (nearIsland) return SHORE_DRY_SAND_COLOR; // island: fully covered by Shore.js's sand draw
+    const dx = x - CENTER.x, dy = y - CENTER.y;
+    const w = biomeWeights(Math.atan2(dy, dx) + biomeAngleNoise(x, y));
+    const landColor = [0, 0, 0];
+    for (const k in w) {
+      landColor[0] += BIOME_COLOR[k][0] * w[k];
+      landColor[1] += BIOME_COLOR[k][1] * w[k];
+      landColor[2] += BIOME_COLOR[k][2] * w[k];
     }
-    // Past the wet-sand band: the island is sand all the way to its center, but the mainland's
-    // land color depends on which biome this angle falls in, same blend buildTerrain always used.
-    let landColor;
-    if (nearIsland) {
-      landColor = SHORE_DRY_SAND_COLOR;
-    } else {
-      const dx = x - CENTER.x, dy = y - CENTER.y;
-      const w = biomeWeights(Math.atan2(dy, dx) + biomeAngleNoise(x, y));
-      landColor = [0, 0, 0];
-      for (const k in w) {
-        landColor[0] += BIOME_COLOR[k][0] * w[k];
-        landColor[1] += BIOME_COLOR[k][1] * w[k];
-        landColor[2] += BIOME_COLOR[k][2] * w[k];
-      }
-    }
-    const dryEnd = -(SHORE_WET_BAND + SHORE_DRY_BAND);
-    if (d >= dryEnd) return lerpColor(landColor, SHORE_WET_SAND_COLOR, smoothstep(dryEnd, -SHORE_WET_BAND, d));
     return landColor;
   }
 
@@ -313,55 +296,81 @@
     return rolled;
   }
 
-  // ---- Ground texture tiles: real art laid over the flat-color terrain blend above (water stays
-  // plain color + shimmer, no tile). Beach (north) only now — the 3 grass biomes use the
-  // pattern-based drawGrassTextures() below instead of a tiled grid. Plain, regular repeating
-  // tile, full opacity, no rotation, no blur. Same sand3 tile also textures the home island's
-  // sand-spot dunes below (buildIslandDetail), once it's loaded. ----
-  const GROUND_TILE_PX = 96;
+  // ---- Ground texture tiles: real art laid over the flat-color terrain blend above.
+  // sand3 is kept loaded here (not for a beach tile grid anymore — Shore.js below draws the real
+  // sand now) because buildIslandDetail() still textures the home island's sand-spot dunes with it.
   const GROUND_TILES = {};
   let sandTileReady = false;
   for (const name of ['sand3']) {
     const img = new Image();
     const entry = { canvas: null };
-    img.onload = () => { entry.canvas = buildSeamlessTile(img); sandTileReady = true; refreshIslandSand(); };
+    img.onload = () => { entry.canvas = buildSeamlessTile(img); sandTileReady = true; refreshIslandSand(); tryInitShore(); };
     img.src = `assets/tiles/${name}.png`;
     GROUND_TILES[name] = entry;
   }
-  const GROUND_TILE_FADE = 90; // world px inland over which tiles fade up to full opacity
-  // Returns the sand tile for this point and how opaque it should be: tiles start past the
-  // shoreline's wet/dry sand blend (using the same noisy shoreline as the color blend, not the old
-  // perfect circle) and fade up from there, so the grid never cuts a hard edge across the beach.
-  function groundTileFor(x, y) {
-    const { d, nearIsland } = shoreSignedDist(x, y);
-    if (nearIsland) return null; // island art handles its own ground, no tile
-    const tileStart = -(SHORE_WET_BAND + SHORE_DRY_BAND);
-    if (d > tileStart) return null; // still in the water/sand blend band
-    // Fade the tile by beach's own (non-argmax) weight, the same way drawGrassTextures() fades its
-    // 3 biomes, rather than gating on which biome wins. The angle noise is strong enough (+-35deg)
-    // that 'beach' can win the argmax well inside forestThick's own sector — that stamped a stray
-    // full-opacity sand block mid-forest, since the underlying color blend below is a soft weighted
-    // average but the old argmax check turned it into a hard on/off switch.
-    const dx = x - CENTER.x, dy = y - CENTER.y;
-    const beachWeight = biomeWeights(Math.atan2(dy, dx) + biomeAngleNoise(x, y)).beach;
-    const biomeFade = smoothstep(0.35, 0.65, beachWeight);
-    if (biomeFade <= 0) return null;
-    return { tile: GROUND_TILES.sand3, alpha: smoothstep(tileStart, tileStart - GROUND_TILE_FADE, d) * biomeFade };
-  }
-  function drawGroundTextures() {
-    const vw = viewW / ZOOM, vh = viewH / ZOOM;
-    const x0 = Math.floor(camX / GROUND_TILE_PX) * GROUND_TILE_PX;
-    const y0 = Math.floor(camY / GROUND_TILE_PX) * GROUND_TILE_PX;
-    for (let y = y0; y < camY + vh; y += GROUND_TILE_PX) {
-      for (let x = x0; x < camX + vw; x += GROUND_TILE_PX) {
-        const t = groundTileFor(x + GROUND_TILE_PX / 2, y + GROUND_TILE_PX / 2);
-        if (t && t.tile.canvas) {
-          ctx.globalAlpha = t.alpha;
-          ctx.drawImage(t.tile.canvas, x, y, GROUND_TILE_PX, GROUND_TILE_PX);
-        }
-      }
+  const GROUND_TILE_FADE = 90; // world px inland over which grass textures fade up to full opacity
+
+  // ---- Shore.js: real animated water/sand tiles + little waves, replacing the old flat-color
+  // water/wet-sand gradient and hand-traced foam/shimmer above. This game has no discrete tile map
+  // (water/sand are continuous distance fields, see isWater()/shoreSignedDist() above), so we build
+  // one synthetic 64px-cell grid once at load by sampling that geometry, and hand it to Shore.create
+  // exactly like a real map. 1 = water, 2 = sand, 0 = everything else (the grass biomes texture
+  // themselves in drawGrassTextures() and just need a plain land color underneath, from
+  // shorelineGroundColor()). Every coastline gets a sand band before grass takes over — using the
+  // same SHORE_WET_BAND+SHORE_DRY_BAND distance buildGrassLayers() already fades grass in past, so
+  // the two line up — not just the beach biome's own sector (which stays sand all the way inland).
+  const SHORE_SAND_BAND = -(SHORE_WET_BAND + SHORE_DRY_BAND);
+  const shoreCols = Math.ceil(WORLD_SIZE / Shore.TILE), shoreRows = shoreCols;
+  const shoreMap = [];
+  for (let ty = 0; ty < shoreRows; ty++) {
+    const row = [];
+    const y = ty * Shore.TILE + Shore.TILE / 2;
+    for (let tx = 0; tx < shoreCols; tx++) {
+      const x = tx * Shore.TILE + Shore.TILE / 2;
+      if (isWater(x, y)) { row.push(1); continue; }
+      const { d, nearIsland } = shoreSignedDist(x, y);
+      if (nearIsland) { row.push(2); continue; } // the whole island is sand, not just a coastal band
+      // A plain dominantBiome() argmax check here would flip to 'beach' for stray cells well inside
+      // another biome's own sector whenever the angle noise nudges it just past the other 3 biomes
+      // (the same argmax pitfall groundTileFor's old comment already called out — see biomeWeights
+      // above), stamping isolated sand+water patches deep in the forest. Requiring beach's own
+      // weight to clearly dominate (not just edge out the others) avoids that.
+      const dx = x - CENTER.x, dy = y - CENTER.y;
+      const isBeach = biomeWeights(Math.atan2(dy, dx) + biomeAngleNoise(x, y)).beach > 0.5;
+      row.push((isBeach || d > SHORE_SAND_BAND) ? 2 : 0);
     }
-    ctx.globalAlpha = 1;
+    shoreMap.push(row);
+  }
+
+  let waterTileReady = false;
+  const waterTile = { canvas: null };
+  const waterTileImg = new Image();
+  waterTileImg.onload = () => { waterTile.canvas = buildSeamlessTile(waterTileImg); waterTileReady = true; tryInitShore(); };
+  waterTileImg.src = 'assets/tiles/water1.png';
+
+  let shore = null;
+  function tryInitShore() {
+    if (shore || !sandTileReady || !waterTileReady) return;
+    shore = Shore.create(shoreMap, GROUND_TILES.sand3.canvas, waterTile.canvas, {
+      isWater: v => v === 1,
+      isSand: v => v === 2,
+      sandEdge: 'soft',
+    });
+  }
+  // shore.draw() expects a plain, untransformed ctx (1 canvas px = 1 world px, its own camX/camY
+  // bookkeeping does the scrolling) — it doesn't know about this game's ZOOM. So it's rendered onto
+  // its own world-sized scratch canvas first, then that scratch is drawn into the real ctx with a
+  // world-space dest rect, same as drawTerrain()/drawGrassTextures() already do, so ZOOM applies to
+  // it like everything else.
+  let shoreScratch = null;
+  function drawShore(t) {
+    const vw = Math.ceil(viewW / ZOOM), vh = Math.ceil(viewH / ZOOM);
+    if (!shoreScratch) shoreScratch = document.createElement('canvas');
+    if (shoreScratch.width !== vw || shoreScratch.height !== vh) { shoreScratch.width = vw; shoreScratch.height = vh; }
+    const sctx = shoreScratch.getContext('2d');
+    sctx.clearRect(0, 0, vw, vh); // last frame's water/sand would otherwise linger under the new camera position
+    shore.draw(sctx, camX, camY, vw, vh, t);
+    ctx.drawImage(shoreScratch, camX, camY, vw, vh);
   }
 
   // ---- Grass biome textures (east/west/south only — north beach keeps sand, untouched above).
@@ -387,8 +396,8 @@
     cfg.imgEl = img;
   }
 
-  // Low-res per-biome mask (alpha = that biome's weight, faded to 0 by the same shoreline band the
-  // sand tiles use, so grass always stops before the wet sand — see groundTileFor above) and a
+  // Low-res per-biome mask (alpha = that biome's weight, faded to 0 by the same
+  // SHORE_WET_BAND/SHORE_DRY_BAND used below, so grass always stops before the shore) and a
   // matching low-opacity color-variation layer (soft light/dark patches from the seeded noise, to
   // break up the repeating pattern). Built once from world geometry; only world size/seed changing
   // would invalidate it, and neither changes at runtime.
@@ -874,52 +883,6 @@
     ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.fill();
   }
 
-  // Animated foam line traced along both noisy shorelines (island + mainland). Cheap: a fixed
-  // handful of angle samples per shore per frame, and only the segments that land inside the
-  // current camera view are added to the stroked path.
-  // TODO: if this ever shows up as a frame-rate drop on low-end phones, gate it behind a quick
-  // device check and skip the call entirely rather than tuning it further.
-  function traceFoamShoreline(baseR, seedOffset, freq, t, left, right, top, bottom) {
-    let drawing = false;
-    for (let i = 0; i <= FOAM_ANGLE_STEPS; i++) {
-      const angle = (i / FOAM_ANGLE_STEPS) * Math.PI * 2;
-      const r = baseR + shoreWobble(angle, seedOffset, freq)
-        + Math.sin(t * FOAM_PULSE_SPEED + angle * 2) * FOAM_PULSE_AMPLITUDE;
-      const x = CENTER.x + Math.cos(angle) * r, y = CENTER.y + Math.sin(angle) * r;
-      if (x >= left && x <= right && y >= top && y <= bottom) {
-        if (drawing) ctx.lineTo(x, y); else { ctx.moveTo(x, y); drawing = true; }
-      } else {
-        drawing = false;
-      }
-    }
-  }
-  function drawFoam(t) {
-    const vw = viewW / ZOOM, vh = viewH / ZOOM;
-    const margin = FOAM_PULSE_AMPLITUDE + FOAM_WIDTH + 4;
-    const left = camX - margin, right = camX + vw + margin, top = camY - margin, bottom = camY + vh + margin;
-    ctx.save();
-    ctx.strokeStyle = `rgba(255,255,255,${FOAM_ALPHA})`;
-    ctx.lineWidth = FOAM_WIDTH;
-    ctx.lineJoin = 'round';
-    ctx.beginPath();
-    traceFoamShoreline(ISLAND_R, ISLAND_SHORE_SEED_OFFSET, ISLAND_SHORE_FREQ, t, left, right, top, bottom);
-    traceFoamShoreline(WATER_OUTER_R, OUTER_SHORE_SEED_OFFSET, OUTER_SHORE_FREQ, t, left, right, top, bottom);
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  // Lightweight animated shimmer on the water ring around the island (a few pulsing rings; cheap).
-  function drawWaterShimmer(t) {
-    const bands = 3;
-    for (let i = 0; i < bands; i++) {
-      const rr = ISLAND_R + 40 + (i * (WATER_WIDTH - 60)) / bands + Math.sin(t * 0.6 + i) * 6;
-      ctx.beginPath(); ctx.arc(CENTER.x, CENTER.y, rr, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(255,255,255,${0.05 + 0.03 * Math.sin(t * 0.8 + i)})`;
-      ctx.lineWidth = 8;
-      ctx.stroke();
-    }
-  }
-
   function render(t) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // 1 ctx unit = 1 CSS px; backing store already has the dpr scale-up
     ctx.fillStyle = '#0b3d4f';
@@ -932,10 +895,8 @@
     ctx.translate(-camX, -camY);
 
     drawTerrain();
-    drawGroundTextures();
     drawGrassTextures();
-    drawWaterShimmer(t);
-    drawFoam(t);
+    if (shore) drawShore(t);
     ctx.drawImage(islandDetail.canvas, islandDetail.worldX, islandDetail.worldY);
 
     // Cull scenery to the visible world rect (plus a small margin) so a big world with lots of
@@ -968,6 +929,7 @@
     resize();
     if (!window.innerWidth || !window.innerHeight) { requestAnimationFrame(start); return; }
     if (!grassReady) { requestAnimationFrame(start); return; } // wait for grass textures so nothing draws untextured
+    if (!shore) { requestAnimationFrame(start); return; } // wait for Shore.js's sand/water tiles too
     spawnTurtle();
     last = performance.now();
     requestAnimationFrame(frame);
