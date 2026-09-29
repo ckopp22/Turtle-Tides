@@ -1003,12 +1003,45 @@
       }
   }
 
-  // ---- Home island decor: one canvas-drawn placeholder per CONFIG.home.levels entry (see
-  // progression.js), positioned at a fixed spot near HOME so the camp fills in as homeLevel rises.
-  // Decor accumulates (earlier pieces stay) except the hut's own structural stages, which visibly
-  // replace each other (frame -> completed -> cabin is one building, not three) per the MDD desc
-  // text ("a proper cabin replaces the hut"). All placeholder shapes — TODO: real per-piece art.
+  // ---- Home island decor: one canvas-drawn (or, for the 9 ids below, real-sprite) piece per
+  // CONFIG.home.levels entry (see progression.js), positioned at a fixed spot near HOME so the
+  // camp fills in as homeLevel rises. Decor accumulates (earlier pieces stay) except the hut's own
+  // structural stages, which visibly replace each other (frame -> completed -> cabin is one
+  // building, not three) per the MDD desc text ("a proper cabin replaces the hut").
+  // TODO: everything except the 9 ids in DECOR_SPRITE_FILES below is still a placeholder shape —
+  // real art needed for rocks/nest/bed/swimFins/rug/hammock/garden/flags/path/lights/fullCamp/cabin.
   const HUT_STAGE_IDS = ['hutFrame', 'hutComplete', 'cabin'];
+
+  // Real sprites cropped from the reference asset sheet (see assets/scenery/decor_*.png). hutFrame/
+  // hutComplete/porch keep a visible rectangular card edge — their source cells sit on a painted
+  // scenic background rather than flat color, so a clean cutout wasn't possible; the rest cut out
+  // cleanly. drawH = each sprite's drawn height in world px (width follows its own aspect ratio),
+  // picked to roughly match the placeholder scale it replaces.
+  const DECOR_SPRITE_FILES = {
+    campfire:    { file: 'decor_campfire.png',    drawH: 50 },
+    hutFrame:    { file: 'decor_hutFrame.png',    drawH: 95 },
+    hutComplete: { file: 'decor_hutComplete.png', drawH: 105 },
+    torches:     { file: 'decor_torches.png',     drawH: 48 },
+    books:       { file: 'decor_books.png',       drawH: 38 },
+    porch:       { file: 'decor_porch.png',       drawH: 90 },
+    lanterns:    { file: 'decor_lanterns.png',    drawH: 40 },
+    table:       { file: 'decor_table.png',       drawH: 42 },
+    firepitRing: { file: 'decor_firepitRing.png', drawH: 46 },
+  };
+  const DECOR_IMAGES = {};
+  for (const id in DECOR_SPRITE_FILES) {
+    const img = new Image();
+    img.src = `assets/scenery/${DECOR_SPRITE_FILES[id].file}`;
+    DECOR_IMAGES[id] = img;
+  }
+  // Anchors bottom-center at (x, y), matching how the shape-drawn placeholders sit on the ground.
+  function drawDecorSprite(id, x, y) {
+    const img = DECOR_IMAGES[id];
+    if (!img.complete || !img.naturalWidth) return;
+    const drawH = DECOR_SPRITE_FILES[id].drawH;
+    const dw = drawH * img.naturalWidth / img.naturalHeight;
+    ctx.drawImage(img, x - dw / 2, y - drawH, dw, drawH);
+  }
   const DECOR_LAYOUT = {
     rocks:       { dx: -90,  dy: 80 },
     nest:        { dx: 80,   dy: 90 },
@@ -1051,24 +1084,9 @@
       ctx.fillStyle = '#8a6a3f'; ctx.fillRect(x - 26, y - 14, 52, 16); // driftwood frame
       ctx.fillStyle = '#e8ded0'; ctx.fillRect(x - 22, y - 20, 44, 10); // blanket
     },
-    campfire(ctx, x, y) {
-      ctx.fillStyle = '#5a4632';
-      for (const a of [0, 1, 2, 3]) ctx.fillRect(x - 12 + a * 8, y - 3, 3, 6);
-      ctx.fillStyle = '#ff9a3d';
-      ctx.beginPath(); ctx.moveTo(x, y - 22); ctx.quadraticCurveTo(x + 9, y - 8, x, y); ctx.quadraticCurveTo(x - 9, y - 8, x, y - 22); ctx.fill();
-      ctx.fillStyle = '#ffd27a';
-      ctx.beginPath(); ctx.moveTo(x, y - 14); ctx.quadraticCurveTo(x + 5, y - 6, x, y); ctx.quadraticCurveTo(x - 5, y - 6, x, y - 14); ctx.fill();
-    },
-    hutFrame(ctx, x, y) {
-      ctx.strokeStyle = '#8a6a3f'; ctx.lineWidth = 5; ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.moveTo(x - 30, y); ctx.lineTo(x, y - 46); ctx.lineTo(x + 30, y); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(x - 15, y); ctx.lineTo(x - 15, y - 23); ctx.moveTo(x + 15, y); ctx.lineTo(x + 15, y - 23); ctx.stroke();
-    },
-    hutComplete(ctx, x, y) {
-      ctx.fillStyle = '#c9a86a'; ctx.beginPath(); ctx.moveTo(x - 34, y); ctx.lineTo(x, y - 50); ctx.lineTo(x + 34, y); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = '#8a6a3f'; ctx.fillRect(x - 28, y - 28, 56, 28);
-      ctx.fillStyle = '#4a3624'; ctx.fillRect(x - 8, y - 18, 16, 18); // doorway
-    },
+    campfire(ctx, x, y) { drawDecorSprite('campfire', x, y); },
+    hutFrame(ctx, x, y) { drawDecorSprite('hutFrame', x, y); },
+    hutComplete(ctx, x, y) { drawDecorSprite('hutComplete', x, y); },
     cabin(ctx, x, y) {
       ctx.fillStyle = '#9a7a4a'; ctx.beginPath(); ctx.moveTo(x - 38, y); ctx.lineTo(x, y - 56); ctx.lineTo(x + 38, y); ctx.closePath(); ctx.fill();
       ctx.fillStyle = '#6b4e2f'; ctx.fillRect(x - 32, y - 34, 64, 34);
@@ -1080,40 +1098,17 @@
       ctx.fillStyle = '#3a8fb0';
       for (const ox of [-14, -2, 10]) { ctx.beginPath(); ctx.ellipse(x + ox, y - 12, 6, 12, 0, 0, Math.PI * 2); ctx.fill(); }
     },
-    torches(ctx, x, y) {
-      const draw1 = ox => {
-        ctx.strokeStyle = '#6b4423'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(x + ox, y); ctx.lineTo(x + ox, y - 30); ctx.stroke();
-        ctx.fillStyle = '#ffb14d'; ctx.beginPath(); ctx.arc(x + ox, y - 34, 7, 0, Math.PI * 2); ctx.fill();
-      };
-      draw1(0); draw1(360); // left + right of the path (DECOR_LAYOUT.torches.dx is the left torch's x)
-    },
-    books(ctx, x, y) {
-      ctx.fillStyle = '#8a6a3f'; ctx.fillRect(x - 22, y - 26, 44, 26); // shelf
-      const colors = ['#c0524a', '#4a7a9a', '#e0a83f', '#5a9a6a'];
-      colors.forEach((c, i) => { ctx.fillStyle = c; ctx.fillRect(x - 18 + i * 10, y - 22, 8, 18); });
-    },
-    porch(ctx, x, y) {
-      ctx.fillStyle = '#7a5a34';
-      ctx.fillRect(x - 30, y - 30, 4, 30); ctx.fillRect(x + 26, y - 30, 4, 30);
-      ctx.fillRect(x - 32, y - 32, 66, 6); // roof beam
-    },
-    lanterns(ctx, x, y) {
-      const draw1 = ox => {
-        ctx.strokeStyle = '#5a4632'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x + ox, y - 30); ctx.lineTo(x + ox, y - 14); ctx.stroke();
-        ctx.fillStyle = '#ffd27a'; ctx.beginPath(); ctx.roundRect(x + ox - 6, y - 14, 12, 14, 3); ctx.fill();
-      };
-      draw1(0); draw1(30);
-    },
+    torches(ctx, x, y) { drawDecorSprite('torches', x, y); }, // sprite is already a lit pair
+    books(ctx, x, y) { drawDecorSprite('books', x, y); },
+    porch(ctx, x, y) { drawDecorSprite('porch', x, y); },
+    lanterns(ctx, x, y) { drawDecorSprite('lanterns', x, y); },
     rug(ctx, x, y) {
       ctx.fillStyle = '#c0524a';
       ctx.beginPath(); ctx.ellipse(x, y, 34, 14, 0, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = '#e8ded0'; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.ellipse(x, y, 24, 9, 0, 0, Math.PI * 2); ctx.stroke();
     },
-    table(ctx, x, y) {
-      ctx.fillStyle = '#8a6a3f'; ctx.beginPath(); ctx.ellipse(x, y - 14, 20, 8, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#6b4e2f'; ctx.fillRect(x - 16, y - 10, 4, 12); ctx.fillRect(x + 12, y - 10, 4, 12);
-    },
+    table(ctx, x, y) { drawDecorSprite('table', x, y); },
     hammock(ctx, x, y) {
       ctx.fillStyle = '#7a5a34'; ctx.fillRect(x - 28, y - 34, 4, 34); ctx.fillRect(x + 24, y - 34, 4, 34);
       ctx.strokeStyle = '#e0a83f'; ctx.lineWidth = 3;
@@ -1136,9 +1131,7 @@
         ctx.beginPath(); ctx.moveTo(fx, y); ctx.lineTo(fx + 10, y + 10); ctx.lineTo(fx - 10, y + 10); ctx.closePath(); ctx.fill();
       });
     },
-    firepitRing(ctx, x, y) {
-      ctx.strokeStyle = '#6a6a6a'; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(x, y, 24, 0, Math.PI * 2); ctx.stroke();
-    },
+    firepitRing(ctx, x, y) { drawDecorSprite('firepitRing', x, y); }, // drawn over the campfire sprite at the same spot
     path(ctx, x, y) {
       ctx.fillStyle = '#c9bfa8';
       for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.ellipse(x + i * 20, y + (i % 2) * 6, 9, 6, 0, 0, Math.PI * 2); ctx.fill(); }
@@ -1217,11 +1210,11 @@
   // they sit with the decor itself. Offsets mirror each DECOR_DRAW fn's own internal ox/oy so the
   // glow lands on the actual flame/bulb, not the decor's base anchor point.
   const NIGHT_GLOW_SPOTS = {
-    campfire:    [{ dx: 0, dy: -14, r: 55 }],
+    campfire:    [{ dx: 0, dy: -28, r: 55 }],
     hutFrame:    [], hutComplete: [], cabin: [], // no light source of their own yet
-    torches:     [{ dx: 0, dy: -34, r: 44 }, { dx: 360, dy: -34, r: 44 }],
-    lanterns:    [{ dx: 0, dy: -14, r: 30 }, { dx: 30, dy: -14, r: 30 }],
-    firepitRing: [{ dx: 0, dy: -4, r: 55 }],
+    torches:     [{ dx: -10, dy: -38, r: 40 }, { dx: 10, dy: -38, r: 40 }], // sprite is one pair, close together
+    lanterns:    [{ dx: 0, dy: -30, r: 30 }], // sprite is a single lantern now
+    firepitRing: [{ dx: 0, dy: -25, r: 55 }],
     lights:      [{ dx: -26, dy: 4, r: 24 }, { dx: 0, dy: 4, r: 24 }, { dx: 26, dy: 4, r: 24 }],
   };
   function drawNightGlows() {

@@ -505,6 +505,8 @@
   }
 
   // ---- HUD (screen-space canvas draw, called from game.js's render()) ----
+  // Icons below mirror the actual in-world pickup art (see the coin/coconut/shell drawItem() shape
+  // code in game.js) so the panel reads as the same game rather than generic UI.
   function drawHeart(ctx, cx, cy, r, filled) {
     ctx.fillStyle = filled ? '#ff5a6e' : 'rgba(255,255,255,0.28)';
     ctx.beginPath();
@@ -514,104 +516,224 @@
     ctx.closePath();
     ctx.fill();
   }
-  function drawHomeIcon(ctx, cx, cy, r) {
-    ctx.fillStyle = '#ffd27a';
+  function drawHomeIcon(ctx, cx, cy, r, color) {
+    ctx.fillStyle = color || '#ffd27a';
     ctx.beginPath();
     ctx.moveTo(cx - r, cy); ctx.lineTo(cx, cy - r); ctx.lineTo(cx + r, cy);
     ctx.lineTo(cx + r * 0.7, cy); ctx.lineTo(cx + r * 0.7, cy + r * 0.8); ctx.lineTo(cx - r * 0.7, cy + r * 0.8);
     ctx.lineTo(cx - r * 0.7, cy); ctx.closePath();
     ctx.fill();
   }
-  // TODO: swap heart/home placeholder shapes and the coin/coconut/shell HUD text for real icon art.
-  function drawHUD(ctx) {
-    const pad = 14;
-    let y = pad;
+  function drawCoinIcon(ctx, cx, cy, r) {
     ctx.save();
-    ctx.textBaseline = 'middle';
-
-    const heartSize = 20, heartGap = 4;
-    for (let i = 0; i < maxHearts(); i++) {
-      drawHeart(ctx, pad + i * (heartSize + heartGap) + heartSize / 2, y + heartSize / 2, heartSize / 2, i < state.hearts);
-    }
-    y += heartSize + 8;
-
-    const barW = 130, barH = 10;
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
-    ctx.beginPath(); ctx.roundRect(pad, y, barW, barH, barH / 2); ctx.fill();
-    const pct = Math.max(0, Math.min(1, state.hunger / hungerMax()));
-    ctx.fillStyle = pct > 0.25 ? '#8fd66b' : '#e0663f';
-    ctx.beginPath(); ctx.roundRect(pad, y, barW * pct, barH, barH / 2); ctx.fill();
-    y += barH + 10;
-
-    const flashOn = state.hullFullFlash > 0 && Math.floor(state.hullFullFlash * 8) % 2 === 0;
-    ctx.font = '600 15px system-ui, sans-serif';
-    ctx.fillStyle = flashOn ? '#ffdd55' : '#fff';
-    ctx.fillText(`Hull: ${carriedTotal()}/${hullCap()}`, pad, y + 8);
-    y += 20;
-    if (state.hullFullFlash > 0) {
-      ctx.font = '600 13px system-ui, sans-serif';
-      ctx.fillStyle = '#ffdd55';
-      ctx.fillText('Hull full!', pad, y + 6);
-      y += 18;
-    }
-
-    drawHomeIcon(ctx, pad + 8, y + 8, 8);
-    ctx.font = '600 15px system-ui, sans-serif';
-    ctx.fillStyle = '#fff';
-    ctx.fillText(`Lv ${state.homeLevel}`, pad + 22, y + 8);
-    y += 24;
-
-    ctx.font = '500 13px system-ui, sans-serif';
-    ctx.fillStyle = 'rgba(255,255,255,0.85)';
-    ctx.fillText(`Coins ${state.banked.coins}  Coconuts ${state.banked.coconuts}  Shells ${state.banked.shells}`, pad, y + 6);
-    y += 20;
-
-    if (state.lastLostMessage) {
-      ctx.font = '600 14px system-ui, sans-serif';
-      ctx.fillStyle = '#ffb3a0';
-      ctx.fillText(state.lastLostMessage.text, pad, y + 6);
+    ctx.fillStyle = '#e8c23f';
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#b8842a'; ctx.lineWidth = Math.max(1, r * 0.2);
+    ctx.beginPath(); ctx.arc(cx, cy, r * 0.6, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  }
+  function drawCoconutIcon(ctx, cx, cy, r) {
+    ctx.save();
+    ctx.fillStyle = '#6b4423';
+    ctx.beginPath(); ctx.ellipse(cx, cy, r, r * 0.86, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(240, 217, 168, 0.55)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(cx, cy - r * 0.8); ctx.lineTo(cx, cy + r * 0.8); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx - r * 0.5, cy - r * 0.55); ctx.lineTo(cx - r * 0.15, cy + r * 0.6); ctx.stroke();
+    ctx.restore();
+  }
+  function drawShellIcon(ctx, cx, cy, r) {
+    ctx.save();
+    ctx.fillStyle = '#f0d9a8';
+    ctx.beginPath();
+    ctx.moveTo(cx, cy + r);
+    for (let a = -1; a <= 1.001; a += 0.25) ctx.lineTo(cx + Math.sin(a) * r, cy - Math.cos(a) * r * 0.8);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#c9a86a'; ctx.lineWidth = 1;
+    for (let a = -0.8; a <= 0.81; a += 0.4) {
+      ctx.beginPath(); ctx.moveTo(cx, cy + r); ctx.lineTo(cx + Math.sin(a) * r, cy - Math.cos(a) * r * 0.8); ctx.stroke();
     }
     ctx.restore();
   }
+  // TODO: banked shell total + a shell-collection viewer live behind a future "collection book"
+  // button (state.shellCollection already tracks each banked shell) — not built yet, scope for now
+  // is the HUD layout restyle only.
+  function drawHUD(ctx) {
+    const pad = 14, innerPad = 12, panelW = 220;
+    const heartSize = 20, heartGap = 4, barH = 10, pipSize = 16;
+    const rowHeartsH = heartSize + 10, rowHungerH = barH + 12, rowHullH = pipSize + 10, rowCurrencyH = 20;
 
-  // ---- Upgrade menu (DOM overlay, same pattern as intro.js's save-name prompt — touch-friendly
-  // and avoids fighting the canvas's own touch-drag joystick handling). ----
+    let contentH = innerPad + rowHeartsH + rowHungerH + rowHullH;
+    if (state.hullFullFlash > 0) contentH += 18;
+    contentH += rowCurrencyH;
+    if (state.lastLostMessage) contentH += 20;
+    contentH += innerPad;
+
+    ctx.save();
+    ctx.textBaseline = 'middle';
+
+    ctx.fillStyle = 'rgba(9, 46, 61, 0.82)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(pad, pad, panelW, contentH, 16); ctx.fill(); ctx.stroke();
+
+    const x = pad + innerPad;
+    let y = pad + innerPad;
+
+    // Hearts (left) + home level badge (right)
+    for (let i = 0; i < maxHearts(); i++) {
+      drawHeart(ctx, x + i * (heartSize + heartGap) + heartSize / 2, y + heartSize / 2, heartSize / 2, i < state.hearts);
+    }
+    ctx.font = '700 13px system-ui, sans-serif';
+    const lvText = `Lv ${state.homeLevel}`;
+    const badgeW = 24 + ctx.measureText(lvText).width + 10;
+    const badgeH = heartSize + 4;
+    const badgeX = pad + panelW - innerPad - badgeW;
+    ctx.fillStyle = '#ffb347';
+    ctx.strokeStyle = '#7a5a1e'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.roundRect(badgeX, y - 2, badgeW, badgeH, 10); ctx.fill(); ctx.stroke();
+    drawHomeIcon(ctx, badgeX + 14, y + badgeH / 2 - 2, 8, '#7a5a1e');
+    ctx.fillStyle = '#3a2a10';
+    ctx.fillText(lvText, badgeX + 26, y + badgeH / 2 - 2);
+    y += rowHeartsH;
+
+    // Hunger bar (coconut icon marks what it's tracking)
+    drawCoconutIcon(ctx, x + 6, y + barH / 2, 7);
+    const hbX = x + 18, hbW = panelW - innerPad * 2 - 18;
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath(); ctx.roundRect(hbX, y, hbW, barH, barH / 2); ctx.fill();
+    const pct = Math.max(0, Math.min(1, state.hunger / hungerMax()));
+    ctx.fillStyle = pct > 0.25 ? '#8fd66b' : '#e0663f';
+    ctx.beginPath(); ctx.roundRect(hbX, y, hbW * pct, barH, barH / 2); ctx.fill();
+    y += rowHungerH;
+
+    // Hull capacity pips (filled = currently-carried, unsaved-until-banked slot)
+    drawShellIcon(ctx, x + 6, y + pipSize / 2 - 1, 7);
+    const cap = hullCap(), carried = carriedTotal();
+    let px = x + 18;
+    for (let i = 0; i < cap; i++) {
+      ctx.fillStyle = i < carried ? '#e8c23f' : 'rgba(255,255,255,0.18)';
+      ctx.strokeStyle = i < carried ? '#b8842a' : 'rgba(255,255,255,0.25)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.roundRect(px, y, pipSize, pipSize, 4); ctx.fill(); ctx.stroke();
+      px += pipSize + 4;
+    }
+    const flashOn = state.hullFullFlash > 0 && Math.floor(state.hullFullFlash * 8) % 2 === 0;
+    ctx.font = '600 13px system-ui, sans-serif';
+    ctx.fillStyle = flashOn ? '#ffdd55' : '#fff';
+    ctx.fillText(`${carried}/${cap}`, px + 6, y + pipSize / 2 - 1);
+    y += rowHullH;
+    if (state.hullFullFlash > 0) {
+      ctx.font = '600 13px system-ui, sans-serif';
+      ctx.fillStyle = '#ffdd55';
+      ctx.fillText('Hull full!', x, y + 6);
+      y += 18;
+    }
+
+    // Currency: banked (big, safe) + carried (small, in parens — lost on a hit before banking)
+    drawCoinIcon(ctx, x + 8, y + 9, 8);
+    ctx.font = '700 15px system-ui, sans-serif';
+    ctx.fillStyle = '#fff';
+    ctx.fillText(`${state.banked.coins}`, x + 20, y + 9);
+    let carriedTextX = x + 22 + ctx.measureText(`${state.banked.coins}`).width;
+    if (state.carried.coins > 0) {
+      ctx.font = '500 12px system-ui, sans-serif';
+      ctx.fillStyle = 'rgba(255,221,85,0.85)';
+      ctx.fillText(`(+${state.carried.coins})`, carriedTextX, y + 9);
+    }
+
+    const cocoX = x + 98;
+    drawCoconutIcon(ctx, cocoX, y + 9, 8);
+    ctx.font = '700 15px system-ui, sans-serif';
+    ctx.fillStyle = '#fff';
+    ctx.fillText(`${state.banked.coconuts}`, cocoX + 12, y + 9);
+    carriedTextX = cocoX + 14 + ctx.measureText(`${state.banked.coconuts}`).width;
+    if (state.carried.coconuts > 0) {
+      ctx.font = '500 12px system-ui, sans-serif';
+      ctx.fillStyle = 'rgba(255,221,85,0.85)';
+      ctx.fillText(`(+${state.carried.coconuts})`, carriedTextX, y + 9);
+    }
+    y += rowCurrencyH;
+
+    if (state.lastLostMessage) {
+      ctx.font = '600 13px system-ui, sans-serif';
+      ctx.fillStyle = '#ffb3a0';
+      ctx.fillText(state.lastLostMessage.text, x, y + 6);
+    }
+    ctx.restore();
+
+    ensureSoundButton();
+  }
+
+  // ---- Icon button row (Upgrades / Shop / Day-Night) — DOM overlay in a horizontal row below the
+  // canvas HUD panel, touch-friendly and avoids fighting the canvas's own touch-drag joystick
+  // handling. TODO: a "collection book" button (shell trophy viewer) and a "hide in shell" button
+  // (the level-10 skill) belong in this row too once those features exist — not built yet.
+  let iconRow = null;
+  function ensureIconRow() {
+    if (iconRow) return iconRow;
+    iconRow = document.createElement('div');
+    iconRow.id = 'tt-icon-row';
+    document.body.appendChild(iconRow);
+    return iconRow;
+  }
   let upgradeBtn = null, upgradePanel = null;
   function ensureUpgradeButton() {
     if (upgradeBtn) return;
     upgradeBtn = document.createElement('button');
     upgradeBtn.id = 'tt-upgrade-btn';
+    upgradeBtn.className = 'tt-icon-btn';
     upgradeBtn.type = 'button';
-    upgradeBtn.textContent = 'Upgrades';
+    upgradeBtn.title = 'Upgrades';
+    upgradeBtn.textContent = '⬆️';
     upgradeBtn.addEventListener('click', openUpgradePanel);
-    document.body.appendChild(upgradeBtn);
+    ensureIconRow().appendChild(upgradeBtn);
   }
   function setHomeButtonVisible(visible) {
     ensureUpgradeButton();
-    upgradeBtn.style.display = visible ? 'block' : 'none';
+    upgradeBtn.style.display = visible ? 'flex' : 'none';
     if (!visible) closeUpgradePanel();
     ensureShopButton();
     if (shopBtn) {
-      shopBtn.style.display = visible ? 'block' : 'none';
+      shopBtn.style.display = visible ? 'flex' : 'none';
       if (!visible) closeShopPanel();
     }
   }
-  // Day/Night toggle button — same fixed-position DOM-button pattern as the Upgrades button above,
-  // but shown everywhere (not just at home) once unlocked, since it's a global setting. Ensured
-  // (created once, label kept in sync) from update() below so nothing else has to remember to call it.
+  // Day/Night toggle button — same icon-button pattern as Upgrades above, but shown everywhere (not
+  // just at home) once unlocked, since it's a global setting. Ensured (created once, icon kept in
+  // sync) from update() below so nothing else has to remember to call it.
   let dayNightBtn = null;
   function updateDayNightButtonLabel() {
-    if (dayNightBtn) dayNightBtn.textContent = state.isNight ? '☀️ Day' : '🌙 Night';
+    if (dayNightBtn) dayNightBtn.textContent = state.isNight ? '☀️' : '🌙';
   }
   function ensureDayNightButton() {
     if (!hasSkill('dayNight') || dayNightBtn) return;
     dayNightBtn = document.createElement('button');
     dayNightBtn.id = 'tt-daynight-btn';
+    dayNightBtn.className = 'tt-icon-btn';
     dayNightBtn.type = 'button';
-    dayNightBtn.style.display = 'block';
+    dayNightBtn.title = 'Day / Night';
+    dayNightBtn.style.display = 'flex';
     dayNightBtn.addEventListener('click', () => { toggleDayNight(); updateDayNightButtonLabel(); });
-    document.body.appendChild(dayNightBtn);
+    ensureIconRow().appendChild(dayNightBtn);
     updateDayNightButtonLabel();
+  }
+
+  // ---- Sound toggle (top-right) — shares the same on/off preference intro.js's mute button reads
+  // and writes (window.TT_SOUND, see intro.js) so the setting stays in sync across both screens.
+  let soundBtn = null;
+  function updateSoundButtonLabel() {
+    if (soundBtn) soundBtn.textContent = (window.TT_SOUND && window.TT_SOUND.get()) ? '🔊' : '🔇';
+  }
+  function ensureSoundButton() {
+    if (soundBtn || !window.TT_SOUND) return;
+    soundBtn = document.createElement('button');
+    soundBtn.id = 'tt-sound-btn';
+    soundBtn.className = 'tt-icon-btn';
+    soundBtn.type = 'button';
+    soundBtn.title = 'Sound';
+    soundBtn.addEventListener('click', () => { window.TT_SOUND.toggle(); updateSoundButtonLabel(); });
+    document.body.appendChild(soundBtn);
+    updateSoundButtonLabel();
   }
 
   // ---- Turtle Shop menu (L5 skill) — same DOM-overlay pattern as the upgrade panel, shown only
@@ -622,10 +744,12 @@
     if (shopBtn || !hasSkill('turtleShop')) return;
     shopBtn = document.createElement('button');
     shopBtn.id = 'tt-shop-btn';
+    shopBtn.className = 'tt-icon-btn';
     shopBtn.type = 'button';
-    shopBtn.textContent = 'Shop';
+    shopBtn.title = 'Turtle Shop';
+    shopBtn.textContent = '🎨';
     shopBtn.addEventListener('click', openShopPanel);
-    document.body.appendChild(shopBtn);
+    ensureIconRow().appendChild(shopBtn);
   }
   function openShopPanel() {
     closeShopPanel();

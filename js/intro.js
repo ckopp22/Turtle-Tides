@@ -76,6 +76,12 @@
     click: () => beep(440, 0.08, 'sine'),
     whoosh: () => beep(280, 0.45, 'sawtooth'),
   };
+  // Bridge so the in-game HUD's sound toggle (progression.js) reads/writes the same on/off
+  // preference as this screen's own mute button, instead of tracking a second copy of it.
+  window.TT_SOUND = {
+    get: () => soundOn,
+    toggle: () => { soundOn = !soundOn; writeSound(soundOn); return soundOn; },
+  };
 
   // ---- Sizing (mirrors game.js's own resize() so both agree on the same viewport). ----
   let dpr = 1, viewW = 0, viewH = 0;

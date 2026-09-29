@@ -73,22 +73,51 @@ html, body {
   background: #ffffff;
 }
 
-/* Upgrade button + panel (progression.js) — shown only while the turtle is on the home island. */
-#tt-upgrade-btn {
+/* Icon button row (progression.js: Upgrades / Turtle Shop / Day-Night) — sits below the canvas HUD
+   panel, left-aligned to match it. Each button is appended into this row when unlocked/visible;
+   `display` on the individual button (flex/none) controls whether it shows. */
+#tt-icon-row {
+  position: fixed;
+  left: 14px;
+  top: 176px;
+  z-index: 9;
+  display: flex;
+  gap: 8px;
+}
+.tt-icon-btn {
   display: none;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 10px;
+  border: 2px solid #7a5a1e;
+  background: #ffb347;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* Sound toggle (progression.js) — top right, mirrors intro.js's mute button styling/position. */
+#tt-sound-btn {
   position: fixed;
   right: 14px;
   top: 14px;
   z-index: 9;
-  font-size: 15px;
-  font-weight: 700;
-  padding: 10px 16px;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 10px;
   border: 2px solid #7a5a1e;
   background: #ffb347;
-  min-height: 44px; /* touch-friendly tap target */
+  font-size: 20px;
   cursor: pointer;
 }
+
 .tt-upgrade-box {
   width: min(360px, 90vw);
   max-height: 82vh;
@@ -135,42 +164,6 @@ html, body {
   border-color: #b8ac86;
   color: #8a8064;
   cursor: default;
-}
-
-/* Shop button (progression.js) — shown only at home, once the skill unlocks (home level 5+);
-   stacked under the Upgrades button. */
-#tt-shop-btn {
-  display: none;
-  position: fixed;
-  right: 14px;
-  top: 64px;
-  z-index: 9;
-  font-size: 15px;
-  font-weight: 700;
-  padding: 10px 16px;
-  border-radius: 10px;
-  border: 2px solid #7a5a1e;
-  background: #ffb347;
-  min-height: 44px;
-  cursor: pointer;
-}
-
-/* Day/Night toggle button (game.js) — shown everywhere, not just at home, once the skill unlocks
-   (home level 7+); stacked under the Shop button so none of the three ever overlap. */
-#tt-daynight-btn {
-  display: none;
-  position: fixed;
-  right: 14px;
-  top: 114px;
-  z-index: 9;
-  font-size: 15px;
-  font-weight: 700;
-  padding: 10px 16px;
-  border-radius: 10px;
-  border: 2px solid #7a5a1e;
-  background: #ffb347;
-  min-height: 44px;
-  cursor: pointer;
 }
 
 /* Turtle Shop panel (progression.js) */
