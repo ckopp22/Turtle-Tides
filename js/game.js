@@ -662,8 +662,6 @@
         scenery.push({ x, y, r: 16, cr: 9, type: 'sprite', sprite: 'mossy_boulder', h: 40, collide: true });
       } else if (biome === 'beach' && rand() < 0.14) {
         scenery.push({ x, y, r: 20, type: 'sprite', sprite: 'driftwood_stick', h: 60, collide: false });
-      } else if (biome === 'beach' && rand() < 0.1) {
-        scenery.push({ x, y, r: 20, cr: 10, type: 'palm', collide: true });
       } else if (biome === 'beach' && rand() < 0.06) {
         // rare beach flourish, straight off the reference sheet
         scenery.push({ x, y, r: 24, type: 'sprite', sprite: 'sandcastle_big', h: 140, collide: false });
@@ -690,6 +688,9 @@
         }[biome];
         const clutter = CLUTTER[Math.floor(rand() * CLUTTER.length)];
         scenery.push({ x, y, r: 8, type: 'sprite', sprite: clutter, h: 30, collide: false });
+      } else if (shoreSignedDist(x, y).d > SHORE_SAND_BAND) {
+        // Inside the mainland's outer sand ring (every coastline gets one, not just the beach
+        // biome) — leave it bare, no trees on sand.
       } else {
         const t = pickTree(biome);
         const r = biome === 'forestThick' ? 14 : 12;
