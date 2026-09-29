@@ -295,7 +295,7 @@
     ctx.drawImage(terrainCanvas, sx, sy, sw, sh, camX, camY, vw, vh);
   }
 
-  // None of the tile art (sand1/2, grass1/2) tiles cleanly on its own — opposite edges don't match,
+  // None of the tile art (sand3, grass3) tiles cleanly on its own — opposite edges don't match,
   // which showed up as a hard seam line wherever two tiles met. buildSeamlessTile() fixes that per
   // image, once, at load: roll the image by half its width/height (wraparound) so the original edge
   // seam lands in a cross through the middle instead — the new outer edges are just adjacent source
@@ -316,13 +316,15 @@
   // ---- Ground texture tiles: real art laid over the flat-color terrain blend above (water stays
   // plain color + shimmer, no tile). Beach (north) only now — the 3 grass biomes use the
   // pattern-based drawGrassTextures() below instead of a tiled grid. Plain, regular repeating
-  // tiles, full opacity, no rotation, no blur. ----
+  // tile, full opacity, no rotation, no blur. Same sand3 tile also textures the home island's
+  // sand-spot dunes below (buildIslandDetail), once it's loaded. ----
   const GROUND_TILE_PX = 96;
   const GROUND_TILES = {};
-  for (const name of ['sand1', 'sand2']) {
+  let sandTileReady = false;
+  for (const name of ['sand3']) {
     const img = new Image();
     const entry = { canvas: null };
-    img.onload = () => { entry.canvas = buildSeamlessTile(img); };
+    img.onload = () => { entry.canvas = buildSeamlessTile(img); sandTileReady = true; refreshIslandSand(); };
     img.src = `assets/tiles/${name}.png`;
     GROUND_TILES[name] = entry;
   }
@@ -344,9 +346,7 @@
     const beachWeight = biomeWeights(Math.atan2(dy, dx) + biomeAngleNoise(x, y)).beach;
     const biomeFade = smoothstep(0.35, 0.65, beachWeight);
     if (biomeFade <= 0) return null;
-    const variant = hash2(Math.floor(x / GROUND_TILE_PX), Math.floor(y / GROUND_TILE_PX)) < 0.5;
-    const tile = variant ? GROUND_TILES.sand1 : GROUND_TILES.sand2;
-    return { tile, alpha: smoothstep(tileStart, tileStart - GROUND_TILE_FADE, d) * biomeFade };
+    return { tile: GROUND_TILES.sand3, alpha: smoothstep(tileStart, tileStart - GROUND_TILE_FADE, d) * biomeFade };
   }
   function drawGroundTextures() {
     const vw = viewW / ZOOM, vh = viewH / ZOOM;
@@ -519,8 +519,11 @@
   }
 
   // ---- Home island detail: sand, dunes, tide pools, the home rock pile — pre-rendered once to a
-  // small canvas (island-sized, not world-sized) and stamped at the island's world position. ----
-  function buildIslandDetail() {
+  // small canvas (island-sized, not world-sized) and stamped at the island's world position. Dune
+  // ("sand spot") and tide pool positions are randomized once and cached, so refreshIslandSand()
+  // (called once the sand3 tile image finishes loading) can redraw the same layout with the tile
+  // pattern instead of re-rolling new positions. ----
+  function buildIslandDetail(cached) {
     const pad = 80;
     const size = (ISLAND_R + pad) * 2;
     const c = document.createElement('canvas');
@@ -532,29 +535,49 @@
     // No base sand fill here: the terrain canvas now paints the island's ground color itself
     // (including its noisy shoreline blend), so this transparent layer only adds texture on top.
 
-    // Dunes: soft darker sand bumps.
-    for (let i = 0, n = 0; n < 14 && i < 400; i++) {
-      const ang = rand() * Math.PI * 2, rr = rand() * (ISLAND_R - 50);
-      const x = cx + Math.cos(ang) * rr, y = cy + Math.sin(ang) * rr;
-      g.beginPath(); g.ellipse(x, y, 26 + rand() * 16, 10 + rand() * 6, 0, 0, Math.PI * 2);
-      g.fillStyle = '#e8d391'; g.fill(); n++;
+    // Dunes ("sand spots"): soft darker sand bumps, textured with the sand3 tile once it's loaded
+    // (falls back to a flat color if this runs before the tile image finishes loading).
+    const sandPattern = GROUND_TILES.sand3.canvas && g.createPattern(GROUND_TILES.sand3.canvas, 'repeat');
+    const dunes = cached ? cached.dunes : [];
+    if (!cached) {
+      for (let i = 0, n = 0; n < 14 && i < 400; i++) {
+        const ang = rand() * Math.PI * 2, rr = rand() * (ISLAND_R - 50);
+        dunes.push({ x: cx + Math.cos(ang) * rr, y: cy + Math.sin(ang) * rr, rx: 26 + rand() * 16, ry: 10 + rand() * 6 });
+        n++;
+      }
+    }
+    for (const d of dunes) {
+      g.beginPath(); g.ellipse(d.x, d.y, d.rx, d.ry, 0, 0, Math.PI * 2);
+      if (sandPattern) {
+        g.fillStyle = sandPattern; g.fill();
+        g.fillStyle = 'rgba(120, 90, 40, 0.25)'; g.fill(); // darker tint so the bump still reads
+      } else {
+        g.fillStyle = '#e8d391'; g.fill();
+      }
     }
     // Tide pools, kept away from home.
-    for (let i = 0, n = 0; n < 3 && i < 400; i++) {
-      const ang = rand() * Math.PI * 2, rr = rand() * (ISLAND_R - 90);
-      const x = cx + Math.cos(ang) * rr, y = cy + Math.sin(ang) * rr;
-      if (Math.hypot(x - homeX, y - homeY) < 160) continue;
-      g.beginPath(); g.ellipse(x, y, 26, 16, 0, 0, Math.PI * 2); g.fillStyle = '#c9b57a'; g.fill();
-      g.beginPath(); g.ellipse(x, y, 19, 11, 0, 0, Math.PI * 2); g.fillStyle = '#5ec8d0'; g.fill(); n++;
+    const pools = cached ? cached.pools : [];
+    if (!cached) {
+      for (let i = 0, n = 0; n < 3 && i < 400; i++) {
+        const ang = rand() * Math.PI * 2, rr = rand() * (ISLAND_R - 90);
+        const x = cx + Math.cos(ang) * rr, y = cy + Math.sin(ang) * rr;
+        if (Math.hypot(x - homeX, y - homeY) < 160) continue;
+        pools.push({ x, y }); n++;
+      }
+    }
+    for (const p of pools) {
+      g.beginPath(); g.ellipse(p.x, p.y, 26, 16, 0, 0, Math.PI * 2); g.fillStyle = '#c9b57a'; g.fill();
+      g.beginPath(); g.ellipse(p.x, p.y, 19, 11, 0, 0, Math.PI * 2); g.fillStyle = '#5ec8d0'; g.fill();
     }
     // Home: rock pile (fixed landmark; level art comes with upgrades).
     for (const [dx, dy, r] of [[-34, 6, 26], [8, 14, 30], [40, 0, 22], [-8, -22, 24], [22, -20, 18]]) {
       g.fillStyle = '#7d7d82'; g.beginPath(); g.arc(homeX + dx, homeY + dy, r, 0, Math.PI * 2); g.fill();
       g.fillStyle = '#9a9aa0'; g.beginPath(); g.arc(homeX + dx - 4, homeY + dy - 5, r * 0.6, 0, Math.PI * 2); g.fill();
     }
-    return { canvas: c, worldX: CENTER.x - cx, worldY: CENTER.y - cy, size };
+    return { canvas: c, worldX: CENTER.x - cx, worldY: CENTER.y - cy, size, dunes, pools };
   }
-  const islandDetail = buildIslandDetail();
+  let islandDetail = buildIslandDetail();
+  function refreshIslandSand() { islandDetail = buildIslandDetail(islandDetail); }
 
   // ---- Mainland scenery: trees (all 4 biomes) and beach rocks are obstacles (trunk-only circle
   // collision); driftwood is decorative. Placed by dart-throwing so spacing stays natural, with a
