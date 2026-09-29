@@ -86,6 +86,13 @@
   const DEBUG_STATES = { 1: 'normal', 2: 'stunned', 3: 'sleeping', 4: 'shell' };
   const joy = { active: false, id: null, ox: 0, oy: 0, x: 0, y: 0 };
 
+  // Walk vs swim animation, picked from isWater() each frame rather than a key. Debounced so
+  // stepping right at the shoreline doesn't flicker the animation back and forth.
+  let moveMode = 'walk';           // 'walk' | 'swim' — only used while state === 'normal'
+  let moveModeCandidate = 'walk';
+  let moveModeCandidateFrames = 0;
+  const MODE_SWITCH_FRAMES = 3;    // consecutive frames on the new terrain before switching
+
   const KEY_MAP = { w: 'up', a: 'left', s: 'down', d: 'right' };
   window.addEventListener('keydown', e => {
     if (DEBUG_STATES[e.key]) { state = DEBUG_STATES[e.key]; stateTime = 0; return; }
@@ -634,18 +641,11 @@
   // full (much bigger) canopy, per the trunk-only collision spec.
   const SPRITES = {};
   for (const name of ['pine_tall', 'oak_tree', 'tree_cluster3', 'round_tree_med', 'round_tree_single',
-    'pine_sapling', 'dead_tree_med', 'dead_tree_small', 'round_tree_small', 'bush_round', 'bush_flowering',
-    'bush_dead', 'driftwood_stick', 'sandcastle_big']) {
+    'pine_sapling', 'dead_tree_med', 'dead_tree_small', 'round_tree_small', 'bush_round',
+    'driftwood_stick', 'sandcastle_big']) {
     const img = new Image();
     img.src = `assets/scenery/${name}.png`;
     SPRITES[name] = img;
-  }
-  // flowers_mixed lives with the terrain tile art, not the scenery sheet, but is placed as
-  // ground clutter just like the sprites above.
-  {
-    const img = new Image();
-    img.src = 'assets/tiles/flowers_mixed.png';
-    SPRITES.flowers_mixed = img;
   }
   // Per-biome tree sprite choices, weighted toward the look each biome calls for.
   const BIOME_TREES = {
@@ -700,18 +700,14 @@
         // none of the beach rolls hit for this spot: leave it bare sand, no tree fallback
       } else if (rand() < 0.08) {
         // Ground clutter matched to each grass biome's mood. Purely decorative.
-        // TODO: no bones/twigs, cracked-dirt, or fallen-leaves art yet — bush_dead/bush_round
-        // stand in for dead brush/moss until that art exists.
+        // TODO: no bones/twigs, cracked-dirt, fallen-leaves, or flower art yet — only forestThick
+        // has clutter art (bush_round) until more exists.
         const CLUTTER = {
-          forestOpen: ['flowers_mixed'],
           forestThick: ['bush_round'],
-          deadTrees: ['bush_dead', 'bush_dead'],
         }[biome];
         if (CLUTTER) {
           const clutter = CLUTTER[Math.floor(rand() * CLUTTER.length)];
-          // bush_dead enlarged per feedback — reads too small next to the other clutter otherwise.
-          const clutterH = clutter === 'bush_dead' ? 48 : 30;
-          scenery.push({ x, y, r: 8, type: 'sprite', sprite: clutter, h: clutterH, collide: false });
+          scenery.push({ x, y, r: 8, type: 'sprite', sprite: clutter, h: 30, collide: false });
         }
       } else if (shoreSignedDist(x, y).d > SHORE_SAND_BAND) {
         // Inside the mainland's outer sand ring (every coastline gets one, not just the beach
@@ -722,11 +718,10 @@
         // Collision radius is much smaller than the drawn trunk radius `r` (used for the shadow),
         // so the turtle only bumps the trunk itself and can pass close by/behind the canopy.
         scenery.push({ x, y, r, cr: r * 0.45, type: 'sprite', sprite: t.sprite, h: t.h * (0.85 + rand() * 0.3), collide: true });
-        // A little undergrowth around forest/dead-tree trees, purely decorative.
-        if (biome !== 'beach' && rand() < 0.12) {
-          const bush = biome === 'deadTrees' ? 'bush_dead' : (biome === 'forestThick' ? 'bush_round' : 'bush_flowering');
-          const bushH = bush === 'bush_dead' ? 54 : 36; // bush_dead enlarged per feedback
-          scenery.push({ x: x + (rand() * 2 - 1) * 40, y: y + (rand() * 2 - 1) * 40, r: 6, type: 'sprite', sprite: bush, h: bushH, collide: false });
+        // A little undergrowth around forestThick trees, purely decorative.
+        // TODO: no undergrowth art yet for forestOpen/deadTrees biomes.
+        if (biome === 'forestThick' && rand() < 0.12) {
+          scenery.push({ x: x + (rand() * 2 - 1) * 40, y: y + (rand() * 2 - 1) * 40, r: 6, type: 'sprite', sprite: 'bush_round', h: 36, collide: false });
         }
       }
     }
@@ -807,7 +802,8 @@
   function update(dt) {
     stateTime += dt;
     const dir = state === 'normal' ? getDirection() : { x: 0, y: 0 };
-    const speedMult = isWater(turtle.x, turtle.y) ? WATER_SPEED_MULT : LAND_SPEED_MULT;
+    const inWater = isWater(turtle.x, turtle.y);
+    const speedMult = inWater ? WATER_SPEED_MULT : LAND_SPEED_MULT;
     const tvx = dir.x * MAX_SPEED * speedMult, tvy = dir.y * MAX_SPEED * speedMult;
     const hasInput = dir.x !== 0 || dir.y !== 0;
     const rate = (hasInput ? ACCEL : DECEL) * dt;
@@ -818,7 +814,16 @@
     if (dl <= rate) { turtle.vx = tvx; turtle.vy = tvy; }
     else { turtle.vx += (dvx / dl) * rate; turtle.vy += (dvy / dl) * rate; }
 
-    // Advance walk animation by distance moved; idle holds frame 0.
+    // Pick walk vs swim from the water check, debounced so the shoreline doesn't flicker it.
+    const modeCandidate = inWater ? 'swim' : 'walk';
+    if (modeCandidate === moveModeCandidate) moveModeCandidateFrames++;
+    else { moveModeCandidate = modeCandidate; moveModeCandidateFrames = 1; }
+    if (moveModeCandidateFrames >= MODE_SWITCH_FRAMES && moveMode !== moveModeCandidate) {
+      moveMode = moveModeCandidate;
+      walkFrame = 0; // don't start the new animation mid-cycle
+    }
+
+    // Advance walk/swim animation by distance moved; idle holds frame 0.
     const speed = Math.hypot(turtle.vx, turtle.vy);
     if (speed > 5) walkFrame += speed * dt * FRAMES_PER_SPEED;
     else walkFrame = 0;
@@ -891,10 +896,11 @@
     if (state === 'sleeping') { row = 2; f = Math.floor(stateTime * 2) % FRAMES; }
     else if (state === 'stunned') { row = 3; f = 2 + Math.floor(stateTime * 4) % 2; }
     else if (state === 'shell') { row = 4; f = 0; }
+    else if (moveMode === 'swim') { row = 1; } // swim cycle; idle float is frame 0, same as walk's idle
     ctx.save();
     ctx.translate(turtle.x, turtle.y);
     ctx.rotate(turtle.angle + Math.PI / 2); // art faces up, angle 0 = right
-    if (state === 'normal' && f === 3) ctx.scale(-1, 1); // mirror the last frame so the head swings left (sheet only has right)
+    if (state === 'normal' && moveMode === 'walk' && f === 3) ctx.scale(-1, 1); // mirror the last walk frame so the head swings left (sheet only has right)
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(sprite, f * fw, row * fh, fw, fh, -dw / 2, -SPRITE_H / 2, dw, SPRITE_H);
     ctx.restore();
