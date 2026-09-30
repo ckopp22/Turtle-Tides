@@ -546,7 +546,13 @@
   }
   const backpackIconImg = new Image();
   backpackIconImg.src = 'assets/items/backpack.png';
+  const hullHudIconImg = new Image();
+  hullHudIconImg.src = 'assets/items/hull_hud.png';
   function drawShellIcon(ctx, cx, cy, r) {
+    if (hullHudIconImg.complete && hullHudIconImg.naturalWidth) {
+      ctx.drawImage(hullHudIconImg, cx - r, cy - r, r * 2, r * 2);
+      return;
+    }
     if (backpackIconImg.complete && backpackIconImg.naturalWidth) {
       ctx.drawImage(backpackIconImg, cx - r, cy - r, r * 2, r * 2);
       return;
@@ -831,7 +837,10 @@
     const wrap = document.createElement('div');
     wrap.className = 'tt-name-prompt';
     wrap.innerHTML = `<div class="tt-name-box tt-upgrade-box">
-      <h3>Upgrades — ${state.banked.coins} coins banked</h3>
+      <div class="tt-shop-header">
+        <h3>The Shop</h3>
+        <div class="tt-shop-coins"><img src="assets/items/coin.png" alt="">${state.banked.coins}</div>
+      </div>
       <div class="tt-shelf-bg">${rows}</div>
       <div class="tt-name-actions"><button type="button" class="tt-cancel tt-upgrade-close">Close</button></div>
     </div>`;

@@ -124,9 +124,31 @@ html, body {
   overflow-y: auto;
 }
 .tt-upgrade-box h3 {
-  margin: 0 0 12px;
+  margin: 0;
   font-size: 16px;
   color: #3a2a10;
+}
+.tt-shop-header {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.tt-shop-coins {
+  position: absolute;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 14px;
+  font-weight: bold;
+  color: #3a2a10;
+}
+.tt-shop-coins img {
+  width: 18px;
+  height: 18px;
+  image-rendering: pixelated;
 }
 /* Shop stall art (assets/items/shop_stall.png) as the upgrade panel's background — the three
    TRACKS rows stack directly under the awning, right on top of each other. */
