@@ -315,12 +315,13 @@
     persist();
     return true;
   }
-  // Hit-testing rect for the hunger bar, updated each drawHUD() call, in the same CSS-px screen
-  // space the canvas click/touch coordinates arrive in.
-  let hungerBarRect = null;
+  // Hit-testing rect for the whole HUD panel (hearts/hunger/capacity), updated each drawHUD() call,
+  // in the same CSS-px screen space the canvas click/touch coordinates arrive in. Clicking anywhere
+  // on the panel eats a coconut, not just the hunger bar itself.
+  let hudPanelRect = null;
   function tryEatFromHud(clientX, clientY) {
-    if (!hungerBarRect) return false;
-    const r = hungerBarRect;
+    if (!hudPanelRect) return false;
+    const r = hudPanelRect;
     if (clientX < r.x || clientX > r.x + r.w || clientY < r.y || clientY > r.y + r.h) return false;
     return eatCoconutManual();
   }
@@ -620,6 +621,7 @@
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
     ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.roundRect(pad, pad, panelW, contentH, 16); ctx.fill(); ctx.stroke();
+    hudPanelRect = { x: pad, y: pad, w: panelW, h: contentH };
 
     const x = pad + innerPad;
     let y = pad + innerPad;
@@ -649,8 +651,6 @@
     const pct = Math.max(0, Math.min(1, state.hunger / hungerMax()));
     ctx.fillStyle = pct > 0.25 ? '#8fd66b' : '#e0663f';
     ctx.beginPath(); ctx.roundRect(hbX, y, hbW * pct, barH, barH / 2); ctx.fill();
-    // Padded a bit beyond the drawn bar so the click/tap target isn't razor-thin.
-    hungerBarRect = { x: hbX - 6, y: y - 6, w: hbW + 12, h: barH + 12 };
     y += rowHungerH;
 
     // Carry capacity (shell icon + "carried/cap" number, no more per-slot boxes) + currency,
