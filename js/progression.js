@@ -299,6 +299,28 @@
     state.hungerZeroTimer = 0;
     return true;
   }
+  // Manual eat, triggered by clicking/tapping the HUD hunger bar (see tryEatFromHud below). Draws
+  // from the banked stash, not carried inventory, since this is a deliberate action rather than the
+  // auto-eat safety net above. No-ops (doesn't consume a coconut) if hunger is already full, so an
+  // accidental click can't waste one.
+  function eatCoconutManual() {
+    if (state.hunger >= hungerMax() || state.banked.coconuts <= 0) return false;
+    state.banked.coconuts--;
+    state.hunger = hungerMax();
+    state.hungerZeroTimer = 0;
+    state.hungerHeartTicks = 0;
+    persist();
+    return true;
+  }
+  // Hit-testing rect for the hunger bar, updated each drawHUD() call, in the same CSS-px screen
+  // space the canvas click/touch coordinates arrive in.
+  let hungerBarRect = null;
+  function tryEatFromHud(clientX, clientY) {
+    if (!hungerBarRect) return false;
+    const r = hungerBarRect;
+    if (clientX < r.x || clientX > r.x + r.w || clientY < r.y || clientY > r.y + r.h) return false;
+    return eatCoconutManual();
+  }
 
   let respawnHandler = null;
   function setRespawnHandler(fn) { respawnHandler = fn; } // game.js hooks this to reset turtle.x/y
@@ -624,6 +646,8 @@
     const pct = Math.max(0, Math.min(1, state.hunger / hungerMax()));
     ctx.fillStyle = pct > 0.25 ? '#8fd66b' : '#e0663f';
     ctx.beginPath(); ctx.roundRect(hbX, y, hbW * pct, barH, barH / 2); ctx.fill();
+    // Padded a bit beyond the drawn bar so the click/tap target isn't razor-thin.
+    hungerBarRect = { x: hbX - 6, y: y - 6, w: hbW + 12, h: barH + 12 };
     y += rowHungerH;
 
     // Carry capacity (shell icon + "carried/cap" number, no more per-slot boxes) + currency,
@@ -863,7 +887,7 @@
 
   window.Progression = {
     tryPickup, bankCarried, takeHit, isInvulnerable, setRespawnHandler,
-    update, updateSleep, getSleepConfig, swimSpeedMultiplier, moveSpeedMultiplier, toggleDayNight, drawHUD, setHomeButtonVisible,
+    update, updateSleep, getSleepConfig, swimSpeedMultiplier, moveSpeedMultiplier, toggleDayNight, drawHUD, setHomeButtonVisible, tryEatFromHud,
     buyUpgrade, canUpgrade,
     attachSlot, getSaveData, persist,
     SKILLS, hasSkill, skillAtLevel, getHomeLevels,

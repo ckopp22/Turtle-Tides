@@ -141,12 +141,14 @@
   canvas.addEventListener('touchstart', e => {
     e.preventDefault();
     wakeUp();
-    if (joy.active) return;
     const t = e.changedTouches[0];
+    if (window.Progression.tryEatFromHud(t.clientX, t.clientY)) return; // tapped the hunger bar, not a joystick drag
+    if (joy.active) return;
     joy.active = true; joy.id = t.identifier;
     joy.ox = joy.x = t.clientX; joy.oy = joy.y = t.clientY;
   }, { passive: false });
   canvas.addEventListener('mousedown', wakeUp); // desktop "click" wakes it too (no other click mechanic exists yet)
+  canvas.addEventListener('click', e => window.Progression.tryEatFromHud(e.clientX, e.clientY)); // desktop: click the hunger bar to eat a coconut
   canvas.addEventListener('touchmove', e => {
     e.preventDefault();
     for (const t of e.changedTouches) {
