@@ -521,7 +521,13 @@
     ctx.lineTo(cx - r * 0.7, cy); ctx.closePath();
     ctx.fill();
   }
+  const coinHudIconImg = new Image();
+  coinHudIconImg.src = 'assets/items/coin_hud.png';
   function drawCoinIcon(ctx, cx, cy, r) {
+    if (coinHudIconImg.complete && coinHudIconImg.naturalWidth) {
+      ctx.drawImage(coinHudIconImg, cx - r, cy - r, r * 2, r * 2);
+      return;
+    }
     ctx.save();
     ctx.fillStyle = '#e8c23f';
     ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
@@ -605,14 +611,14 @@
     ctx.fillStyle = '#ffb347';
     ctx.strokeStyle = '#7a5a1e'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.roundRect(badgeX, y - 2, badgeW, badgeH, 10); ctx.fill(); ctx.stroke();
-    drawHomeIcon(ctx, badgeX + 14, y + badgeH / 2 - 2, 8, '#7a5a1e');
+    drawHomeIcon(ctx, badgeX + 14, y + badgeH / 2 - 2, 10, '#7a5a1e');
     ctx.fillStyle = '#3a2a10';
     ctx.fillText(lvText, badgeX + 26, y + badgeH / 2 - 2);
     y += rowHeartsH;
 
     // Hunger bar (coconut icon marks what it's tracking)
-    drawCoconutIcon(ctx, x + 6, y + barH / 2, 7);
-    const hbX = x + 18, hbW = panelW - innerPad * 2 - 18;
+    drawCoconutIcon(ctx, x + 7, y + barH / 2, 9);
+    const hbX = x + 20, hbW = panelW - innerPad * 2 - 20;
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
     ctx.beginPath(); ctx.roundRect(hbX, y, hbW, barH, barH / 2); ctx.fill();
     const pct = Math.max(0, Math.min(1, state.hunger / hungerMax()));
@@ -622,30 +628,30 @@
 
     // Carry capacity (shell icon + "carried/cap" number, no more per-slot boxes) + currency,
     // sharing one row now that the pip boxes are gone.
-    drawShellIcon(ctx, x + 6, y + 9, 7);
+    drawShellIcon(ctx, x + 7, y + 9, 9);
     const cap = hullCap(), carried = carriedTotal();
     const flashOn = state.hullFullFlash > 0 && Math.floor(state.hullFullFlash * 8) % 2 === 0;
     ctx.font = '600 13px system-ui, sans-serif';
     ctx.fillStyle = flashOn ? '#ffdd55' : '#fff';
-    ctx.fillText(`${carried}/${cap}`, x + 16, y + 9);
+    ctx.fillText(`${carried}/${cap}`, x + 18, y + 9);
 
-    drawCoinIcon(ctx, x + 66, y + 9, 8);
+    drawCoinIcon(ctx, x + 68, y + 9, 10);
     ctx.font = '700 15px system-ui, sans-serif';
     ctx.fillStyle = '#fff';
-    ctx.fillText(`${state.banked.coins}`, x + 78, y + 9);
-    let carriedTextX = x + 80 + ctx.measureText(`${state.banked.coins}`).width;
+    ctx.fillText(`${state.banked.coins}`, x + 81, y + 9);
+    let carriedTextX = x + 83 + ctx.measureText(`${state.banked.coins}`).width;
     if (state.carried.coins > 0) {
       ctx.font = '500 12px system-ui, sans-serif';
       ctx.fillStyle = 'rgba(255,221,85,0.85)';
       ctx.fillText(`(+${state.carried.coins})`, carriedTextX, y + 9);
     }
 
-    const cocoX = x + 140;
-    drawCoconutIcon(ctx, cocoX, y + 9, 8);
+    const cocoX = x + 143;
+    drawCoconutIcon(ctx, cocoX, y + 9, 10);
     ctx.font = '700 15px system-ui, sans-serif';
     ctx.fillStyle = '#fff';
-    ctx.fillText(`${state.banked.coconuts}`, cocoX + 12, y + 9);
-    carriedTextX = cocoX + 14 + ctx.measureText(`${state.banked.coconuts}`).width;
+    ctx.fillText(`${state.banked.coconuts}`, cocoX + 14, y + 9);
+    carriedTextX = cocoX + 16 + ctx.measureText(`${state.banked.coconuts}`).width;
     if (state.carried.coconuts > 0) {
       ctx.font = '500 12px system-ui, sans-serif';
       ctx.fillStyle = 'rgba(255,221,85,0.85)';

@@ -79,7 +79,7 @@ html, body {
 #tt-icon-row {
   position: fixed;
   left: 14px;
-  top: 176px;
+  top: 130px;
   z-index: 9;
   display: flex;
   gap: 8px;
@@ -98,6 +98,11 @@ html, body {
   line-height: 1;
   cursor: pointer;
 }
+/* Fixed left-to-right order regardless of unlock/insertion order: Upgrades (shop sign), then Turtle
+   Shop (cosmetics), then Day/Night. */
+#tt-upgrade-btn { order: 1; }
+#tt-shop-btn { order: 2; }
+#tt-daynight-btn { order: 3; }
 
 /* Sound toggle (progression.js) — top right, mirrors intro.js's mute button styling/position. */
 #tt-sound-btn {
