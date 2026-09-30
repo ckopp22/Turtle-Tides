@@ -334,10 +334,14 @@
   function drawTitle() {
     ctx.save();
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
-    ctx.font = 'italic 96px "Bradley Hand", "Comic Sans MS", cursive';
-    strokeGroove('TURTLE TIDES', viewW / 2, viewH * 0.22, 13);
-    ctx.font = 'italic 42px "Bradley Hand", "Comic Sans MS", cursive';
-    strokeGroove('by Wesley Kopp', viewW / 2, viewH * 0.22 + 74, 3);
+    // Scale the title down on narrow (portrait phone) viewports so "TURTLE TIDES" never
+    // runs past the screen edges; 96px is the size it was designed at, on a wide-enough view.
+    const titleSize = Math.min(96, viewW * 0.15);
+    const subSize = titleSize * 42 / 96;
+    ctx.font = `italic ${titleSize}px "Bradley Hand", "Comic Sans MS", cursive`;
+    strokeGroove('TURTLE TIDES', viewW / 2, viewH * 0.22, titleSize * 13 / 96);
+    ctx.font = `italic ${subSize}px "Bradley Hand", "Comic Sans MS", cursive`;
+    strokeGroove('by Wesley Kopp', viewW / 2, viewH * 0.22 + subSize * 74 / 42, subSize * 3 / 42);
     ctx.restore();
   }
   let pulseClock = 0;
@@ -618,7 +622,7 @@
     // each level means. Progression fills in defaults for any field an older save is missing.
     const data = {
       slotId: slot, name, createdAt: now, lastPlayedAt: now,
-      heartsLevel: 0, hungerLevel: 0, hullLevel: 0, homeLevel: 0,
+      heartsLevel: 0, hullLevel: 0, homeLevel: 0,
       banked: { coins: 0, coconuts: 0, shells: 0 },
       shellCollection: [],
     };

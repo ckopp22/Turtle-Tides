@@ -21,6 +21,14 @@
                                                      // bounds clamp) already reads WORLD_W/WORLD_H
   const HOME = { x: CENTER.x, y: CENTER.y + 90 };
 
+  // Camera zoom: smaller = more of the map visible. Zoomed out further on narrow/mobile
+  // viewports so the phone screen shows a comparable amount of world to desktop.
+  let ZOOM = 0.85;
+  function updateZoomForViewport() {
+    ZOOM = window.innerWidth <= 768 ? 0.6 : 0.85;
+  }
+  updateZoomForViewport();
+
   // "TURTLE TIDES / by Wesley Kopp" written in the sand, south outer ring (see drawSandText()
   // below). Defined here, ahead of the shore/grass/scenery generation below, so those can widen the
   // sand patch under the text and keep trees from spawning over it.
@@ -1355,16 +1363,14 @@
       ctx.drawImage(coinImg, cx - dw / 2, cy - 15, dw, 30);
     },
   });
+  const coconutImg = new Image();
+  coconutImg.src = 'assets/items/coconut.png';
   const coconutPickups = makePickupType('coconuts', {
     count: 16, pickupRadius: 24, respawnSeconds: 26, drawH: 26, bobSpeed: 2.0, bobAmplitude: 5,
     drawItem(cx, cy) {
-      ctx.save();
-      ctx.fillStyle = '#6b4423';
-      ctx.beginPath(); ctx.ellipse(cx, cy, 15, 13, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = 'rgba(74, 46, 23, 0.7)'; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.moveTo(cx, cy - 13); ctx.lineTo(cx, cy + 13); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(cx - 7, cy - 9); ctx.lineTo(cx - 3, cy + 9); ctx.stroke();
-      ctx.restore();
+      if (!coconutImg.complete || !coconutImg.naturalWidth) return;
+      const dh = 30, dw = dh * coconutImg.naturalWidth / coconutImg.naturalHeight;
+      ctx.drawImage(coconutImg, cx - dw / 2, cy - dh / 2, dw, dh);
     },
   });
   const shellPickups = makePickupType('shells', {
@@ -1568,6 +1574,7 @@
     dpr = window.devicePixelRatio || 1;
     viewW = window.innerWidth;
     viewH = window.innerHeight;
+    updateZoomForViewport();
     // Backing store scales up for retina sharpness; CSS size (set in style.css) stays at window size.
     canvas.width = Math.round(viewW * dpr);
     canvas.height = Math.round(viewH * dpr);
@@ -1578,7 +1585,6 @@
 
   // Camera: centers on the turtle, clamped so the view never shows past the world edge.
   // (If the viewport is ever bigger than the world, e.g. a very wide monitor, center the world instead.)
-  const ZOOM = 0.85; // slightly zoomed out so the player sees more of the map around the turtle
   let camX = 0, camY = 0;
   // Brief screen shake (e.g. knocking down a sandcastle) — shakeTime counts down to 0 in update(dt);
   // shakeDuration is its starting value, so shakeTime/shakeDuration fades the offset out linearly.

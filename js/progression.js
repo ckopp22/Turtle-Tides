@@ -15,14 +15,12 @@
       upgradeCosts: [40, 90, 160, 260],
     },
     hunger: {
+      // Fixed for the whole game now — no upgrade track (was `hungerLevel`/TRACKS.hunger).
       baseMax: 100,
-      baseDrainPerSecond: 1.2,     // only drains away from the home island (MDD s4)
+      baseDrainPerSecond: 0.6,     // only drains away from the home island (MDD s4); halved from 1.2
       slowMultiplier: 0.55,        // movement speed multiplier while hunger is at 0
       graceSeconds: 8,             // time at 0 hunger before heart loss starts
       heartLossIntervalSeconds: 6, // one heart lost per this many seconds once past the grace period
-      maxBonusPerLevel: 40,        // + max hunger per upgrade level
-      drainMultPerLevel: 0.85,     // drain rate *= this per upgrade level (slower drain)
-      upgradeCosts: [30, 70, 130, 220],
     },
     hull: {
       capTiers: [3, 5, 8, 12, 18], // index 0 = starting capacity
@@ -242,7 +240,6 @@
   const state = {
     hearts: CONFIG.hearts.startMax,
     heartsLevel: 0,
-    hungerLevel: 0,
     hunger: CONFIG.hunger.baseMax,
     hullLevel: 0,
     homeLevel: 0,
@@ -264,8 +261,8 @@
 
   function clampLevel(v, max) { v = Number.isFinite(v) ? v : 0; return Math.max(0, Math.min(max, v)); }
   function maxHearts() { return CONFIG.hearts.startMax + state.heartsLevel; }
-  function hungerMax() { return CONFIG.hunger.baseMax + state.hungerLevel * CONFIG.hunger.maxBonusPerLevel; }
-  function hungerDrainRate() { return CONFIG.hunger.baseDrainPerSecond * Math.pow(CONFIG.hunger.drainMultPerLevel, state.hungerLevel); }
+  function hungerMax() { return CONFIG.hunger.baseMax; }
+  function hungerDrainRate() { return CONFIG.hunger.baseDrainPerSecond; }
   function hullCap() { return CONFIG.hull.capTiers[state.hullLevel]; }
   function carriedTotal() { return state.carried.coins + state.carried.coconuts + state.carried.shells; }
   function homeLevelDef() { return CONFIG.home.levels[Math.min(state.homeLevel, CONFIG.home.levels.length - 1)]; }
@@ -406,13 +403,6 @@
       currentText: () => `${maxHearts()} heart${maxHearts() === 1 ? '' : 's'}`,
       nextText: () => `${maxHearts() + 1} hearts`,
     },
-    hunger: {
-      label: 'Hunger', level: () => state.hungerLevel, maxLevel: () => CONFIG.hunger.upgradeCosts.length,
-      cost: () => CONFIG.hunger.upgradeCosts[state.hungerLevel],
-      apply: () => { state.hungerLevel++; },
-      currentText: () => `${hungerMax()} max, slower drain`,
-      nextText: () => `${hungerMax() + CONFIG.hunger.maxBonusPerLevel} max, slower drain`,
-    },
     hull: {
       label: 'Hull', level: () => state.hullLevel, maxLevel: () => CONFIG.hull.capTiers.length - 1,
       cost: () => CONFIG.hull.upgradeCosts[state.hullLevel],
@@ -445,7 +435,6 @@
   function loadFromSave(data) {
     data = data || {};
     state.heartsLevel = clampLevel(data.heartsLevel, CONFIG.hearts.upgradeCosts.length);
-    state.hungerLevel = clampLevel(data.hungerLevel, CONFIG.hunger.upgradeCosts.length);
     state.hullLevel = clampLevel(data.hullLevel, CONFIG.hull.capTiers.length - 1);
     state.homeLevel = clampLevel(data.homeLevel, CONFIG.home.levels.length - 1);
     state.banked = {
@@ -484,7 +473,6 @@
   function getSaveData() {
     return {
       heartsLevel: state.heartsLevel,
-      hungerLevel: state.hungerLevel,
       hullLevel: state.hullLevel,
       homeLevel: state.homeLevel,
       banked: { ...state.banked },
@@ -507,16 +495,31 @@
   // ---- HUD (screen-space canvas draw, called from game.js's render()) ----
   // Icons below mirror the actual in-world pickup art (see the coin/coconut/shell drawItem() shape
   // code in game.js) so the panel reads as the same game rather than generic UI.
+  const heartFullImg = new Image();
+  heartFullImg.src = 'assets/items/heart_full.png';
+  const heartEmptyImg = new Image();
+  heartEmptyImg.src = 'assets/items/heart_empty.png';
   function drawHeart(ctx, cx, cy, r, filled) {
-    ctx.fillStyle = filled ? '#ff5a6e' : 'rgba(255,255,255,0.28)';
-    ctx.beginPath();
-    ctx.moveTo(cx, cy + r * 0.6);
-    ctx.bezierCurveTo(cx - r * 1.3, cy - r * 0.6, cx - r * 0.5, cy - r * 1.3, cx, cy - r * 0.4);
-    ctx.bezierCurveTo(cx + r * 0.5, cy - r * 1.3, cx + r * 1.3, cy - r * 0.6, cx, cy + r * 0.6);
-    ctx.closePath();
-    ctx.fill();
+    const img = filled ? heartFullImg : heartEmptyImg;
+    if (img.complete && img.naturalWidth) {
+      ctx.drawImage(img, cx - r, cy - r, r * 2, r * 2);
+    } else {
+      ctx.fillStyle = filled ? '#ff5a6e' : 'rgba(255,255,255,0.28)';
+      ctx.beginPath();
+      ctx.moveTo(cx, cy + r * 0.6);
+      ctx.bezierCurveTo(cx - r * 1.3, cy - r * 0.6, cx - r * 0.5, cy - r * 1.3, cx, cy - r * 0.4);
+      ctx.bezierCurveTo(cx + r * 0.5, cy - r * 1.3, cx + r * 1.3, cy - r * 0.6, cx, cy + r * 0.6);
+      ctx.closePath();
+      ctx.fill();
+    }
   }
+  const homeIconImg = new Image();
+  homeIconImg.src = 'assets/items/home_icon.png';
   function drawHomeIcon(ctx, cx, cy, r, color) {
+    if (homeIconImg.complete && homeIconImg.naturalWidth) {
+      ctx.drawImage(homeIconImg, cx - r, cy - r, r * 2, r * 2);
+      return;
+    }
     ctx.fillStyle = color || '#ffd27a';
     ctx.beginPath();
     ctx.moveTo(cx - r, cy); ctx.lineTo(cx, cy - r); ctx.lineTo(cx + r, cy);
@@ -532,7 +535,13 @@
     ctx.beginPath(); ctx.arc(cx, cy, r * 0.6, 0, Math.PI * 2); ctx.stroke();
     ctx.restore();
   }
+  const coconutIconImg = new Image();
+  coconutIconImg.src = 'assets/items/coconut.png';
   function drawCoconutIcon(ctx, cx, cy, r) {
+    if (coconutIconImg.complete && coconutIconImg.naturalWidth) {
+      ctx.drawImage(coconutIconImg, cx - r, cy - r, r * 2, r * 2);
+      return;
+    }
     ctx.save();
     ctx.fillStyle = '#6b4423';
     ctx.beginPath(); ctx.ellipse(cx, cy, r, r * 0.86, 0, 0, Math.PI * 2); ctx.fill();
@@ -559,12 +568,11 @@
   // is the HUD layout restyle only.
   function drawHUD(ctx) {
     const pad = 14, innerPad = 12, panelW = 220;
-    const heartSize = 20, heartGap = 4, barH = 10, pipSize = 16;
-    const rowHeartsH = heartSize + 10, rowHungerH = barH + 12, rowHullH = pipSize + 10, rowCurrencyH = 20;
+    const heartSize = 20, heartGap = 4, barH = 10;
+    const rowHeartsH = heartSize + 10, rowHungerH = barH + 12, rowCapH = 20;
 
-    let contentH = innerPad + rowHeartsH + rowHungerH + rowHullH;
+    let contentH = innerPad + rowHeartsH + rowHungerH + rowCapH;
     if (state.hullFullFlash > 0) contentH += 18;
-    contentH += rowCurrencyH;
     if (state.lastLostMessage) contentH += 20;
     contentH += innerPad;
 
@@ -606,42 +614,27 @@
     ctx.beginPath(); ctx.roundRect(hbX, y, hbW * pct, barH, barH / 2); ctx.fill();
     y += rowHungerH;
 
-    // Hull capacity pips (filled = currently-carried, unsaved-until-banked slot)
-    drawShellIcon(ctx, x + 6, y + pipSize / 2 - 1, 7);
+    // Carry capacity (shell icon + "carried/cap" number, no more per-slot boxes) + currency,
+    // sharing one row now that the pip boxes are gone.
+    drawShellIcon(ctx, x + 6, y + 9, 7);
     const cap = hullCap(), carried = carriedTotal();
-    let px = x + 18;
-    for (let i = 0; i < cap; i++) {
-      ctx.fillStyle = i < carried ? '#e8c23f' : 'rgba(255,255,255,0.18)';
-      ctx.strokeStyle = i < carried ? '#b8842a' : 'rgba(255,255,255,0.25)';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.roundRect(px, y, pipSize, pipSize, 4); ctx.fill(); ctx.stroke();
-      px += pipSize + 4;
-    }
     const flashOn = state.hullFullFlash > 0 && Math.floor(state.hullFullFlash * 8) % 2 === 0;
     ctx.font = '600 13px system-ui, sans-serif';
     ctx.fillStyle = flashOn ? '#ffdd55' : '#fff';
-    ctx.fillText(`${carried}/${cap}`, px + 6, y + pipSize / 2 - 1);
-    y += rowHullH;
-    if (state.hullFullFlash > 0) {
-      ctx.font = '600 13px system-ui, sans-serif';
-      ctx.fillStyle = '#ffdd55';
-      ctx.fillText('Hull full!', x, y + 6);
-      y += 18;
-    }
+    ctx.fillText(`${carried}/${cap}`, x + 16, y + 9);
 
-    // Currency: banked (big, safe) + carried (small, in parens — lost on a hit before banking)
-    drawCoinIcon(ctx, x + 8, y + 9, 8);
+    drawCoinIcon(ctx, x + 66, y + 9, 8);
     ctx.font = '700 15px system-ui, sans-serif';
     ctx.fillStyle = '#fff';
-    ctx.fillText(`${state.banked.coins}`, x + 20, y + 9);
-    let carriedTextX = x + 22 + ctx.measureText(`${state.banked.coins}`).width;
+    ctx.fillText(`${state.banked.coins}`, x + 78, y + 9);
+    let carriedTextX = x + 80 + ctx.measureText(`${state.banked.coins}`).width;
     if (state.carried.coins > 0) {
       ctx.font = '500 12px system-ui, sans-serif';
       ctx.fillStyle = 'rgba(255,221,85,0.85)';
       ctx.fillText(`(+${state.carried.coins})`, carriedTextX, y + 9);
     }
 
-    const cocoX = x + 98;
+    const cocoX = x + 140;
     drawCoconutIcon(ctx, cocoX, y + 9, 8);
     ctx.font = '700 15px system-ui, sans-serif';
     ctx.fillStyle = '#fff';
@@ -652,7 +645,13 @@
       ctx.fillStyle = 'rgba(255,221,85,0.85)';
       ctx.fillText(`(+${state.carried.coconuts})`, carriedTextX, y + 9);
     }
-    y += rowCurrencyH;
+    y += rowCapH;
+    if (state.hullFullFlash > 0) {
+      ctx.font = '600 13px system-ui, sans-serif';
+      ctx.fillStyle = '#ffdd55';
+      ctx.fillText('Hull full!', x, y + 6);
+      y += 18;
+    }
 
     if (state.lastLostMessage) {
       ctx.font = '600 13px system-ui, sans-serif';
@@ -684,7 +683,7 @@
     upgradeBtn.className = 'tt-icon-btn';
     upgradeBtn.type = 'button';
     upgradeBtn.title = 'Upgrades';
-    upgradeBtn.textContent = '⬆️';
+    upgradeBtn.innerHTML = '<img src="assets/items/shop_sign.png" alt="" width="28" height="28">';
     upgradeBtn.addEventListener('click', openUpgradePanel);
     ensureIconRow().appendChild(upgradeBtn);
   }
@@ -747,7 +746,7 @@
     shopBtn.className = 'tt-icon-btn';
     shopBtn.type = 'button';
     shopBtn.title = 'Turtle Shop';
-    shopBtn.textContent = '🎨';
+    shopBtn.textContent = '🎨'; // TODO: swap for a dedicated cosmetics-shop icon (distinct from the coin-upgrade sign)
     shopBtn.addEventListener('click', openShopPanel);
     ensureIconRow().appendChild(shopBtn);
   }
