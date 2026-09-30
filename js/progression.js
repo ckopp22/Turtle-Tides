@@ -397,25 +397,19 @@
   // ---- Upgrades ----
   const TRACKS = {
     hearts: {
-      label: 'Hearts', level: () => state.heartsLevel, maxLevel: () => CONFIG.hearts.upgradeCosts.length,
+      label: 'Hearts', icon: 'assets/items/heart_full.png', level: () => state.heartsLevel, maxLevel: () => CONFIG.hearts.upgradeCosts.length,
       cost: () => CONFIG.hearts.upgradeCosts[state.heartsLevel],
       apply: () => { state.heartsLevel++; state.hearts = maxHearts(); },
-      currentText: () => `${maxHearts()} heart${maxHearts() === 1 ? '' : 's'}`,
-      nextText: () => `${maxHearts() + 1} hearts`,
     },
     hull: {
-      label: 'Hull', level: () => state.hullLevel, maxLevel: () => CONFIG.hull.capTiers.length - 1,
+      label: 'Hull', icon: 'assets/items/backpack.png', level: () => state.hullLevel, maxLevel: () => CONFIG.hull.capTiers.length - 1,
       cost: () => CONFIG.hull.upgradeCosts[state.hullLevel],
       apply: () => { state.hullLevel++; },
-      currentText: () => `${hullCap()} items`,
-      nextText: () => `${CONFIG.hull.capTiers[state.hullLevel + 1]} items`,
     },
     home: {
-      label: 'Home', level: () => state.homeLevel, maxLevel: () => CONFIG.home.levels.length - 1,
+      label: 'Home', icon: 'assets/items/home_icon.png', level: () => state.homeLevel, maxLevel: () => CONFIG.home.levels.length - 1,
       cost: () => CONFIG.home.levels[state.homeLevel + 1].cost,
       apply: () => { state.homeLevel++; },
-      currentText: () => homeLevelDef().desc,
-      nextText: () => CONFIG.home.levels[state.homeLevel + 1].desc,
     },
   };
   function canUpgrade(track) {
@@ -550,7 +544,13 @@
     ctx.beginPath(); ctx.moveTo(cx - r * 0.5, cy - r * 0.55); ctx.lineTo(cx - r * 0.15, cy + r * 0.6); ctx.stroke();
     ctx.restore();
   }
+  const backpackIconImg = new Image();
+  backpackIconImg.src = 'assets/items/backpack.png';
   function drawShellIcon(ctx, cx, cy, r) {
+    if (backpackIconImg.complete && backpackIconImg.naturalWidth) {
+      ctx.drawImage(backpackIconImg, cx - r, cy - r, r * 2, r * 2);
+      return;
+    }
     ctx.save();
     ctx.fillStyle = '#f0d9a8';
     ctx.beginPath();
@@ -819,11 +819,11 @@
       const t = TRACKS[key];
       const maxed = t.level() >= t.maxLevel();
       const afford = !maxed && canUpgrade(key);
-      return `<div class="tt-upgrade-row">
+      return `<div class="tt-upgrade-row tt-shelf-row">
+        <img class="tt-upgrade-icon" src="${t.icon}" alt="">
         <div class="tt-upgrade-info">
           <strong>${t.label}</strong>
-          <div class="tt-upgrade-detail">Now: ${t.currentText()}</div>
-          <div class="tt-upgrade-detail">${maxed ? 'Maxed out' : `Next: ${t.nextText()} — ${t.cost()} coins`}</div>
+          <div class="tt-upgrade-detail">${maxed ? 'Maxed out' : `${t.cost()} coins`}</div>
         </div>
         <button type="button" class="tt-upgrade-buy" data-track="${key}" ${maxed || !afford ? 'disabled' : ''}>${maxed ? 'Max' : 'Buy'}</button>
       </div>`;
@@ -832,7 +832,7 @@
     wrap.className = 'tt-name-prompt';
     wrap.innerHTML = `<div class="tt-name-box tt-upgrade-box">
       <h3>Upgrades — ${state.banked.coins} coins banked</h3>
-      ${rows}
+      <div class="tt-shelf-bg">${rows}</div>
       <div class="tt-name-actions"><button type="button" class="tt-cancel tt-upgrade-close">Close</button></div>
     </div>`;
     document.body.appendChild(wrap);
