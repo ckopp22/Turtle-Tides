@@ -299,13 +299,16 @@
     state.hungerZeroTimer = 0;
     return true;
   }
-  // Manual eat, triggered by clicking/tapping the HUD hunger bar (see tryEatFromHud below). Draws
-  // from the banked stash, not carried inventory, since this is a deliberate action rather than the
-  // auto-eat safety net above. No-ops (doesn't consume a coconut) if hunger is already full, so an
-  // accidental click can't waste one.
+  // Manual eat, triggered by clicking/tapping the HUD hunger bar (see tryEatFromHud below). Eats
+  // from the banked stash first; only dips into carried coconuts (the ones "just found" on the
+  // current trip) once banked is empty — that also frees up a hull slot, same as if it'd never been
+  // picked up. No-ops (doesn't consume a coconut) if hunger is already full, so an accidental click
+  // can't waste one.
   function eatCoconutManual() {
-    if (state.hunger >= hungerMax() || state.banked.coconuts <= 0) return false;
-    state.banked.coconuts--;
+    if (state.hunger >= hungerMax()) return false;
+    if (state.banked.coconuts > 0) state.banked.coconuts--;
+    else if (state.carried.coconuts > 0) state.carried.coconuts--;
+    else return false;
     state.hunger = hungerMax();
     state.hungerZeroTimer = 0;
     state.hungerHeartTicks = 0;
