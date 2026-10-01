@@ -873,7 +873,10 @@
     const wrap = document.createElement('div');
     wrap.className = 'tt-name-prompt';
     wrap.innerHTML = `<div class="tt-name-box tt-upgrade-box tt-shop-box">
-      <h3>Turtle Shop — ${state.banked.coins} coins banked</h3>
+      <div class="tt-shop-header">
+        <h3>The Closet</h3>
+        <div class="tt-shop-coins"><img src="assets/items/coin.png" alt="">${state.banked.coins}</div>
+      </div>
       <canvas class="tt-shop-preview" width="140" height="140"></canvas>
       <div class="tt-shop-tabs">
         ${SHOP_CATEGORIES.map(c => `<button type="button" class="tt-shop-tab" data-cat="${c}">${CATEGORY_LABELS[c]}</button>`).join('')}
@@ -914,8 +917,8 @@
         if (!ownsCosmetic(item.id)) buyCosmetic(item.id);
         else if (equippedIn(item.category) !== item.id) equipCosmetic(item.id);
         else if (item.category !== 'color') unequipCategory(item.category); // click again to unequip
-        const h3 = shopPanel.querySelector('h3');
-        if (h3) h3.textContent = `Turtle Shop — ${state.banked.coins} coins banked`;
+        const coinEl = shopPanel.querySelector('.tt-shop-coins');
+        if (coinEl) coinEl.innerHTML = `<img src="assets/items/coin.png" alt="">${state.banked.coins}`;
         renderShopItems();
         refreshShopPreview();
       });
