@@ -190,7 +190,7 @@
     hat_sailor:              { src: 'assets/items/accessory_ring_navy.png',   y: -0.42, scale: 0.48 },
     hat_straw:               { src: 'assets/items/accessory_ring_orange.png', y: -0.42, scale: 0.48 },
     accessory_scarf:         { src: 'assets/items/accessory_scarf.png',       y: -0.1,  scale: 0.6 },
-    clothes_tshirt:          { src: 'assets/items/clothes_tshirt.png',        y: 0.06,  scale: 0.55 },
+    clothes_tshirt:          { src: 'assets/items/clothes_tshirt.png',        y: 0.04,  scale: 0.8 },
     clothes_cape:            { src: 'assets/items/clothes_cape.png',          y: 0.05,  scale: 0.8 },
     accessory_bowtie:        { src: 'assets/items/accessory_bowtie.png',      y: -0.2,  scale: 0.4 },
   };
