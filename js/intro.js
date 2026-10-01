@@ -388,6 +388,10 @@
   // shell wobbling/chipping (held for 2 taps), then bursting open.
   const EGG_STAGE_IMAGES = ['egg1', 'egg2', 'egg3', 'hatch_emerge', 'hatch_emerge', 'hatch_out'];
   const eggState = { taps: 0, shakeTime: 0, burst: [], done: false };
+  // New-game data riding along through EGG -> HATCH so the hatch finishes by dropping the player
+  // straight onto the island instead of back at the beach menu. Null means "replaying the intro
+  // standalone", which still just lands on BEACH_MENU.
+  let pendingNewGame = null;
   function drawShardParticle(p) {
     ctx.save();
     ctx.globalAlpha = Math.max(0, 1 - p.age / 0.6);
@@ -422,7 +426,8 @@
     }
   }
   const EGG = {
-    enter() {
+    enter(data) {
+      pendingNewGame = data || null;
       eggState.taps = 0; eggState.shakeTime = 0; eggState.burst = []; eggState.done = false;
       on(canvas, 'pointerdown', onEggTap);
     },
@@ -462,7 +467,10 @@
       if (hatchT >= 1 && !hatchDone) {
         hatchDone = true;
         Sound.whoosh();
-        startZoom(() => goto('BEACH_MENU'));
+        // New game: skip the beach menu and drop straight onto the island. Replaying the intro
+        // standalone (no pending save) just lands back on the menu.
+        const newGame = pendingNewGame; pendingNewGame = null;
+        startZoom(() => newGame ? launchIsland(newGame.data, newGame.slot) : goto('BEACH_MENU'));
       }
     },
     draw() {
@@ -628,7 +636,7 @@
     };
     writeSlot(slot, data);
     closeNameInput();
-    startZoomToIsland(data, slot);
+    goto('EGG', { data, slot }); // new save: hatch the turtle before dropping it on the island
   }
   function closeNameInput() {
     if (nameFormEl) { nameFormEl.remove(); nameFormEl = null; nameInputEl = null; }
@@ -639,14 +647,18 @@
   // switches to the no-op GAME_HANDOFF scene, and the shared overlay (see above) handles the
   // zoom-in/zoom-out visuals for both this and the egg->menu transition.
   const GAME_HANDOFF = { enter() {}, exit() {}, update() {}, draw() {} };
-  function startZoomToIsland(data, slot) {
+  // The actual handoff, with no zoom of its own — callers that are already mid-transition (HATCH's
+  // own zoom, for the new-game path) call this directly in their onPeak instead of nesting another
+  // startZoom() call, which would stomp the in-flight overlay object and skip this entirely.
+  function launchIsland(data, slot) {
     data.lastPlayedAt = new Date().toISOString();
     writeSlot(slot, data);
+    goto('GAME_HANDOFF');
+    if (window.TurtleGame && window.TurtleGame.start) window.TurtleGame.start(slot, data);
+  }
+  function startZoomToIsland(data, slot) {
     Sound.whoosh();
-    startZoom(() => {
-      goto('GAME_HANDOFF');
-      if (window.TurtleGame && window.TurtleGame.start) window.TurtleGame.start(slot, data);
-    });
+    startZoom(() => launchIsland(data, slot));
   }
 
   const SCENES = { EGG, HATCH, BEACH_MENU, SAVE_SLOTS, GAME_HANDOFF };
@@ -668,7 +680,7 @@
     resize();
     if (!window.innerWidth || !window.innerHeight) { requestAnimationFrame(beginIntro); return; }
     lastT = performance.now();
-    goto('EGG');
+    goto('BEACH_MENU'); // land on the menu; EGG only plays when starting a new save (see confirmName)
     requestAnimationFrame(loop);
   }
   if (document.readyState === 'complete') beginIntro();

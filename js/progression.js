@@ -710,6 +710,29 @@
     ctx.restore();
 
     ensureSoundButton();
+    ensureLeaveButton();
+  }
+
+  // ---- Leave-game button (top right) — bails out to the main menu. A reload is the simplest way
+  // to hand the canvas back to intro.js's own state machine (it always boots to BEACH_MENU), rather
+  // than teaching game.js how to stop its rAF loop and tearing down its DOM bits by hand.
+  let leaveBtn = null;
+  function ensureLeaveButton() {
+    if (leaveBtn) return;
+    leaveBtn = document.createElement('button');
+    leaveBtn.id = 'tt-leave-btn';
+    leaveBtn.type = 'button';
+    leaveBtn.title = 'Leave to main menu';
+    leaveBtn.textContent = '✕';
+    leaveBtn.addEventListener('click', () => {
+      // Mid-trip carried items are already lost on any non-banked exit (see MDD save model), so a
+      // reload here is no different from closing the tab — just confirm so a stray tap doesn't eat
+      // an in-progress trip.
+      if (confirm('Leave to the main menu? Any items carried but not banked will be lost.')) {
+        location.reload();
+      }
+    });
+    document.body.appendChild(leaveBtn);
   }
 
   // Confetti — full-screen DOM overlay, a burst of falling pieces that cleans itself up. CSS
