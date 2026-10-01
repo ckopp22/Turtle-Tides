@@ -73,6 +73,52 @@ html, body {
   background: #ffffff;
 }
 
+/* Confetti burst (progression.js) — full-screen overlay of falling pieces, fired alongside the
+   congrats banner. pointer-events: none so it never blocks taps/clicks underneath. */
+#tt-confetti {
+  position: fixed;
+  inset: 0;
+  z-index: 12;
+  overflow: hidden;
+  pointer-events: none;
+}
+.tt-confetti-piece {
+  position: absolute;
+  top: -20px;
+  opacity: 0.9;
+  animation-name: tt-confetti-fall;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+@keyframes tt-confetti-fall {
+  0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(110vh) rotate(540deg); opacity: 0.85; }
+}
+
+/* One-time "beat the game" congrats banner (progression.js) — pops up centered, fades out on its
+   own a few seconds later. pointer-events: none so it never blocks taps/clicks underneath. */
+#tt-congrats-banner {
+  position: fixed;
+  left: 50%;
+  top: 22%;
+  transform: translate(-50%, -50%);
+  z-index: 11;
+  padding: 16px 24px;
+  border-radius: 14px;
+  border: 3px solid #7a5a1e;
+  background: #ffb347;
+  color: #3a2a10;
+  font: 700 20px system-ui, sans-serif;
+  text-align: center;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.8s ease;
+}
+#tt-congrats-banner.tt-fade-out {
+  opacity: 0;
+}
+
 /* Icon button row (progression.js: Upgrades / Turtle Shop / Day-Night) — sits below the canvas HUD
    panel, left-aligned to match it. Each button is appended into this row when unlocked/visible;
    `display` on the individual button (flex/none) controls whether it shows. */

@@ -1233,28 +1233,11 @@
     else if (nightAmount > target) nightAmount = Math.max(target, nightAmount - NIGHT_FADE_SPEED * dt);
   }
 
-  // Fixed-fraction star field (not absolute px) so it holds up across a resize; twinkle is driven
-  // by gameTime so it needs no per-star update step.
-  const NIGHT_STARS = Array.from({ length: 70 }, () => ({
-    fx: rand(), fy: rand() * 0.55, r: 1 + rand() * 1.4, seed: rand() * 10, speed: 1 + rand() * 2,
-  }));
   function drawNightSky() {
     if (nightAmount <= 0.001) return;
     ctx.save();
     ctx.fillStyle = `rgba(6, 14, 30, ${0.55 * nightAmount})`;
     ctx.fillRect(0, 0, viewW, viewH);
-    ctx.fillStyle = '#fff';
-    for (const st of NIGHT_STARS) {
-      const twinkle = 0.6 + 0.4 * Math.sin(gameTime * st.speed + st.seed);
-      ctx.globalAlpha = nightAmount * twinkle;
-      ctx.beginPath(); ctx.arc(st.fx * viewW, st.fy * viewH, st.r, 0, Math.PI * 2); ctx.fill();
-    }
-    ctx.globalAlpha = nightAmount;
-    const mx = viewW * 0.84, my = viewH * 0.16, mr = 24;
-    ctx.fillStyle = '#f0ecd8';
-    ctx.beginPath(); ctx.arc(mx, my, mr, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = 'rgba(6, 14, 30, 0.45)';
-    ctx.beginPath(); ctx.arc(mx - 8, my - 4, mr * 0.82, 0, Math.PI * 2); ctx.fill(); // crescent shading
     ctx.restore();
   }
 

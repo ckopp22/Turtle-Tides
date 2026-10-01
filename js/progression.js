@@ -12,7 +12,7 @@
     hearts: {
       startMax: 1,
       // upgradeCosts[i] = banked coins to go from level i to i+1 (maxHearts = startMax + level)
-      upgradeCosts: [40, 90, 160, 260],
+      upgradeCosts: [10, 70, 130, 210],
     },
     hunger: {
       // Fixed for the whole game now — no upgrade track (was `hungerLevel`/TRACKS.hunger).
@@ -23,8 +23,8 @@
       heartLossIntervalSeconds: 6, // one heart lost per this many seconds once past the grace period
     },
     hull: {
-      capTiers: [3, 5, 8, 12, 18], // index 0 = starting capacity
-      upgradeCosts: [25, 60, 120, 220],
+      capTiers: [3, 5, 10, 15, 20, 25], // index 0 = starting capacity
+      upgradeCosts: [10, 50, 95, 175, 280],
     },
     home: {
       // Full 20-level curve, tuned so each step to level 10 is a small, quick win (cost climbs by
@@ -38,26 +38,26 @@
       // TODO: the desc/shape fields are still placeholders — real per-level art still needed.
       levels: [
         { cost: 0,    desc: 'a pile of rocks',                          decor: 'rocks',        skill: null },
-        { cost: 20,   desc: 'a woven nest tucked in the rocks',         decor: 'nest',          skill: null },
-        { cost: 35,   desc: 'a driftwood bed to sleep in',              decor: 'bed',           skill: 'sleep' },
-        { cost: 55,   desc: 'a crackling campfire',                     decor: 'campfire',      skill: null },
-        { cost: 80,   desc: 'the frame of a hut going up',              decor: 'hutFrame',      skill: 'turtleShop' },
-        { cost: 110,  desc: 'swim fins drying by the hut',              decor: 'swimFins',      skill: 'swimSpeed1' },
-        { cost: 145,  desc: 'torches lit along the path',               decor: 'torches',       skill: 'dayNight' },
-        { cost: 185,  desc: 'a small reading nook with books',          decor: 'books',         skill: 'moveSpeed1' },
-        { cost: 230,  desc: 'the hut, finally finished',                decor: 'hutComplete',   skill: null },
-        { cost: 280,  desc: 'a covered porch added to the hut',         decor: 'porch',         skill: null },
-        { cost: 335,  desc: 'a proper cabin replaces the hut',          decor: 'cabin',         skill: 'hideInShell' },
-        { cost: 400,  desc: 'lanterns hung by the door',                decor: 'lanterns',      skill: null },
-        { cost: 470,  desc: 'a woven rug laid out front',               decor: 'rug',           skill: null },
-        { cost: 550,  desc: 'a driftwood table',                        decor: 'table',         skill: 'swimSpeed2' },
-        { cost: 640,  desc: 'a hammock strung between posts',           decor: 'hammock',       skill: null },
-        { cost: 740,  desc: 'a small garden patch',                     decor: 'garden',        skill: null },
-        { cost: 850,  desc: 'string flags fluttering overhead',         decor: 'flags',         skill: 'moveSpeed2' },
-        { cost: 970,  desc: 'a stone-lined firepit ring',                decor: 'firepitRing',   skill: null },
-        { cost: 1100, desc: 'a stone path connects the camp',           decor: 'path',          skill: null },
-        { cost: 1240, desc: 'string lights strung between posts',       decor: 'lights',        skill: null },
-        { cost: 1400, desc: 'the full camp, home at last',              decor: 'fullCamp',      skill: null },
+        { cost: 10,   desc: 'a woven nest tucked in the rocks',         decor: 'nest',          skill: null },
+        { cost: 30,   desc: 'a driftwood bed to sleep in',              decor: 'bed',           skill: 'sleep' },
+        { cost: 45,   desc: 'a crackling campfire',                     decor: 'campfire',      skill: null },
+        { cost: 65,   desc: 'the frame of a hut going up',              decor: 'hutFrame',      skill: 'turtleShop' },
+        { cost: 90,   desc: 'swim fins drying by the hut',              decor: 'swimFins',      skill: 'swimSpeed1' },
+        { cost: 115,  desc: 'torches lit along the path',               decor: 'torches',       skill: 'dayNight' },
+        { cost: 150,  desc: 'a small reading nook with books',          decor: 'books',         skill: 'moveSpeed1' },
+        { cost: 185,  desc: 'the hut, finally finished',                decor: 'hutComplete',   skill: null },
+        { cost: 225,  desc: 'a covered porch added to the hut',         decor: 'porch',         skill: null },
+        { cost: 270,  desc: 'a proper cabin replaces the hut',          decor: 'cabin',         skill: 'hideInShell' },
+        { cost: 320,  desc: 'lanterns hung by the door',                decor: 'lanterns',      skill: null },
+        { cost: 375,  desc: 'a woven rug laid out front',               decor: 'rug',           skill: null },
+        { cost: 440,  desc: 'a driftwood table',                        decor: 'table',         skill: 'swimSpeed2' },
+        { cost: 510,  desc: 'a hammock strung between posts',           decor: 'hammock',       skill: null },
+        { cost: 590,  desc: 'a small garden patch',                     decor: 'garden',        skill: null },
+        { cost: 680,  desc: 'string flags fluttering overhead',         decor: 'flags',         skill: 'moveSpeed2' },
+        { cost: 775,  desc: 'a stone-lined firepit ring',                decor: 'firepitRing',   skill: null },
+        { cost: 880,  desc: 'a stone path connects the camp',           decor: 'path',          skill: null },
+        { cost: 990,  desc: 'string lights strung between posts',       decor: 'lights',        skill: null },
+        { cost: 1120, desc: 'the full camp, home at last',              decor: 'fullCamp',      skill: null },
       ],
     },
     // Turtle Shop (L5 skill): buy with banked coins, equip freely once owned. One equipped item
@@ -257,6 +257,7 @@
     invulnTimer: 0,
     hullFullFlash: 0,
     lastLostMessage: null, // { text, timer } shown briefly after a death
+    turtleMaster: false, // true once hearts/hull/home are all fully upgraded; persists forever
   };
 
   function clampLevel(v, max) { v = Number.isFinite(v) ? v : 0; return Math.max(0, Math.min(max, v)); }
@@ -442,10 +443,17 @@
     const t = TRACKS[track];
     return t.level() < t.maxLevel() && state.banked.coins >= t.cost();
   }
+  function allUpgradesMaxed() {
+    return Object.values(TRACKS).every(t => t.level() >= t.maxLevel());
+  }
   function buyUpgrade(track) {
     if (!canUpgrade(track)) return false;
     state.banked.coins -= TRACKS[track].cost();
     TRACKS[track].apply();
+    if (!state.turtleMaster && allUpgradesMaxed()) {
+      state.turtleMaster = true;
+      showCongratsBanner();
+    }
     persist();
     return true;
   }
@@ -489,6 +497,9 @@
     state.hullFullFlash = 0;
     state.lastLostMessage = null;
     state.heartRecoverAccum = 0;
+    // Old saves have no `turtleMaster` field — fall back to re-deriving it from upgrade levels
+    // (loadFromSave above already set heartsLevel/hullLevel/homeLevel) so it isn't lost.
+    state.turtleMaster = typeof data.turtleMaster === 'boolean' ? data.turtleMaster : allUpgradesMaxed();
   }
   function getSaveData() {
     return {
@@ -499,6 +510,7 @@
       shellCollection: state.shellCollection.slice(),
       isNight: state.isNight,
       cosmetics: { owned: state.cosmetics.owned.slice(), equipped: { ...state.cosmetics.equipped } },
+      turtleMaster: state.turtleMaster,
     };
   }
   function attachSlot(slotId, existingData) {
@@ -605,7 +617,12 @@
   // button (state.shellCollection already tracks each banked shell) — not built yet, scope for now
   // is the HUD layout restyle only.
   function drawHUD(ctx) {
-    const pad = 14, innerPad = 12, panelW = 220;
+    const pad = 14, innerPad = 12;
+    // Panel widens once the "Turtle Master" badge replaces the "Lv N" home badge (that label is a
+    // lot longer) — the hunger bar and bottom-row currency, which both size off panelW/scale below,
+    // stretch out to match instead of leaving the wider panel looking empty.
+    const panelW = state.turtleMaster ? 280 : 220;
+    const scale = panelW / 220;
     const heartSize = 20, heartGap = 4, barH = 10;
     const rowHeartsH = heartSize + 10, rowHungerH = barH + 12, rowCapH = 20;
 
@@ -631,7 +648,7 @@
       drawHeart(ctx, x + i * (heartSize + heartGap) + heartSize / 2, y + heartSize / 2, heartSize / 2, i < state.hearts);
     }
     ctx.font = '700 13px system-ui, sans-serif';
-    const lvText = `Lv ${state.homeLevel}`;
+    const lvText = state.turtleMaster ? 'Turtle Master' : `Lv ${state.homeLevel}`;
     const badgeW = 24 + ctx.measureText(lvText).width + 10;
     const badgeH = heartSize + 4;
     const badgeX = pad + panelW - innerPad - badgeW;
@@ -643,9 +660,9 @@
     ctx.fillText(lvText, badgeX + 26, y + badgeH / 2 - 2);
     y += rowHeartsH;
 
-    // Hunger bar (coconut icon marks what it's tracking)
-    drawCoconutIcon(ctx, x + 7, y + barH / 2, 9);
-    const hbX = x + 20, hbW = panelW - innerPad * 2 - 20;
+    // Hunger bar (coconut icon marks what it's tracking) — hbW stretches with panelW/scale above.
+    drawCoconutIcon(ctx, x + 7 * scale, y + barH / 2, 9);
+    const hbX = x + 20 * scale, hbW = panelW - innerPad * 2 - 20 * scale;
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
     ctx.beginPath(); ctx.roundRect(hbX, y, hbW, barH, barH / 2); ctx.fill();
     const pct = Math.max(0, Math.min(1, state.hunger / hungerMax()));
@@ -655,25 +672,25 @@
 
     // Carry capacity (shell icon + "carried/cap" number, no more per-slot boxes) + currency,
     // sharing one row now that the pip boxes are gone.
-    drawShellIcon(ctx, x + 7, y + 9, 9);
+    drawShellIcon(ctx, x + 7 * scale, y + 9, 9);
     const cap = hullCap(), carried = carriedTotal();
     const flashOn = state.hullFullFlash > 0 && Math.floor(state.hullFullFlash * 8) % 2 === 0;
     ctx.font = '600 13px system-ui, sans-serif';
     ctx.fillStyle = flashOn ? '#ffdd55' : '#fff';
-    ctx.fillText(`${carried}/${cap}`, x + 18, y + 9);
+    ctx.fillText(`${carried}/${cap}`, x + 18 * scale, y + 9);
 
-    drawCoinIcon(ctx, x + 68, y + 9, 10);
+    drawCoinIcon(ctx, x + 68 * scale, y + 9, 10);
     ctx.font = '700 15px system-ui, sans-serif';
     ctx.fillStyle = '#fff';
-    ctx.fillText(`${state.banked.coins}`, x + 81, y + 9);
-    let carriedTextX = x + 83 + ctx.measureText(`${state.banked.coins}`).width;
+    ctx.fillText(`${state.banked.coins}`, x + 81 * scale, y + 9);
+    let carriedTextX = x + 83 * scale + ctx.measureText(`${state.banked.coins}`).width;
     if (state.carried.coins > 0) {
       ctx.font = '500 12px system-ui, sans-serif';
       ctx.fillStyle = 'rgba(255,221,85,0.85)';
       ctx.fillText(`(+${state.carried.coins})`, carriedTextX, y + 9);
     }
 
-    const cocoX = x + 143;
+    const cocoX = x + 143 * scale;
     drawCoconutIcon(ctx, cocoX, y + 9, 10);
     ctx.font = '700 15px system-ui, sans-serif';
     ctx.fillStyle = '#fff';
@@ -700,6 +717,65 @@
     ctx.restore();
 
     ensureSoundButton();
+  }
+
+  // Confetti — full-screen DOM overlay, a burst of falling pieces that cleans itself up. CSS
+  // (#tt-confetti / .tt-confetti-piece / @keyframes tt-confetti-fall) does the actual animation;
+  // this just seeds a random batch of them.
+  const CONFETTI_COLORS = ['#ffb347', '#ff5a6e', '#8fd66b', '#5ab4d6', '#ffe066', '#c77dff'];
+  function spawnConfetti() {
+    const container = document.createElement('div');
+    container.id = 'tt-confetti';
+    for (let i = 0; i < 90; i++) {
+      const piece = document.createElement('div');
+      piece.className = 'tt-confetti-piece';
+      piece.style.left = `${Math.random() * 100}%`;
+      piece.style.background = CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)];
+      piece.style.width = `${6 + Math.random() * 6}px`;
+      piece.style.height = `${10 + Math.random() * 8}px`;
+      piece.style.animationDuration = `${2.5 + Math.random() * 2}s`;
+      piece.style.animationDelay = `${Math.random() * 0.6}s`;
+      container.appendChild(piece);
+    }
+    document.body.appendChild(container);
+    setTimeout(() => container.remove(), 5200);
+  }
+
+  // Celebration jingle — a short WebAudio arpeggio, same placeholder-beep approach as intro.js's
+  // Sound.* (no music file exists yet), gated by the same mute toggle.
+  let celebrationAudioCtx = null;
+  function playCelebrationJingle() {
+    if (!window.TT_SOUND || !window.TT_SOUND.get()) return;
+    if (!celebrationAudioCtx) {
+      try { celebrationAudioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+      catch { return; }
+    }
+    const ac = celebrationAudioCtx;
+    const notes = [523.25, 659.25, 783.99, 1046.50, 1318.51]; // C5 E5 G5 C6 E6
+    notes.forEach((freq, i) => {
+      const start = ac.currentTime + i * 0.14;
+      const osc = ac.createOscillator(), gain = ac.createGain();
+      osc.type = 'triangle';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(0.18, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.5);
+      osc.connect(gain); gain.connect(ac.destination);
+      osc.start(start); osc.stop(start + 0.5);
+    });
+  }
+
+  // One-time congrats banner — fires the moment the last upgrade is bought, fades out on its own.
+  // (The lasting "Turtle Master" badge itself lives in drawHUD above, replacing the "Lv N" badge.)
+  function showCongratsBanner() {
+    spawnConfetti();
+    playCelebrationJingle();
+    const banner = document.createElement('div');
+    banner.id = 'tt-congrats-banner';
+    banner.textContent = 'Congratulations! You beat the game!';
+    document.body.appendChild(banner);
+    setTimeout(() => banner.classList.add('tt-fade-out'), 3200);
+    setTimeout(() => banner.remove(), 4000);
   }
 
   // ---- Icon button row (Upgrades / Shop / Day-Night) — DOM overlay in a horizontal row below the
