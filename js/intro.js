@@ -180,11 +180,11 @@
     ctx.lineTo(cx + 3, cy + 12); ctx.lineTo(cx - 5, cy + 5); ctx.lineTo(cx - 12, cy + 5);
     ctx.closePath(); ctx.fill();
     if (on) {
-      ctx.strokeStyle = '#3a2a10'; ctx.lineWidth = 2;
+      ctx.strokeStyle = '#2f8fd4'; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(cx + 6, cy, 6, -0.6, 0.6); ctx.stroke();
       ctx.beginPath(); ctx.arc(cx + 6, cy, 10, -0.6, 0.6); ctx.stroke();
     } else {
-      ctx.strokeStyle = '#b23a3a'; ctx.lineWidth = 3;
+      ctx.strokeStyle = '#d33a3a'; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.moveTo(cx + 2, cy - 10); ctx.lineTo(cx + 16, cy + 10); ctx.stroke();
     }
     ctx.restore();
@@ -535,6 +535,12 @@
     return { cards, back: { x: 20, y: 20, w: 90, h: 40 } };
   }
   function formatDate(iso) { try { return new Date(iso).toLocaleDateString(); } catch { return ''; } }
+  // Same HUD art/badge style as progression.js's in-game panel (coin_hud.png/coconut.png icons,
+  // #ffb347-fill + #7a5a1e-border level badge) so this screen reads as the same game.
+  const slotCoinImg = new Image();
+  slotCoinImg.src = 'assets/items/coin_hud.png';
+  const slotCoconutImg = new Image();
+  slotCoconutImg.src = 'assets/items/coconut.png';
   function drawSlotCard(r, data) {
     roundRect(r.x, r.y, r.w, r.h, 14);
     ctx.fillStyle = data ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.55)';
@@ -544,10 +550,33 @@
     if (data) {
       ctx.font = '700 20px system-ui, sans-serif';
       ctx.fillText(data.name, r.x + 18, r.y + r.h * 0.34);
+
+      const iconR = 10, rowY = r.y + r.h * 0.72;
+      let ix = r.x + 18;
       ctx.font = '400 14px system-ui, sans-serif';
-      const co = data.banked?.coins ?? 0, c = data.banked?.coconuts ?? 0, s = data.banked?.shells ?? 0;
-      const home = data.homeLevel ?? 0;
-      ctx.fillText(`🪙 ${co}  🥥 ${c}  🐚 ${s}  · home Lv${home} · last played ${formatDate(data.lastPlayedAt)}`, r.x + 18, r.y + r.h * 0.7);
+      if (slotCoinImg.complete && slotCoinImg.naturalWidth) ctx.drawImage(slotCoinImg, ix - iconR, rowY - iconR, iconR * 2, iconR * 2);
+      ix += iconR * 2 + 4;
+      const coinText = `${data.banked?.coins ?? 0}`;
+      ctx.fillText(coinText, ix, rowY);
+      ix += ctx.measureText(coinText).width + 16;
+      if (slotCoconutImg.complete && slotCoconutImg.naturalWidth) ctx.drawImage(slotCoconutImg, ix - iconR, rowY - iconR, iconR * 2, iconR * 2);
+      ix += iconR * 2 + 4;
+      const coconutText = `${data.banked?.coconuts ?? 0}`;
+      ctx.fillText(coconutText, ix, rowY);
+      ix += ctx.measureText(coconutText).width + 14;
+
+      ctx.font = '700 13px system-ui, sans-serif';
+      const lvText = `Lv ${data.homeLevel ?? 0}`;
+      const badgeW = ctx.measureText(lvText).width + 16, badgeH = 22;
+      ctx.fillStyle = '#ffb347'; ctx.strokeStyle = '#7a5a1e'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.roundRect(ix, rowY - badgeH / 2, badgeW, badgeH, 10); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#3a2a10'; ctx.textAlign = 'center';
+      ctx.fillText(lvText, ix + badgeW / 2, rowY + 1);
+      ix += badgeW + 14;
+
+      ctx.textAlign = 'left'; ctx.fillStyle = '#2a2a2a'; ctx.font = '400 14px system-ui, sans-serif';
+      ctx.fillText(formatDate(data.lastPlayedAt), ix, rowY);
+
       ctx.textAlign = 'center';
       ctx.fillStyle = '#b23a3a'; ctx.font = '700 20px system-ui, sans-serif';
       ctx.fillText('✕', r.x + r.w - 24, r.y + 20);
@@ -590,7 +619,7 @@
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.font = '700 26px system-ui, sans-serif';
-      ctx.fillText('Choose a save', viewW / 2, viewH * 0.08);
+      ctx.fillText('Your Game', viewW / 2, viewH * 0.08);
       const L = layoutSlots();
       L.cards.forEach(c => drawSlotCard(c, slotsCache[c.slot - 1]));
       drawButton(L.back, 'Back', false);

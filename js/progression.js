@@ -854,8 +854,10 @@
   // ---- Sound toggle (top-right) — shares the same on/off preference intro.js's mute button reads
   // and writes (window.TT_SOUND, see intro.js) so the setting stays in sync across both screens.
   let soundBtn = null;
+  const SOUND_ON_SVG = '<svg width="26" height="26" viewBox="0 0 26 26"><path d="M4 10h4l6-5v16l-6-5H4z" fill="#3a2a10"/><path d="M16 9a5 5 0 0 1 0 8" stroke="#2f8fd4" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M18.5 6.5a9 9 0 0 1 0 13" stroke="#2f8fd4" stroke-width="2" fill="none" stroke-linecap="round"/></svg>';
+  const SOUND_OFF_SVG = '<svg width="26" height="26" viewBox="0 0 26 26"><path d="M4 10h4l6-5v16l-6-5H4z" fill="#3a2a10"/><path d="M16 8l7 7M23 8l-7 7" stroke="#d33a3a" stroke-width="2.5" stroke-linecap="round"/></svg>';
   function updateSoundButtonLabel() {
-    if (soundBtn) soundBtn.textContent = (window.TT_SOUND && window.TT_SOUND.get()) ? '🔊' : '🔇';
+    if (soundBtn) soundBtn.innerHTML = (window.TT_SOUND && window.TT_SOUND.get()) ? SOUND_ON_SVG : SOUND_OFF_SVG;
   }
   function ensureSoundButton() {
     if (soundBtn || !window.TT_SOUND) return;
