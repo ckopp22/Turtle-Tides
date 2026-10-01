@@ -227,11 +227,13 @@ html, body {
   background: rgba(253, 246, 227, 0.85);
   border-radius: 8px;
 }
-.tt-upgrade-icon {
+.tt-upgrade-icon,
+.tt-shop-item-icon {
   width: 32px;
   height: 32px;
   flex: none;
   object-fit: contain;
+  image-rendering: pixelated;
 }
 .tt-upgrade-info {
   flex: 1;
