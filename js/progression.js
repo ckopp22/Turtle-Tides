@@ -798,7 +798,7 @@
     upgradeBtn.className = 'tt-icon-btn';
     upgradeBtn.type = 'button';
     upgradeBtn.title = 'Upgrades';
-    upgradeBtn.innerHTML = '<img src="assets/items/shop_sign.png" alt="" width="28" height="28">';
+    upgradeBtn.innerHTML = '<img src="assets/items/shop_sign.png?v=3" alt="" width="28" height="28">';
     upgradeBtn.addEventListener('click', openUpgradePanel);
     ensureIconRow().appendChild(upgradeBtn);
   }
@@ -817,7 +817,10 @@
   // sync) from update() below so nothing else has to remember to call it.
   let dayNightBtn = null;
   function updateDayNightButtonLabel() {
-    if (dayNightBtn) dayNightBtn.textContent = state.isNight ? '☀️' : '🌙';
+    if (dayNightBtn) {
+      const src = state.isNight ? 'assets/items/sun_icon.png?v=1' : 'assets/items/moon_icon.png?v=1';
+      dayNightBtn.innerHTML = `<img src="${src}" alt="" width="28" height="28">`;
+    }
   }
   function ensureDayNightButton() {
     if (!hasSkill('dayNight') || dayNightBtn) return;
@@ -861,7 +864,7 @@
     shopBtn.className = 'tt-icon-btn';
     shopBtn.type = 'button';
     shopBtn.title = 'Turtle Shop';
-    shopBtn.textContent = '🎨'; // TODO: swap for a dedicated cosmetics-shop icon (distinct from the coin-upgrade sign)
+    shopBtn.innerHTML = '<img src="assets/items/clothes_icon.png?v=1" alt="" width="28" height="28">';
     shopBtn.addEventListener('click', openShopPanel);
     ensureIconRow().appendChild(shopBtn);
   }
