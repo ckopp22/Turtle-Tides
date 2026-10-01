@@ -1596,6 +1596,47 @@
   const FRAMES_PER_SPEED = 0.03; // frames per px traveled (~5 fps at full speed)
   let walkFrame = 0;
 
+  // Shell-only tint mask: the shell sits in roughly the same ellipse in every frame/pose (measured
+  // from the row-4 "withdrawn into shell" pose, where the whole visible sprite IS the shell), while
+  // the head/legs/tail poke out past that ellipse in every other pose. On load, copy the sheet into
+  // shellMaskSheet but zero the alpha of any pixel outside that per-frame ellipse, so color-tint
+  // compositing (source-atop) only ever touches the shell, not the whole turtle. tintScratch is a
+  // small reusable canvas sized to one drawn frame each time it's tinted.
+  const SHELL_ELLIPSE = { cx: 0.504, cy: 0.526, rx: 0.29, ry: 0.29 }; // fractions of one frame's w/h
+  let shellMaskSheet = null;
+  const tintScratch = document.createElement('canvas');
+  const tintScratchCtx = tintScratch.getContext('2d');
+  sprite.addEventListener('load', () => {
+    const w = sprite.naturalWidth, h = sprite.naturalHeight;
+    const fw = w / SHEET_COLS, fh = h / SHEET_ROWS;
+    const src = document.createElement('canvas');
+    src.width = w; src.height = h;
+    const sctx = src.getContext('2d');
+    sctx.drawImage(sprite, 0, 0);
+    const imgData = sctx.getImageData(0, 0, w, h);
+    const d = imgData.data;
+    const rx = SHELL_ELLIPSE.rx * fw, ry = SHELL_ELLIPSE.ry * fh;
+    for (let row = 0; row < SHEET_ROWS; row++) {
+      const cy = row * fh + SHELL_ELLIPSE.cy * fh;
+      for (let col = 0; col < SHEET_COLS; col++) {
+        const cx = col * fw + SHELL_ELLIPSE.cx * fw;
+        const x0 = Math.floor(col * fw), x1 = Math.floor((col + 1) * fw);
+        const y0 = Math.floor(row * fh), y1 = Math.floor((row + 1) * fh);
+        for (let y = y0; y < y1; y++) {
+          const dy = (y - cy) / ry;
+          for (let x = x0; x < x1; x++) {
+            const dx = (x - cx) / rx;
+            if (dx * dx + dy * dy > 1) {
+              d[(y * w + x) * 4 + 3] = 0; // outside the shell ellipse - zero alpha, leave untinted
+            }
+          }
+        }
+      }
+    }
+    sctx.putImageData(imgData, 0, 0);
+    shellMaskSheet = src;
+  });
+
   // Idle-on-water bob: set each frame in update() (floating = stationary + in water + normal
   // state), floatClock is a free-running seconds counter driving the sine so the bob doesn't jump
   // or reset whenever floating toggles on/off.
@@ -1620,24 +1661,27 @@
     if (state === 'normal' && moveMode === 'walk' && f === 3) ctx.scale(-1, 1); // mirror the last walk frame so the head swings left (sheet only has right)
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(sprite, f * fw, row * fh, fw, fh, -dw / 2, -SPRITE_H / 2, dw, SPRITE_H);
-    drawEquippedCosmetics(ctx, dw); // Turtle Shop: color tint + hat/clothes/accessory, same local
-    ctx.restore();                  // space as the sprite draw above so it stays attached in every state
+    drawEquippedCosmetics(ctx, dw, SPRITE_H, f * fw, row * fh, fw, fh); // Turtle Shop: color tint + hat/clothes/accessory, same local
+    ctx.restore();                                                      // space as the sprite draw above so it stays attached in every state
   }
 
-  // Turtle Shop rendering: color tint composites onto just the sprite's opaque pixels, then
-  // hat/clothes/accessory are drawn as extra shapes on top — both driven by progression.js's owned
-  // item data (this is only the "how to draw it" half; see progression.js COSMETIC_DRAW/COLOR_TINTS
-  // for what each item looks like and how equip/unequip/buy work).
-  function drawEquippedCosmetics(ctx, dw, overrideEquipped) {
+  // Turtle Shop rendering: color tint composites onto just the shell's pixels (via shellMaskSheet),
+  // then hat/clothes/accessory are drawn as extra shapes on top — both driven by progression.js's
+  // owned item data (this is only the "how to draw it" half; see progression.js COSMETIC_DRAW/
+  // COLOR_TINTS for what each item looks like and how equip/unequip/buy work).
+  function drawEquippedCosmetics(ctx, dw, dh, sx, sy, sw, sh, overrideEquipped) {
     const tint = window.Progression.getEquippedColorTint(overrideEquipped);
-    if (tint) {
-      ctx.save();
-      ctx.globalCompositeOperation = 'source-atop';
-      ctx.fillStyle = tint;
-      ctx.fillRect(-dw / 2, -SPRITE_H / 2, dw, SPRITE_H);
-      ctx.restore();
+    if (tint && shellMaskSheet) {
+      tintScratch.width = dw; tintScratch.height = dh;
+      tintScratchCtx.clearRect(0, 0, dw, dh);
+      tintScratchCtx.drawImage(shellMaskSheet, sx, sy, sw, sh, 0, 0, dw, dh);
+      tintScratchCtx.globalCompositeOperation = 'source-atop';
+      tintScratchCtx.fillStyle = tint;
+      tintScratchCtx.fillRect(0, 0, dw, dh);
+      tintScratchCtx.globalCompositeOperation = 'source-over';
+      ctx.drawImage(tintScratch, -dw / 2, -dh / 2);
     }
-    window.Progression.drawEquippedCosmetics(ctx, dw, SPRITE_H, overrideEquipped);
+    window.Progression.drawEquippedCosmetics(ctx, dw, dh, overrideEquipped);
   }
 
   // Shop-panel live preview (progression.js calls this by canvas element, no world state involved):
@@ -1655,12 +1699,15 @@
     pctx.imageSmoothingQuality = 'high';
     pctx.drawImage(sprite, 0, 0, fw, fh, -dw / 2, -spriteH / 2, dw, spriteH); // row 0 col 0: idle frame
     const tint = window.Progression.getEquippedColorTint();
-    if (tint) {
-      pctx.save();
-      pctx.globalCompositeOperation = 'source-atop';
-      pctx.fillStyle = tint;
-      pctx.fillRect(-dw / 2, -spriteH / 2, dw, spriteH);
-      pctx.restore();
+    if (tint && shellMaskSheet) {
+      tintScratch.width = dw; tintScratch.height = spriteH;
+      tintScratchCtx.clearRect(0, 0, dw, spriteH);
+      tintScratchCtx.drawImage(shellMaskSheet, 0, 0, fw, fh, 0, 0, dw, spriteH);
+      tintScratchCtx.globalCompositeOperation = 'source-atop';
+      tintScratchCtx.fillStyle = tint;
+      tintScratchCtx.fillRect(0, 0, dw, spriteH);
+      tintScratchCtx.globalCompositeOperation = 'source-over';
+      pctx.drawImage(tintScratch, -dw / 2, -spriteH / 2);
     }
     window.Progression.drawEquippedCosmetics(pctx, dw, spriteH);
     pctx.restore();
