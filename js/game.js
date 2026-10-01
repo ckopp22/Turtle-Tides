@@ -1661,7 +1661,7 @@
     if (state === 'normal' && moveMode === 'walk' && f === 3) ctx.scale(-1, 1); // mirror the last walk frame so the head swings left (sheet only has right)
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(sprite, f * fw, row * fh, fw, fh, -dw / 2, -SPRITE_H / 2, dw, SPRITE_H);
-    drawEquippedCosmetics(ctx, dw, SPRITE_H, f * fw, row * fh, fw, fh); // Turtle Shop: color tint + hat/clothes/accessory, same local
+    drawEquippedCosmetics(ctx, dw, SPRITE_H, f * fw, row * fh, fw, fh, null, f); // Turtle Shop: color tint + hat/clothes/accessory, same local
     ctx.restore();                                                      // space as the sprite draw above so it stays attached in every state
   }
 
@@ -1669,7 +1669,7 @@
   // then hat/clothes/accessory are drawn as extra shapes on top — both driven by progression.js's
   // owned item data (this is only the "how to draw it" half; see progression.js COSMETIC_DRAW/
   // COLOR_TINTS for what each item looks like and how equip/unequip/buy work).
-  function drawEquippedCosmetics(ctx, dw, dh, sx, sy, sw, sh, overrideEquipped) {
+  function drawEquippedCosmetics(ctx, dw, dh, sx, sy, sw, sh, overrideEquipped, walkFrame) {
     const tint = window.Progression.getEquippedColorTint(overrideEquipped);
     if (tint && shellMaskSheet) {
       tintScratch.width = dw; tintScratch.height = dh;
@@ -1681,7 +1681,7 @@
       tintScratchCtx.globalCompositeOperation = 'source-over';
       ctx.drawImage(tintScratch, -dw / 2, -dh / 2);
     }
-    window.Progression.drawEquippedCosmetics(ctx, dw, dh, overrideEquipped);
+    window.Progression.drawEquippedCosmetics(ctx, dw, dh, overrideEquipped, walkFrame);
   }
 
   // Shop-panel live preview (progression.js calls this by canvas element, no world state involved):

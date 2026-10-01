@@ -72,21 +72,17 @@
         { id: 'color_coral',         category: 'color',     label: 'Coral Shell',   cost: 60 },
         { id: 'color_indigo',        category: 'color',     label: 'Indigo Shell',  cost: 60 },
         { id: 'color_gold',          category: 'color',     label: 'Golden Shell',  cost: 90 },
-        { id: 'hat_straw',           category: 'hat',       label: 'Straw Hat',     cost: 40 },
-        { id: 'hat_sailor',          category: 'hat',       label: 'Sailor Cap',    cost: 55 },
+        { id: 'hat_straw',           category: 'hat',       label: 'Straw Hat',     cost: 40, icon: 'assets/items/accessory_ring_orange.png' },
+        { id: 'hat_sailor',          category: 'hat',       label: 'Sailor Cap',    cost: 55, icon: 'assets/items/accessory_ring_navy.png' },
         { id: 'hat_flower',          category: 'hat',       label: 'Flower Crown',  cost: 70, icon: 'assets/items/hat_flower.png' },
-        { id: 'clothes_bandana',     category: 'clothes',   label: 'Bandana',       cost: 35 },
         { id: 'clothes_vest',        category: 'clothes',   label: 'Life Vest',     cost: 65, icon: 'assets/items/clothes_vest.png' },
         { id: 'clothes_tshirt',      category: 'clothes',   label: 'T-Shirt',       cost: 40, icon: 'assets/items/clothes_tshirt.png' },
         { id: 'clothes_cape',        category: 'clothes',   label: 'Cape',          cost: 55, icon: 'assets/items/clothes_cape.png' },
-        { id: 'accessory_sunglasses',category: 'accessory', label: 'Sunglasses',    cost: 30 },
         { id: 'accessory_bowtie',    category: 'accessory', label: 'Bow Tie',       cost: 25, icon: 'assets/items/accessory_bowtie.png' },
         { id: 'accessory_scarf',     category: 'accessory', label: 'Scarf',         cost: 45, icon: 'assets/items/accessory_scarf.png' },
-        { id: 'clothes_diving',      category: 'clothes',   label: 'Diving Helmet', cost: 60, icon: 'assets/items/clothes_diving.png' },
-        { id: 'accessory_crab',      category: 'accessory', label: 'Crab Buddy',    cost: 50, icon: 'assets/items/accessory_crab.png' },
-        { id: 'accessory_goggles',   category: 'accessory', label: 'Swim Goggles',  cost: 35, icon: 'assets/items/accessory_goggles.png' },
-        { id: 'accessory_ring_navy', category: 'accessory', label: 'Navy Life Ring',   cost: 45, icon: 'assets/items/accessory_ring_navy.png' },
-        { id: 'accessory_ring_orange',category: 'accessory',label: 'Orange Life Ring', cost: 45, icon: 'assets/items/accessory_ring_orange.png' },
+        { id: 'clothes_diving',      category: 'clothes',   label: 'Backpack',      cost: 60, icon: 'assets/items/clothes_diving.png' },
+        { id: 'accessory_crab',      category: 'accessory', label: 'Bandana',       cost: 50, icon: 'assets/items/accessory_crab.png' },
+        { id: 'accessory_goggles',   category: 'accessory', label: 'Sunglasses',    cost: 35, icon: 'assets/items/accessory_goggles.png' },
       ],
     },
     speed: {
@@ -178,34 +174,7 @@
   }
   // dw/spriteH = the sprite's drawn width/height in the caller's local space (already translated +
   // rotated to the turtle/preview center at (0,0), origin at the sprite's own center).
-  const COSMETIC_DRAW = {
-    hat_straw(ctx, dw, h) {
-      const y = -h * 0.42;
-      ctx.fillStyle = '#e0c26a';
-      ctx.beginPath(); ctx.ellipse(0, y, dw * 0.34, dw * 0.12, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#c9a84f';
-      ctx.beginPath(); ctx.ellipse(0, y - dw * 0.1, dw * 0.18, dw * 0.14, 0, Math.PI, 0); ctx.fill();
-    },
-    hat_sailor(ctx, dw, h) {
-      const y = -h * 0.4;
-      ctx.fillStyle = '#2f5f8a';
-      ctx.beginPath(); ctx.arc(0, y, dw * 0.2, Math.PI, 0); ctx.fill();
-      ctx.fillStyle = '#1f4463'; ctx.fillRect(-dw * 0.22, y, dw * 0.44, dw * 0.06);
-    },
-    clothes_bandana(ctx, dw, h) {
-      const y = -h * 0.14;
-      ctx.fillStyle = '#c0524a';
-      ctx.beginPath(); ctx.moveTo(-dw * 0.2, y); ctx.lineTo(dw * 0.2, y); ctx.lineTo(0, y + dw * 0.22); ctx.closePath(); ctx.fill();
-    },
-    accessory_sunglasses(ctx, dw, h) {
-      const y = -h * 0.3;
-      ctx.fillStyle = '#1a1a1a';
-      ctx.beginPath(); ctx.ellipse(-dw * 0.1, y, dw * 0.09, dw * 0.06, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.ellipse(dw * 0.1, y, dw * 0.09, dw * 0.06, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = '#1a1a1a'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(-dw * 0.02, y); ctx.lineTo(dw * 0.02, y); ctx.stroke();
-    },
-  };
+  const COSMETIC_DRAW = {};
   // Items with real pixel art (vs. the COSMETIC_DRAW canvas-shape placeholders above) just need an
   // id -> image path and a rough anchor point in sprite-local space; drawCosmeticImage below handles
   // the actual drawImage call once each image has loaded. y/scale tuned against a reference mockup
@@ -217,11 +186,11 @@
     clothes_diving:          { src: 'assets/items/clothes_diving.png',        y: 0.04,  scale: 0.84 },
     clothes_vest:             { src: 'assets/items/clothes_vest.png',          y: 0.04,  scale: 0.8 },
     accessory_crab:          { src: 'assets/items/accessory_crab.png',        y: -0.1,  scale: 0.75 },
-    accessory_goggles:       { src: 'assets/items/accessory_goggles.png',     y: -0.34, scale: 0.6 },
-    accessory_ring_navy:     { src: 'assets/items/accessory_ring_navy.png',   y: -0.42, scale: 0.62 },
-    accessory_ring_orange:   { src: 'assets/items/accessory_ring_orange.png', y: -0.42, scale: 0.62 },
+    accessory_goggles:       { src: 'assets/items/accessory_goggles.png',     y: -0.34, scale: 0.34 },
+    hat_sailor:              { src: 'assets/items/accessory_ring_navy.png',   y: -0.42, scale: 0.48 },
+    hat_straw:               { src: 'assets/items/accessory_ring_orange.png', y: -0.42, scale: 0.48 },
     accessory_scarf:         { src: 'assets/items/accessory_scarf.png',       y: -0.1,  scale: 0.6 },
-    clothes_tshirt:          { src: 'assets/items/clothes_tshirt.png',        y: 0.03,  scale: 0.5 },
+    clothes_tshirt:          { src: 'assets/items/clothes_tshirt.png',        y: 0.06,  scale: 0.55 },
     clothes_cape:            { src: 'assets/items/clothes_cape.png',          y: 0.05,  scale: 0.8 },
     accessory_bowtie:        { src: 'assets/items/accessory_bowtie.png',      y: -0.2,  scale: 0.4 },
   };
@@ -236,21 +205,27 @@
     }
     return cosmeticImageCache[id];
   }
-  function drawCosmeticImage(ctx, dw, spriteH, id) {
+  // Head-worn items (hats) sit on top of the turtle's head, which bobs a little from frame to frame
+  // in the walk-cycle art itself; the hat image is static, so without this it reads as floating
+  // above the head instead of resting on it. Offsets (as a fraction of spriteH) are eyeballed against
+  // the sheet's 4 walk frames and only applied to the 'hat' category.
+  const HAT_BOB_BY_FRAME = [0, 0.013, -0.02, 0.013];
+  function drawCosmeticImage(ctx, dw, spriteH, id, bobFrame) {
     const def = COSMETIC_IMAGES[id];
     const img = getCosmeticImage(id);
     if (!def || !img || !img.complete || !img.naturalWidth) return;
     const w = dw * def.scale;
     const h = w * (img.naturalHeight / img.naturalWidth);
-    ctx.drawImage(img, -w / 2, spriteH * def.y - h / 2, w, h);
+    const bob = bobFrame != null ? spriteH * (HAT_BOB_BY_FRAME[bobFrame] || 0) : 0;
+    ctx.drawImage(img, -w / 2, spriteH * def.y - h / 2 + bob, w, h);
   }
-  function drawEquippedCosmetics(ctx, dw, spriteH, overrideEquipped) {
+  function drawEquippedCosmetics(ctx, dw, spriteH, overrideEquipped, walkFrame) {
     const equipped = overrideEquipped || state.cosmetics.equipped;
     for (const cat of SHOP_CATEGORIES) {
       if (cat === 'color') continue; // handled by getEquippedColorTint, not a drawn shape
       const id = equipped[cat];
       if (!id) continue;
-      if (COSMETIC_IMAGES[id]) drawCosmeticImage(ctx, dw, spriteH, id);
+      if (COSMETIC_IMAGES[id]) drawCosmeticImage(ctx, dw, spriteH, id, cat === 'hat' ? walkFrame : null);
       else if (COSMETIC_DRAW[id]) COSMETIC_DRAW[id](ctx, dw, spriteH);
     }
   }
