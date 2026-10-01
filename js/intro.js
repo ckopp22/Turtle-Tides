@@ -70,8 +70,28 @@
     osc.connect(gain); gain.connect(audioCtx.destination);
     osc.start(); osc.stop(audioCtx.currentTime + duration);
   }
+  // Real crack SFX (assets/sfx/egg-crack{1,2,3}.mp3): preloaded, one picked at random per tap.
+  const crackClips = ['egg-crack2', 'egg-crack3'].map(name => {
+    const a = new Audio(`assets/sfx/${name}.mp3`);
+    a.volume = 0.6;
+    return a;
+  });
+  // Real splash SFX (assets/sfx/splash.mp3): only ever played once, when a brand-new save first
+  // lands on the island (see launchIsland's `splash` arg).
+  const splashClip = new Audio('assets/sfx/splash.mp3');
+  splashClip.volume = 0.6;
   const Sound = {
-    crack: () => beep(170 + Math.random() * 70, 0.1, 'square'),
+    crack: () => {
+      if (!soundOn) return;
+      const clip = crackClips[Math.floor(Math.random() * crackClips.length)];
+      clip.currentTime = 0;
+      clip.play().catch(() => {}); // autoplay can still be blocked pre-interaction; fail silently
+    },
+    splash: () => {
+      if (!soundOn) return;
+      splashClip.currentTime = 0;
+      splashClip.play().catch(() => {});
+    },
     hatch: () => beep(520, 0.35, 'triangle'),
     click: () => beep(440, 0.08, 'sine'),
     whoosh: () => beep(280, 0.45, 'sawtooth'),
@@ -470,7 +490,7 @@
         // New game: skip the beach menu and drop straight onto the island. Replaying the intro
         // standalone (no pending save) just lands back on the menu.
         const newGame = pendingNewGame; pendingNewGame = null;
-        startZoom(() => newGame ? launchIsland(newGame.data, newGame.slot) : goto('BEACH_MENU'));
+        startZoom(() => newGame ? launchIsland(newGame.data, newGame.slot, true) : goto('BEACH_MENU'));
       }
     },
     draw() {
@@ -679,10 +699,11 @@
   // The actual handoff, with no zoom of its own — callers that are already mid-transition (HATCH's
   // own zoom, for the new-game path) call this directly in their onPeak instead of nesting another
   // startZoom() call, which would stomp the in-flight overlay object and skip this entirely.
-  function launchIsland(data, slot) {
+  function launchIsland(data, slot, splash) {
     data.lastPlayedAt = new Date().toISOString();
     writeSlot(slot, data);
     goto('GAME_HANDOFF');
+    if (splash) Sound.splash(); // new game only: first arrival on the island
     if (window.TurtleGame && window.TurtleGame.start) window.TurtleGame.start(slot, data);
   }
   function startZoomToIsland(data, slot) {
