@@ -187,24 +187,25 @@
     ctx.fillText(label, r.x + r.w / 2, r.y + r.h / 2 + 2);
     ctx.restore();
   }
+  // Matches the in-game sound button (progression.js SOUND_ON/OFF_SVG, style.css #tt-sound-btn):
+  // same colors and 26x26 icon paths, drawn slightly transparent.
   function drawMuteIcon(r, on) {
     ctx.save();
+    ctx.globalAlpha = 0.8;
     roundRect(r.x, r.y, r.w, r.h, 10);
-    ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.fill();
-    ctx.lineWidth = 2; ctx.strokeStyle = '#3a2a10'; ctx.stroke();
-    const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+    ctx.fillStyle = '#ffcb80'; ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = '#c9a15f'; ctx.stroke();
+    ctx.translate(r.x + r.w / 2 - 13, r.y + r.h / 2 - 13);
     ctx.fillStyle = '#3a2a10';
-    ctx.beginPath();
-    ctx.moveTo(cx - 12, cy - 5); ctx.lineTo(cx - 5, cy - 5); ctx.lineTo(cx + 3, cy - 12);
-    ctx.lineTo(cx + 3, cy + 12); ctx.lineTo(cx - 5, cy + 5); ctx.lineTo(cx - 12, cy + 5);
-    ctx.closePath(); ctx.fill();
+    ctx.fill(new Path2D('M4 10h4l6-5v16l-6-5H4z'));
+    ctx.lineCap = 'round';
     if (on) {
       ctx.strokeStyle = '#2f8fd4'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(cx + 6, cy, 6, -0.6, 0.6); ctx.stroke();
-      ctx.beginPath(); ctx.arc(cx + 6, cy, 10, -0.6, 0.6); ctx.stroke();
+      ctx.stroke(new Path2D('M16 9a5 5 0 0 1 0 8'));
+      ctx.stroke(new Path2D('M18.5 6.5a9 9 0 0 1 0 13'));
     } else {
-      ctx.strokeStyle = '#d33a3a'; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.moveTo(cx + 2, cy - 10); ctx.lineTo(cx + 16, cy + 10); ctx.stroke();
+      ctx.strokeStyle = '#d33a3a'; ctx.lineWidth = 2.5;
+      ctx.stroke(new Path2D('M16 8l7 7M23 8l-7 7'));
     }
     ctx.restore();
   }
@@ -275,8 +276,9 @@
     for (const s of MENU_SCENERY) {
       const img = MENU_SCENERY_SPRITES[s.sprite];
       if (!img.complete || !img.naturalWidth) continue;
-      const dh = s.h, dw = dh * (img.naturalWidth / img.naturalHeight);
-      const x = viewW * s.xf, y = waterY - 4; // anchored at the shoreline, same as game.js's scenery
+      const k = Math.min(1, viewW / 600); // shrink scenery on narrow portrait screens
+      const dh = s.h * k, dw = dh * (img.naturalWidth / img.naturalHeight);
+      const x = viewW * (viewW < 500 ? Math.min(0.88, Math.max(0.12, s.xf)) : s.xf), y = waterY - 4; // anchored at the shoreline, same as game.js's scenery
       ctx.drawImage(img, x - dw / 2, y - dh, dw, dh);
     }
   }
@@ -355,12 +357,21 @@
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
     // Scale the title down on narrow (portrait phone) viewports so "TURTLE TIDES" never
     // runs past the screen edges; 96px is the size it was designed at, on a wide-enough view.
-    const titleSize = Math.min(96, viewW * 0.15);
+    const portrait = viewW < viewH * 0.8; // assumption: stack the title on two lines in portrait
+    const titleSize = portrait ? Math.min(96, viewW * 0.24) : Math.min(96, viewW * 0.15);
     const subSize = titleSize * 42 / 96;
+    const y0 = viewH * (portrait ? 0.14 : 0.22);
     ctx.font = `italic ${titleSize}px "Bradley Hand", "Comic Sans MS", cursive`;
-    strokeGroove('TURTLE TIDES', viewW / 2, viewH * 0.22, titleSize * 13 / 96);
+    let subY = y0 + subSize * 74 / 42;
+    if (portrait) {
+      strokeGroove('TURTLE', viewW / 2, y0, titleSize * 13 / 96);
+      strokeGroove('TIDES', viewW / 2, y0 + titleSize * 0.95, titleSize * 13 / 96);
+      subY = y0 + titleSize * 0.95 + subSize * 1.6;
+    } else {
+      strokeGroove('TURTLE TIDES', viewW / 2, y0, titleSize * 13 / 96);
+    }
     ctx.font = `italic ${subSize}px "Bradley Hand", "Comic Sans MS", cursive`;
-    strokeGroove('by Wesley Kopp', viewW / 2, viewH * 0.22 + subSize * 74 / 42, subSize * 3 / 42);
+    strokeGroove('by Wesley Kopp', viewW / 2, subY, subSize * 3 / 42);
     ctx.restore();
   }
   let pulseClock = 0;
@@ -508,9 +519,10 @@
 
   // ================= SCENE 3: BEACH MENU =================
   function layoutMenu() {
-    const playW = 200, playH = 64;
+    const portrait = viewW < viewH * 0.8;
+    const playW = portrait ? Math.min(240, viewW * 0.6) : 200, playH = portrait ? 72 : 64;
     return {
-      play: { x: viewW / 2 - playW / 2, y: viewH * 0.58, w: playW, h: playH },
+      play: { x: viewW / 2 - playW / 2, y: viewH * (portrait ? 0.46 : 0.58), w: playW, h: playH },
       mute: { x: viewW - 64, y: 20, w: 44, h: 44 },
     };
   }
@@ -530,9 +542,9 @@
       drawBeach(t, false);
       drawMenuScenery();
       drawTitle();
-      drawMenuTurtle(t);
       const L = layoutMenu();
       drawButton(L.play, 'PLAY', true);
+      drawMenuTurtle(t); // after the button so the turtle walks over it
       drawMuteIcon(L.mute, soundOn);
     },
   };
