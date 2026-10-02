@@ -92,6 +92,14 @@
   // Heart-loss respawns (Progression.takeHit hitting 0) snap the turtle back to the home spot the
   // same way the initial spawn does. Not exercised yet — no enemies call takeHit() until birds exist.
   window.Progression && window.Progression.setRespawnHandler(spawnTurtle);
+  // Death sequence: slow fade to black, a beat of full black, then respawn on the island.
+  const DEATH_FADE_SECONDS = 2.5, DEATH_BLACK_SECONDS = 1;
+  let deathTimer = -1; // -1 = alive; otherwise seconds since death
+  function startDeath() {
+    state = 'dying'; stateTime = 0; deathTimer = 0;
+    if (window.TT_SOUND) window.TT_SOUND.gameover();
+  }
+  window.Progression && window.Progression.setDeathHandler(startDeath);
 
   // ---- Input -> normalized direction vector (length 0..1) ----
   const keys = new Set();
@@ -1481,6 +1489,13 @@
   function update(dt) {
     stateTime += dt;
     gameTime += dt;
+    if (deathTimer >= 0) {
+      deathTimer += dt;
+      if (deathTimer >= DEATH_FADE_SECONDS + DEATH_BLACK_SECONDS) {
+        deathTimer = -1; state = 'normal'; stateTime = 0;
+        window.Progression.respawnAtHome();
+      }
+    }
     if (shakeTime > 0) shakeTime = Math.max(0, shakeTime - dt);
     updateNightFade(dt);
     updateSandPuffs(dt);
@@ -1817,6 +1832,10 @@
     drawNightSky(); // screen space, under the HUD/joystick so they stay fully readable
     drawJoystick(); // screen space
     window.Progression.drawHUD(ctx); // screen space
+    if (deathTimer >= 0) {
+      ctx.fillStyle = `rgba(0,0,0,${Math.min(1, deathTimer / DEATH_FADE_SECONDS)})`;
+      ctx.fillRect(0, 0, viewW, viewH);
+    }
   }
 
   let last;

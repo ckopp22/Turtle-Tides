@@ -110,6 +110,9 @@
   // Heart-loss SFX (assets/sfx/umph.mp3), played from progression.js takeHit() (damage and hunger both go through it).
   const umphClip = new Audio('assets/sfx/umph.mp3');
   umphClip.volume = 0.6;
+  // Game-over SFX (assets/sfx/gameover.mp3), played from game.js via TT_SOUND.gameover when the last heart is lost.
+  const gameoverClip = new Audio('assets/sfx/gameover.mp3');
+  gameoverClip.volume = 0.6;
   const Sound = {
     crack: () => {
       if (!soundOn) return;
@@ -162,6 +165,11 @@
       umphClip.currentTime = 0;
       umphClip.play().catch(() => {});
     },
+    gameover: () => {
+      if (!soundOn) return;
+      gameoverClip.currentTime = 0;
+      gameoverClip.play().catch(() => {});
+    },
     hatch: () => beep(520, 0.35, 'triangle'),
     click: () => {
       if (!soundOn) return;
@@ -184,6 +192,7 @@
     shell: () => Sound.shell(),
     sand: () => Sound.sand(),
     umph: () => Sound.umph(),
+    gameover: () => Sound.gameover(),
     walking: (active, rate) => Sound.walking(active, rate),
     swimming: (active, floating) => Sound.swimming(active, floating),
     toggle: () => { soundOn = !soundOn; writeSound(soundOn); return soundOn; },

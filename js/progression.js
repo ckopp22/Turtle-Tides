@@ -330,7 +330,12 @@
 
   let respawnHandler = null;
   function setRespawnHandler(fn) { respawnHandler = fn; } // game.js hooks this to reset turtle.x/y
+  // Death sequence hook: game.js plays the fade-out and then calls respawnAtHome() itself. Without a
+  // handler, dying respawns instantly like before.
+  let deathHandler = null, dying = false;
+  function setDeathHandler(fn) { deathHandler = fn; }
   function respawnAtHome() {
+    dying = false;
     const lost = loseCarried();
     state.hearts = maxHearts();
     state.hunger = hungerMax();
@@ -346,11 +351,14 @@
   // Removes one heart (guarded by invulnerability). TODO: call this from bird/enemy contact once
   // enemies exist in game.js — nothing calls it yet, this is just the hook.
   function takeHit() {
-    if (state.invulnTimer > 0) return false;
+    if (state.invulnTimer > 0 || dying) return false;
     state.hearts = Math.max(0, state.hearts - 1);
     state.invulnTimer = CONFIG.invulnSeconds;
     if (window.TT_SOUND) window.TT_SOUND.umph();
-    if (state.hearts <= 0) { respawnAtHome(); return true; }
+    if (state.hearts <= 0) {
+      if (deathHandler) { dying = true; deathHandler(); } else respawnAtHome();
+      return true;
+    }
     return false;
   }
   function isInvulnerable() { return state.invulnTimer > 0; }
@@ -367,6 +375,7 @@
       if (state.lastLostMessage.timer <= 0) state.lastLostMessage = null;
     }
 
+    if (dying) return 1; // frozen (no hunger drain/hits) while the death fade plays
     let speedMult = 1;
     if (awayFromHome) {
       state.hunger = Math.max(0, state.hunger - hungerDrainRate() * dt);
@@ -1002,7 +1011,7 @@
   }
 
   window.Progression = {
-    tryPickup, bankCarried, takeHit, isInvulnerable, setRespawnHandler,
+    tryPickup, bankCarried, takeHit, isInvulnerable, setRespawnHandler, setDeathHandler, respawnAtHome,
     update, updateSleep, getSleepConfig, swimSpeedMultiplier, moveSpeedMultiplier, toggleDayNight, drawHUD, setHomeButtonVisible, tryEatFromHud,
     buyUpgrade, canUpgrade,
     attachSlot, getSaveData, persist,
