@@ -1388,13 +1388,12 @@
         if (!it.active) continue;
         if (it.x < camX - margin || it.x > camX + vw + margin || it.y < camY - margin || it.y > camY + vh + margin) continue;
         const bob = Math.sin(gameTime * opts.bobSpeed + it.bobSeed) * opts.bobAmplitude;
-        ctx.save();
         // Assumes the pickup's own shadow was too faint to read: darker/wider, and it shrinks as the item hops up.
         const hopH = it.popAt !== undefined ? popHeight(it) : 0;
         ctx.globalAlpha = 0.45 * (1 - Math.min(hopH, 110) / 220);
         ctx.fillStyle = '#000';
         ctx.beginPath(); ctx.ellipse(it.x, it.y + 22, opts.drawH * 0.4 * (1 - hopH / 400), opts.drawH * 0.18 * (1 - hopH / 400), 0, 0, Math.PI * 2); ctx.fill();
-        ctx.restore();
+        ctx.globalAlpha = 1; // no save/restore needed: only alpha + fillStyle changed
         const hop = it.popAt !== undefined ? popHeight(it) : 0;
         opts.drawItem(it.x, it.y + (hop > 0 ? -hop : bob));
       }
