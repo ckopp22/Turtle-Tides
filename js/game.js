@@ -1546,7 +1546,7 @@
     if (window.TT_SOUND) {
       const moving = state === 'normal' && speed > 5;
       window.TT_SOUND.walking(moving && !inWater);
-      window.TT_SOUND.swimming(state === 'normal' && inWater);
+      window.TT_SOUND.swimming(state === 'normal' && inWater, !moving);
     }
 
     // Wake ripples while actually swimming; slower, occasional ripples while just floating in
