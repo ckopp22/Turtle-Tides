@@ -535,6 +535,14 @@
     for (const key of GRASS_BIOME_KEYS) {
       layers[key].maskCtx.putImageData(layers[key].maskImg, 0, 0);
       layers[key].varCtx.putImageData(layers[key].varImg, 0, 0);
+      // Bake the variation wash + biome tint into one low-res overlay so drawGrassTextures() does a
+      // single source-atop blend per biome instead of a drawImage plus a full-screen fillRect.
+      const cfg = GRASS_BIOMES[key];
+      layers[key].varCtx.globalCompositeOperation = 'source-over';
+      if (cfg.tintColor) {
+        layers[key].varCtx.fillStyle = `rgba(${cfg.tintColor[0]}, ${cfg.tintColor[1]}, ${cfg.tintColor[2]}, ${cfg.tintAlpha})`;
+        layers[key].varCtx.fillRect(0, 0, cols, rows);
+      }
     }
     return layers;
   }
@@ -624,11 +632,7 @@
       sctx.drawImage(layer.maskCanvas, sx, sy, sw, sh, 0, 0, viewW, viewH);
 
       sctx.globalCompositeOperation = 'source-atop';
-      sctx.drawImage(layer.varCanvas, sx, sy, sw, sh, 0, 0, viewW, viewH);
-      if (cfg.tintColor) {
-        sctx.fillStyle = `rgba(${cfg.tintColor[0]}, ${cfg.tintColor[1]}, ${cfg.tintColor[2]}, ${cfg.tintAlpha})`;
-        sctx.fillRect(0, 0, viewW, viewH);
-      }
+      sctx.drawImage(layer.varCanvas, sx, sy, sw, sh, 0, 0, viewW, viewH); // var wash + tint, pre-baked
       sctx.globalCompositeOperation = 'source-over';
 
       ctx.save();
@@ -1828,6 +1832,7 @@
     const vw = viewW / ZOOM, vh = viewH / ZOOM, margin = 80;
     const inView = s => s.x > camX - margin && s.x < camX + vw + margin && s.y > camY - margin && s.y < camY + vh + margin;
     const visible = scenery.filter(inView).concat(homeDecorList.filter(inView));
+    if (perf) perf.visible = visible.length;
     drawSceneryWithTurtle(visible);
     drawNightGlows(); // world space, on top of the decor it's lighting
     if (DEBUG_HITBOXES) drawDebugHitboxes(visible);
@@ -1846,15 +1851,45 @@
     }
   }
 
+  // ---- Perf overlay: only exists with ?debug=1 in the URL; zero cost otherwise.
+  const perf = new URLSearchParams(location.search).get('debug') === '1' ? (() => {
+    const el = document.createElement('pre');
+    el.style.cssText = 'position:fixed;left:4px;top:4px;margin:0;padding:4px 6px;background:rgba(0,0,0,.65);color:#7f7;font:11px/1.3 monospace;z-index:99;pointer-events:none';
+    document.body.appendChild(el);
+    let calls = 0;
+    // Count canvas draw calls per frame by wrapping the main ctx's drawing methods.
+    for (const m of ['drawImage', 'fill', 'stroke', 'fillRect', 'strokeRect', 'putImageData']) {
+      const orig = ctx[m].bind(ctx);
+      ctx[m] = (...a) => { calls++; return orig(...a); };
+    }
+    const p = { frames: 0, acc: 0, worst: 0, t0: 0, visible: 0, ms: 0,
+      take() { const c = calls; calls = 0; return c; },
+      show(fps, avg, worst, c) {
+        const mem = performance.memory ? `${(performance.memory.usedJSHeapSize / 1048576).toFixed(1)} MB` : 'n/a';
+        el.textContent = `fps ${fps.toFixed(0)}\nframe ${avg.toFixed(1)}ms (worst ${worst.toFixed(1)})\nwork ${p.ms.toFixed(1)}ms\nvisible ${p.visible} / ${scenery.length}\ndraws/frame ${c.toFixed(0)}\nheap ${mem}\ndpr ${dpr}`;
+      } };
+    return p;
+  })() : null;
+
   let last;
   function frame(now) {
     // Clamp to >= 0: the first rAF timestamp can predate the performance.now() start() recorded,
     // and a negative dt made the accel branch below evaluate 0/0, poisoning the turtle's velocity
     // (and then its position, and the camera) with NaN for the rest of the session.
     const dt = Math.min(Math.max(0, (now - last) / 1000), 0.05);
+    const rawMs = now - last;
     last = now;
+    const w0 = perf ? performance.now() : 0;
     update(dt);
     render(now / 1000);
+    if (perf) {
+      perf.ms = performance.now() - w0;
+      perf.frames++; perf.acc += rawMs; perf.worst = Math.max(perf.worst, rawMs);
+      if (now - perf.t0 >= 500) {
+        perf.show(perf.frames * 1000 / (now - perf.t0), perf.acc / perf.frames, perf.worst, perf.take() / perf.frames);
+        perf.frames = 0; perf.acc = 0; perf.worst = 0; perf.t0 = now;
+      }
+    }
     requestAnimationFrame(frame);
   }
 
