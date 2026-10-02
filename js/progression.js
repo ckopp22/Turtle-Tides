@@ -273,7 +273,12 @@
   // Returns false (and flashes the hull-full cue) if the hull has no room; caller should leave the
   // item on the ground in that case rather than consuming it.
   function tryPickup(type) {
-    if (carriedTotal() >= hullCap()) { state.hullFullFlash = CONFIG.hullFullFlashSeconds; return false; }
+    if (carriedTotal() >= hullCap()) {
+      // tryPickup runs every frame while overlapping an item, so only sound off when the flash isn't already running
+      if (state.hullFullFlash <= 0 && window.TT_SOUND) window.TT_SOUND.full();
+      state.hullFullFlash = CONFIG.hullFullFlashSeconds;
+      return false;
+    }
     state.carried[type]++;
     return true;
   }

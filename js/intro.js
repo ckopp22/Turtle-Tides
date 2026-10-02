@@ -113,6 +113,9 @@
   // Game-over SFX (assets/sfx/gameover.mp3), played from game.js via TT_SOUND.gameover when the last heart is lost.
   const gameoverClip = new Audio('assets/sfx/gameover.mp3');
   gameoverClip.volume = 0.6;
+  // Hull-full SFX (assets/sfx/full.mp3), played from progression.js tryPickup via TT_SOUND.full.
+  const fullClip = new Audio('assets/sfx/full.mp3');
+  fullClip.volume = 0.6;
   const Sound = {
     crack: () => {
       if (!soundOn) return;
@@ -170,6 +173,11 @@
       gameoverClip.currentTime = 0;
       gameoverClip.play().catch(() => {});
     },
+    full: () => {
+      if (!soundOn) return;
+      fullClip.currentTime = 0;
+      fullClip.play().catch(() => {});
+    },
     hatch: () => beep(520, 0.35, 'triangle'),
     click: () => {
       if (!soundOn) return;
@@ -193,6 +201,7 @@
     sand: () => Sound.sand(),
     umph: () => Sound.umph(),
     gameover: () => Sound.gameover(),
+    full: () => Sound.full(),
     walking: (active, rate) => Sound.walking(active, rate),
     swimming: (active, floating) => Sound.swimming(active, floating),
     toggle: () => { soundOn = !soundOn; writeSound(soundOn); return soundOn; },
