@@ -122,7 +122,7 @@
   // <audio> elements drift by load/decode latency). Falls back to <audio> if the context isn't ready.
   const bankBuffers = [];
   let bankBuffersRequested = false;
-  const bankFallback = ['coindrop', 'bookdrop'].map(n => { const a = new Audio(`assets/sfx/${n}.mp3`); a.volume = 0.4; return a; });
+  const bankFallback = ['coindrop', 'bookdrop'].map(n => { const a = new Audio(`assets/sfx/${n}.mp3`); a.volume = 0.2; return a; });
   function leadSilence(buf) {
     const d = buf.getChannelData(0), thresh = 0.01;
     for (let i = 0; i < d.length; i++) if (Math.abs(d[i]) > thresh) return Math.max(0, i / buf.sampleRate - 0.005);
@@ -285,7 +285,7 @@
       if (!soundOn) return;
       if (audioCtx && bankBuffers[0] && bankBuffers[1]) {
         const t = audioCtx.currentTime + 0.02, gain = audioCtx.createGain();
-        gain.gain.value = 0.4; gain.connect(audioCtx.destination);
+        gain.gain.value = 0.2; gain.connect(audioCtx.destination);
         // skip each clip's leading silence so the first audible sample of both lands on t
         for (const buf of bankBuffers) {
           const src = audioCtx.createBufferSource(); src.buffer = buf; src.connect(gain);
