@@ -103,6 +103,10 @@
   // Sandcastle knock-down SFX (assets/sfx/sand.mp3), played from game.js via TT_SOUND.sand.
   const sandClip = new Audio('assets/sfx/sand.mp3');
   sandClip.volume = 0.6;
+  // UI click SFX (assets/sfx/click.mp3): menu canvas buttons call Sound.click directly; every DOM <button>
+  // (HUD buttons, shop/upgrade panels, name prompt) is covered by one delegated listener below.
+  const clickClip = new Audio('assets/sfx/click.mp3');
+  clickClip.volume = 0.6;
   const Sound = {
     crack: () => {
       if (!soundOn) return;
@@ -151,11 +155,19 @@
       sandClip.play().catch(() => {});
     },
     hatch: () => beep(520, 0.35, 'triangle'),
-    click: () => beep(440, 0.08, 'sine'),
+    click: () => {
+      if (!soundOn) return;
+      clickClip.currentTime = 0;
+      clickClip.play().catch(() => {});
+    },
     whoosh: () => beep(280, 0.45, 'sawtooth'),
   };
   // Bridge so the in-game HUD's sound toggle (progression.js) reads/writes the same on/off
   // preference as this screen's own mute button, instead of tracking a second copy of it.
+  // Bubble phase so it runs after the button's own handler (e.g. the HUD sound toggle flips soundOn first).
+  document.addEventListener('click', e => {
+    if (e.target.closest && e.target.closest('button')) Sound.click();
+  });
   window.TT_SOUND = {
     get: () => soundOn,
     coconut: () => Sound.coconut(),
