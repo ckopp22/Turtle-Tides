@@ -173,8 +173,10 @@
       gameoverClip.currentTime = 0;
       gameoverClip.play().catch(() => {});
     },
-    full: () => {
+    full: seconds => {
       if (!soundOn) return;
+      // squeeze/stretch the clip so it ends exactly when the HUD's hull-full flash does
+      fullClip.playbackRate = seconds && fullClip.duration ? fullClip.duration / seconds : 1;
       fullClip.currentTime = 0;
       fullClip.play().catch(() => {});
     },
@@ -201,7 +203,7 @@
     sand: () => Sound.sand(),
     umph: () => Sound.umph(),
     gameover: () => Sound.gameover(),
-    full: () => Sound.full(),
+    full: seconds => Sound.full(seconds),
     walking: (active, rate) => Sound.walking(active, rate),
     swimming: (active, floating) => Sound.swimming(active, floating),
     toggle: () => { soundOn = !soundOn; writeSound(soundOn); return soundOn; },

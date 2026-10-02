@@ -275,7 +275,7 @@
   function tryPickup(type) {
     if (carriedTotal() >= hullCap()) {
       // tryPickup runs every frame while overlapping an item, so only sound off when the flash isn't already running
-      if (state.hullFullFlash <= 0 && window.TT_SOUND) window.TT_SOUND.full();
+      if (state.hullFullFlash <= 0 && window.TT_SOUND) window.TT_SOUND.full(CONFIG.hullFullFlashSeconds);
       state.hullFullFlash = CONFIG.hullFullFlashSeconds;
       return false;
     }
