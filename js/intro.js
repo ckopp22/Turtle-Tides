@@ -95,6 +95,10 @@
   const walkClip = new Audio('assets/sfx/walking.mp3');
   walkClip.loop = true;
   walkClip.volume = 0.6;
+  // Swimming loop (assets/sfx/water-walking.mp3), same driver as the walking loop but while in water.
+  const swimClip = new Audio('assets/sfx/water-walking.mp3');
+  swimClip.loop = true;
+  swimClip.volume = 0.6;
   const Sound = {
     crack: () => {
       if (!soundOn) return;
@@ -131,6 +135,10 @@
       if (active && soundOn) { if (walkClip.paused) walkClip.play().catch(() => {}); }
       else if (!walkClip.paused) walkClip.pause();
     },
+    swimming: active => {
+      if (active && soundOn) { if (swimClip.paused) swimClip.play().catch(() => {}); }
+      else if (!swimClip.paused) swimClip.pause();
+    },
     hatch: () => beep(520, 0.35, 'triangle'),
     click: () => beep(440, 0.08, 'sine'),
     whoosh: () => beep(280, 0.45, 'sawtooth'),
@@ -144,6 +152,7 @@
     bite: () => Sound.bite(),
     shell: () => Sound.shell(),
     walking: active => Sound.walking(active),
+    swimming: active => Sound.swimming(active),
     toggle: () => { soundOn = !soundOn; writeSound(soundOn); return soundOn; },
   };
 
