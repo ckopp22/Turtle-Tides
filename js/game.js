@@ -912,7 +912,12 @@
       if (s.knockable && !s.knocked) {
         const dx0 = turtle.x - s.x, dy0 = turtle.y - s.y;
         const dist0 = Math.hypot(dx0, dy0);
-        if (dist0 < TURTLE_BODY_RADIUS + s.cr) {
+        // Hit test uses the sprite's bbox (any side, incl. behind/top) with the base circle as fallback.
+        const kb = getSpriteWorldBox(s);
+        const hit = kb
+          ? Math.hypot(turtle.x - Math.min(Math.max(turtle.x, kb.x0), kb.x1), turtle.y - Math.min(Math.max(turtle.y, kb.y0), kb.y1)) < TURTLE_BODY_RADIUS
+          : dist0 < TURTLE_BODY_RADIUS + s.cr;
+        if (hit) {
           // First bump knocks it down: swap to the rubble pile, stop colliding, and give the turtle
           // a little kickback + screen shake so the impact reads before it walks on through.
           s.knocked = true;
@@ -922,6 +927,7 @@
           turtle.x += nx * KNOCKBACK_DIST;
           turtle.y += ny * KNOCKBACK_DIST;
           triggerShake(6, 0.25);
+          spawnSandPuff(s.x, s.y);
           continue;
         }
       }
@@ -1001,13 +1007,43 @@
   const TURTLE_DEPTH_FRONT_OFFSET = 24;
   function drawSceneryWithTurtle(list) {
     list.sort((a, b) => a.y - b.y); // cheap back-to-front depth sort of the (small) visible set
+    // Knocked-down sand piles are flat on the ground: always draw them under the turtle, never over it.
+    for (const s of list) if (s.knocked) drawScenerySprite(s);
     const turtleDepthY = turtle.y + TURTLE_DEPTH_FRONT_OFFSET;
     let drawnTurtle = false;
     for (const s of list) {
+      if (s.knocked) continue;
       if (!drawnTurtle && turtleDepthY < s.y) { drawTurtle(); drawnTurtle = true; }
       drawScenerySprite(s);
     }
     if (!drawnTurtle) drawTurtle();
+    drawSandPuffs();
+  }
+
+  // Sand puff when a castle collapses: a few tan blobs that drift outward, rise, and fade.
+  const sandPuffs = [];
+  function spawnSandPuff(x, y) {
+    for (let i = 0; i < 14; i++) {
+      const a = Math.random() * Math.PI * 2, sp = 30 + Math.random() * 60;
+      sandPuffs.push({ x: x + (Math.random() - 0.5) * 30, y: y - 10 - Math.random() * 40,
+        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp * 0.5 - 20, r: 8 + Math.random() * 10, t: 0, life: 0.6 + Math.random() * 0.3 });
+    }
+  }
+  function updateSandPuffs(dt) {
+    for (let i = sandPuffs.length - 1; i >= 0; i--) {
+      const p = sandPuffs[i];
+      p.t += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.96; p.vy *= 0.96;
+      if (p.t >= p.life) sandPuffs.splice(i, 1);
+    }
+  }
+  function drawSandPuffs() {
+    for (const p of sandPuffs) {
+      const k = p.t / p.life;
+      ctx.globalAlpha = 0.7 * (1 - k);
+      ctx.fillStyle = '#e8d3a0';
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (1 + k * 0.8), 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
   }
 
   function drawScenerySprite(s) {
@@ -1423,6 +1459,7 @@
     gameTime += dt;
     if (shakeTime > 0) shakeTime = Math.max(0, shakeTime - dt);
     updateNightFade(dt);
+    updateSandPuffs(dt);
     coinPickups.update();
     coconutPickups.update();
     shellPickups.update();
