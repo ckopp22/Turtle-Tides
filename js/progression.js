@@ -229,8 +229,9 @@
       if (cat === 'color') continue; // handled by getEquippedColorTint, not a drawn shape
       const id = equipped[cat];
       if (!id) continue;
-      if (hatMode === 'skip' && cat === 'hat') continue; // hatMode: 'only' draws just the hat, 'skip' draws everything but
-      if (hatMode === 'only' && cat !== 'hat') continue;
+      const behind = cat === 'hat' || id === 'clothes_cape' || id === 'clothes_diving'; // swimming: hat, cape, backpack go behind the turtle
+      if (hatMode === 'skip' && behind) continue; // hatMode: 'only' draws just the behind-items, 'skip' draws everything but
+      if (hatMode === 'only' && !behind) continue;
       if (COSMETIC_IMAGES[id]) drawCosmeticImage(ctx, dw, spriteH, id, (cat === 'hat' || id === 'accessory_goggles') ? walkFrame : null); // head-worn: follow the walk-cycle head bob/sway
       else if (COSMETIC_DRAW[id]) COSMETIC_DRAW[id](ctx, dw, spriteH);
     }
