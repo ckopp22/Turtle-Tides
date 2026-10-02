@@ -107,6 +107,9 @@
   // (HUD buttons, shop/upgrade panels, name prompt) is covered by one delegated listener below.
   const clickClip = new Audio('assets/sfx/click.mp3');
   clickClip.volume = 0.6;
+  // Heart-loss SFX (assets/sfx/umph.mp3), played from progression.js takeHit() (damage and hunger both go through it).
+  const umphClip = new Audio('assets/sfx/umph.mp3');
+  umphClip.volume = 0.6;
   const Sound = {
     crack: () => {
       if (!soundOn) return;
@@ -154,6 +157,11 @@
       sandClip.currentTime = 0;
       sandClip.play().catch(() => {});
     },
+    umph: () => {
+      if (!soundOn) return;
+      umphClip.currentTime = 0;
+      umphClip.play().catch(() => {});
+    },
     hatch: () => beep(520, 0.35, 'triangle'),
     click: () => {
       if (!soundOn) return;
@@ -175,6 +183,7 @@
     bite: () => Sound.bite(),
     shell: () => Sound.shell(),
     sand: () => Sound.sand(),
+    umph: () => Sound.umph(),
     walking: (active, rate) => Sound.walking(active, rate),
     swimming: (active, floating) => Sound.swimming(active, floating),
     toggle: () => { soundOn = !soundOn; writeSound(soundOn); return soundOn; },

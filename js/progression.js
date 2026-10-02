@@ -349,6 +349,7 @@
     if (state.invulnTimer > 0) return false;
     state.hearts = Math.max(0, state.hearts - 1);
     state.invulnTimer = CONFIG.invulnSeconds;
+    if (window.TT_SOUND) window.TT_SOUND.umph();
     if (state.hearts <= 0) { respawnAtHome(); return true; }
     return false;
   }
