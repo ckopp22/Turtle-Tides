@@ -137,7 +137,7 @@
       else if (!walkClip.paused) walkClip.pause();
     },
     swimming: (active, floating) => {
-      swimClip.playbackRate = floating ? 0.5 : 0.7; // slower while just floating
+      swimClip.playbackRate = floating ? 0.5 : 1; // slower while just floating
       if (active && soundOn) { if (swimClip.paused) swimClip.play().catch(() => {}); }
       else if (!swimClip.paused) swimClip.pause();
     },
