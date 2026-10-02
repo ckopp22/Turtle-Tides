@@ -1291,21 +1291,25 @@
     firepitRing: [{ dx: 0, dy: -25, r: 55 }],
     lights:      [{ dx: -26, dy: 4, r: 24 }, { dx: 0, dy: 4, r: 24 }, { dx: 26, dy: 4, r: 24 }],
   };
+  // One pre-rendered glow, scaled per light and faded with globalAlpha — no per-frame gradients.
+  const glowSprite = (() => {
+    const c = document.createElement('canvas'); c.width = c.height = 128;
+    const g = c.getContext('2d');
+    const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+    grad.addColorStop(0, 'rgba(255, 190, 110, 0.55)');
+    grad.addColorStop(1, 'rgba(255, 190, 110, 0)');
+    g.fillStyle = grad; g.fillRect(0, 0, 128, 128);
+    return c;
+  })();
   function drawNightGlows() {
     if (nightAmount <= 0.001) return;
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = nightAmount;
     for (const d of homeDecorList) {
       const spots = NIGHT_GLOW_SPOTS[d.id];
       if (!spots) continue;
-      for (const sp of spots) {
-        const gx = d.x + sp.dx, gy = d.y + sp.dy;
-        const grad = ctx.createRadialGradient(gx, gy, 0, gx, gy, sp.r);
-        grad.addColorStop(0, `rgba(255, 190, 110, ${0.55 * nightAmount})`);
-        grad.addColorStop(1, 'rgba(255, 190, 110, 0)');
-        ctx.fillStyle = grad;
-        ctx.beginPath(); ctx.arc(gx, gy, sp.r, 0, Math.PI * 2); ctx.fill();
-      }
+      for (const sp of spots) ctx.drawImage(glowSprite, d.x + sp.dx - sp.r, d.y + sp.dy - sp.r, sp.r * 2, sp.r * 2);
     }
     ctx.restore();
   }
@@ -1683,6 +1687,7 @@
   let shellMaskSheet = null;
   const tintScratch = document.createElement('canvas');
   const tintScratchCtx = tintScratch.getContext('2d');
+  let tintKey = '';
   sprite.addEventListener('load', () => {
     const w = sprite.naturalWidth, h = sprite.naturalHeight;
     const fw = w / SHEET_COLS, fh = h / SHEET_ROWS;
@@ -1751,13 +1756,19 @@
   function drawEquippedCosmetics(ctx, dw, dh, sx, sy, sw, sh, overrideEquipped, walkFrame, hatMode) {
     const tint = window.Progression.getEquippedColorTint(overrideEquipped);
     if (tint && shellMaskSheet && hatMode !== 'only') {
-      tintScratch.width = dw; tintScratch.height = dh;
-      tintScratchCtx.clearRect(0, 0, dw, dh);
-      tintScratchCtx.drawImage(shellMaskSheet, sx, sy, sw, sh, 0, 0, dw, dh);
-      tintScratchCtx.globalCompositeOperation = 'source-atop';
-      tintScratchCtx.fillStyle = tint;
-      tintScratchCtx.fillRect(0, 0, dw, dh);
-      tintScratchCtx.globalCompositeOperation = 'source-over';
+      // Rebuild only when the frame/tint/size changes — reassigning canvas width/height every frame
+      // reallocates the backing store.
+      const key = `${tint}|${sx}|${sy}|${dw}|${dh}`;
+      if (key !== tintKey) {
+        tintKey = key;
+        if (tintScratch.width !== dw || tintScratch.height !== dh) { tintScratch.width = dw; tintScratch.height = dh; }
+        tintScratchCtx.clearRect(0, 0, dw, dh);
+        tintScratchCtx.drawImage(shellMaskSheet, sx, sy, sw, sh, 0, 0, dw, dh);
+        tintScratchCtx.globalCompositeOperation = 'source-atop';
+        tintScratchCtx.fillStyle = tint;
+        tintScratchCtx.fillRect(0, 0, dw, dh);
+        tintScratchCtx.globalCompositeOperation = 'source-over';
+      }
       ctx.drawImage(tintScratch, -dw / 2, -dh / 2);
     }
     window.Progression.drawEquippedCosmetics(ctx, dw, dh, overrideEquipped, walkFrame, hatMode);
@@ -1805,6 +1816,7 @@
     ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.fill();
   }
 
+  const visibleBuf = [];
   function render(t) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // 1 ctx unit = 1 CSS px; backing store already has the dpr scale-up
     ctx.fillStyle = '#0b3d4f';
@@ -1831,7 +1843,10 @@
     rebuildHomeDecorIfNeeded();
     const vw = viewW / ZOOM, vh = viewH / ZOOM, margin = 80;
     const inView = s => s.x > camX - margin && s.x < camX + vw + margin && s.y > camY - margin && s.y < camY + vh + margin;
-    const visible = scenery.filter(inView).concat(homeDecorList.filter(inView));
+    visibleBuf.length = 0; // reused buffer: no per-frame array allocations
+    for (const s of scenery) if (inView(s)) visibleBuf.push(s);
+    for (const s of homeDecorList) if (inView(s)) visibleBuf.push(s);
+    const visible = visibleBuf;
     if (perf) perf.visible = visible.length;
     drawSceneryWithTurtle(visible);
     drawNightGlows(); // world space, on top of the decor it's lighting
