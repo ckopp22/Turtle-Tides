@@ -1351,6 +1351,7 @@
         if (it.popAt !== undefined && popHeight(it) > 0) continue; // can't grab it mid-hop
         if (Math.hypot(turtle.x - it.x, turtle.y - it.y) < pickupDist) {
           if (window.Progression.tryPickup(key)) {
+            if (key === 'coconuts' && window.TT_SOUND) window.TT_SOUND.coconut();
             it.active = false;
             it.respawnAt = gameTime + opts.respawnSeconds;
             if (it.temp) items.splice(i, 1);

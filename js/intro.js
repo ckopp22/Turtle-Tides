@@ -79,6 +79,9 @@
   // Real splash SFX (assets/sfx/splash.mp3): played whenever a save lands on the island (see launchIsland).
   const splashClip = new Audio('assets/sfx/splash.mp3');
   splashClip.volume = 0.6;
+  // Coconut pickup SFX (assets/sfx/coconuts.mp3), played from game.js via TT_SOUND.coconut.
+  const coconutClip = new Audio('assets/sfx/coconuts.mp3');
+  coconutClip.volume = 0.6;
   const Sound = {
     crack: () => {
       if (!soundOn) return;
@@ -91,6 +94,11 @@
       splashClip.currentTime = 0;
       splashClip.play().catch(() => {});
     },
+    coconut: () => {
+      if (!soundOn) return;
+      coconutClip.currentTime = 0;
+      coconutClip.play().catch(() => {});
+    },
     hatch: () => beep(520, 0.35, 'triangle'),
     click: () => beep(440, 0.08, 'sine'),
     whoosh: () => beep(280, 0.45, 'sawtooth'),
@@ -99,6 +107,7 @@
   // preference as this screen's own mute button, instead of tracking a second copy of it.
   window.TT_SOUND = {
     get: () => soundOn,
+    coconut: () => Sound.coconut(),
     toggle: () => { soundOn = !soundOn; writeSound(soundOn); return soundOn; },
   };
 
