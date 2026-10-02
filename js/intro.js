@@ -183,7 +183,7 @@
   ['pointerdown', 'keydown'].forEach(t => window.addEventListener(t, syncBeach, { passive: true }));
   // Gameplay background music (assets/sfx/music1-3.mp3): cycles through the tracks while in the game, quietly.
   // Has its own on/off (the top-right music button in progression.js) on top of the master sound toggle.
-  const MUSIC_VOL = 0.12;
+  const MUSIC_VOL = 0.08;
   const musicClips = [1, 2, 3].map(n => {
     const a = new Audio(`assets/sfx/music${n}.mp3`);
     a.volume = MUSIC_VOL;
