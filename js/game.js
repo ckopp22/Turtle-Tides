@@ -1545,8 +1545,9 @@
     else walkFrame = 0;
     if (window.TT_SOUND) {
       const moving = state === 'normal' && speed > 5;
-      // footstep tempo tracks speed (1x at base land speed), clamped so extremes stay listenable
-      window.TT_SOUND.walking(moving && !inWater, Math.min(2, Math.max(0.5, speed / (MAX_SPEED * LAND_SPEED_MULT))));
+      // footstep tempo tracks speed and is boosted to line up with the head swing (~1.2 swings/s at base land speed)
+      const walkRate = WALK_SOUND_BASE_RATE * speed / (MAX_SPEED * LAND_SPEED_MULT);
+      window.TT_SOUND.walking(moving && !inWater, Math.min(4, Math.max(1, walkRate)));
       window.TT_SOUND.swimming(state === 'normal' && inWater, !moving);
     }
 
@@ -1644,6 +1645,7 @@
   const FRAMES = 4;
   const SHEET_COLS = 8, SHEET_ROWS = 5;
   const SPRITE_H = 100;          // drawn height in world px
+  const WALK_SOUND_BASE_RATE = 2; // walking.mp3 playbackRate at base land speed; raise to speed footsteps up
   const FRAMES_PER_SPEED = 0.03; // frames per px traveled (~5 fps at full speed)
   let walkFrame = 0;
 
