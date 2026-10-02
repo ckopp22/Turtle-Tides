@@ -314,6 +314,7 @@
     state.hungerZeroTimer = 0;
     state.hungerHeartTicks = 0;
     persist();
+    if (window.TT_SOUND) window.TT_SOUND.bite();
     return true;
   }
   // Hit-testing rect for the whole HUD panel (hearts/hunger/capacity), updated each drawHUD() call,

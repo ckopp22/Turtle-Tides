@@ -85,6 +85,9 @@
   // Coin pickup SFX (assets/sfx/coin.mp3), played from game.js via TT_SOUND.coin.
   const coinClip = new Audio('assets/sfx/coin.mp3');
   coinClip.volume = 0.6;
+  // Bite SFX (assets/sfx/bite.mp3), played from progression.js via TT_SOUND.bite when eating from the HUD.
+  const biteClip = new Audio('assets/sfx/bite.mp3');
+  biteClip.volume = 0.6;
   const Sound = {
     crack: () => {
       if (!soundOn) return;
@@ -96,6 +99,11 @@
       if (!soundOn) return;
       splashClip.currentTime = 0;
       splashClip.play().catch(() => {});
+    },
+    bite: () => {
+      if (!soundOn) return;
+      biteClip.currentTime = 0;
+      biteClip.play().catch(() => {});
     },
     coin: () => {
       if (!soundOn) return;
@@ -117,6 +125,7 @@
     get: () => soundOn,
     coconut: () => Sound.coconut(),
     coin: () => Sound.coin(),
+    bite: () => Sound.bite(),
     toggle: () => { soundOn = !soundOn; writeSound(soundOn); return soundOn; },
   };
 
