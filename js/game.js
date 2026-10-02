@@ -1352,6 +1352,7 @@
         if (Math.hypot(turtle.x - it.x, turtle.y - it.y) < pickupDist) {
           if (window.Progression.tryPickup(key)) {
             if (key === 'coconuts' && window.TT_SOUND) window.TT_SOUND.coconut();
+            if (key === 'coins' && window.TT_SOUND) window.TT_SOUND.coin();
             it.active = false;
             it.respawnAt = gameTime + opts.respawnSeconds;
             if (it.temp) items.splice(i, 1);

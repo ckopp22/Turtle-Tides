@@ -82,6 +82,9 @@
   // Coconut pickup SFX (assets/sfx/coconuts.mp3), played from game.js via TT_SOUND.coconut.
   const coconutClip = new Audio('assets/sfx/coconuts.mp3');
   coconutClip.volume = 0.6;
+  // Coin pickup SFX (assets/sfx/coin.mp3), played from game.js via TT_SOUND.coin.
+  const coinClip = new Audio('assets/sfx/coin.mp3');
+  coinClip.volume = 0.6;
   const Sound = {
     crack: () => {
       if (!soundOn) return;
@@ -93,6 +96,11 @@
       if (!soundOn) return;
       splashClip.currentTime = 0;
       splashClip.play().catch(() => {});
+    },
+    coin: () => {
+      if (!soundOn) return;
+      coinClip.currentTime = 0;
+      coinClip.play().catch(() => {});
     },
     coconut: () => {
       if (!soundOn) return;
@@ -108,6 +116,7 @@
   window.TT_SOUND = {
     get: () => soundOn,
     coconut: () => Sound.coconut(),
+    coin: () => Sound.coin(),
     toggle: () => { soundOn = !soundOn; writeSound(soundOn); return soundOn; },
   };
 
