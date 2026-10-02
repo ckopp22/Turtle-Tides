@@ -87,7 +87,7 @@
   coinClip.volume = 0.6;
   // Bite SFX (assets/sfx/bite.mp3), played from progression.js via TT_SOUND.bite when eating from the HUD.
   const biteClip = new Audio('assets/sfx/bite.mp3');
-  biteClip.volume = 0.6;
+  biteClip.volume = 0.4;
   // Shell pickup SFX (assets/sfx/shell.mp3), played from game.js via TT_SOUND.shell.
   const shellClip = new Audio('assets/sfx/shell.mp3');
   shellClip.volume = 0.6;
