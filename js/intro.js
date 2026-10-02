@@ -91,6 +91,10 @@
   // Shell pickup SFX (assets/sfx/shell.mp3), played from game.js via TT_SOUND.shell.
   const shellClip = new Audio('assets/sfx/shell.mp3');
   shellClip.volume = 0.6;
+  // Walking loop (assets/sfx/walking.mp3), driven from game.js via TT_SOUND.walking(active) while moving on ground.
+  const walkClip = new Audio('assets/sfx/walking.mp3');
+  walkClip.loop = true;
+  walkClip.volume = 0.6;
   const Sound = {
     crack: () => {
       if (!soundOn) return;
@@ -123,6 +127,10 @@
       shellClip.currentTime = 0;
       shellClip.play().catch(() => {});
     },
+    walking: active => {
+      if (active && soundOn) { if (walkClip.paused) walkClip.play().catch(() => {}); }
+      else if (!walkClip.paused) walkClip.pause();
+    },
     hatch: () => beep(520, 0.35, 'triangle'),
     click: () => beep(440, 0.08, 'sine'),
     whoosh: () => beep(280, 0.45, 'sawtooth'),
@@ -135,6 +143,7 @@
     coin: () => Sound.coin(),
     bite: () => Sound.bite(),
     shell: () => Sound.shell(),
+    walking: active => Sound.walking(active),
     toggle: () => { soundOn = !soundOn; writeSound(soundOn); return soundOn; },
   };
 

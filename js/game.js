@@ -1543,6 +1543,7 @@
     const speed = Math.hypot(turtle.vx, turtle.vy);
     if (speed > 5) walkFrame += speed * dt * FRAMES_PER_SPEED;
     else walkFrame = 0;
+    if (window.TT_SOUND) window.TT_SOUND.walking(state === 'normal' && !inWater && speed > 5);
 
     // Wake ripples while actually swimming; slower, occasional ripples while just floating in
     // place on water. Land gets neither.
