@@ -433,7 +433,7 @@
     hull: {
       label: 'Hull', icon: 'assets/items/backpack.png', level: () => state.hullLevel, maxLevel: () => CONFIG.hull.capTiers.length - 1,
       cost: () => CONFIG.hull.upgradeCosts[state.hullLevel],
-      next: () => `carry ${CONFIG.hull.capTiers[state.hullLevel + 1]} items`,
+      next: () => `${CONFIG.hull.capTiers[state.hullLevel + 1]} items`,
       apply: () => { state.hullLevel++; },
     },
     home: {
