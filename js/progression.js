@@ -210,6 +210,9 @@
   // above the head instead of resting on it. Offsets (as a fraction of spriteH) are eyeballed against
   // the sheet's 4 walk frames and only applied to the 'hat' category.
   const HAT_BOB_BY_FRAME = [0, 0.013, -0.02, 0.013];
+  // Side-to-side head sway per walk frame (fraction of spriteH, measured from the head's x-center in
+  // the sheet; frame 3 is drawn mirrored, so its local-space offset stays positive).
+  const HAT_SWAY_BY_FRAME = [0, 0.087, 0, 0.07];
   function drawCosmeticImage(ctx, dw, spriteH, id, bobFrame) {
     const def = COSMETIC_IMAGES[id];
     const img = getCosmeticImage(id);
@@ -217,15 +220,18 @@
     const w = dw * def.scale;
     const h = w * (img.naturalHeight / img.naturalWidth);
     const bob = bobFrame != null ? spriteH * (HAT_BOB_BY_FRAME[bobFrame] || 0) : 0;
-    ctx.drawImage(img, -w / 2, spriteH * def.y - h / 2 + bob, w, h);
+    const sway = bobFrame != null ? spriteH * (HAT_SWAY_BY_FRAME[bobFrame] || 0) : 0;
+    ctx.drawImage(img, -w / 2 + sway, spriteH * def.y - h / 2 + bob, w, h);
   }
-  function drawEquippedCosmetics(ctx, dw, spriteH, overrideEquipped, walkFrame) {
+  function drawEquippedCosmetics(ctx, dw, spriteH, overrideEquipped, walkFrame, hatMode) {
     const equipped = overrideEquipped || state.cosmetics.equipped;
     for (const cat of SHOP_CATEGORIES) {
       if (cat === 'color') continue; // handled by getEquippedColorTint, not a drawn shape
       const id = equipped[cat];
       if (!id) continue;
-      if (COSMETIC_IMAGES[id]) drawCosmeticImage(ctx, dw, spriteH, id, cat === 'hat' ? walkFrame : null);
+      if (hatMode === 'skip' && cat === 'hat') continue; // hatMode: 'only' draws just the hat, 'skip' draws everything but
+      if (hatMode === 'only' && cat !== 'hat') continue;
+      if (COSMETIC_IMAGES[id]) drawCosmeticImage(ctx, dw, spriteH, id, (cat === 'hat' || id === 'accessory_goggles') ? walkFrame : null); // head-worn: follow the walk-cycle head bob/sway
       else if (COSMETIC_DRAW[id]) COSMETIC_DRAW[id](ctx, dw, spriteH);
     }
   }

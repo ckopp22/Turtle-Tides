@@ -1660,8 +1660,10 @@
     ctx.rotate(turtle.angle + Math.PI / 2); // art faces up, angle 0 = right
     if (state === 'normal' && moveMode === 'walk' && f === 3) ctx.scale(-1, 1); // mirror the last walk frame so the head swings left (sheet only has right)
     ctx.imageSmoothingQuality = 'high';
+    const swimming = moveMode === 'swim';
+    if (swimming) drawEquippedCosmetics(ctx, dw, SPRITE_H, f * fw, row * fh, fw, fh, null, null, 'only'); // null frame = no bob/sway // on its back: hat goes behind the body
     ctx.drawImage(sprite, f * fw, row * fh, fw, fh, -dw / 2, -SPRITE_H / 2, dw, SPRITE_H);
-    drawEquippedCosmetics(ctx, dw, SPRITE_H, f * fw, row * fh, fw, fh, null, f); // Turtle Shop: color tint + hat/clothes/accessory, same local
+    drawEquippedCosmetics(ctx, dw, SPRITE_H, f * fw, row * fh, fw, fh, null, swimming ? null : f, swimming ? 'skip' : undefined); // Turtle Shop: color tint + hat/clothes/accessory, same local
     ctx.restore();                                                      // space as the sprite draw above so it stays attached in every state
   }
 
@@ -1669,9 +1671,9 @@
   // then hat/clothes/accessory are drawn as extra shapes on top — both driven by progression.js's
   // owned item data (this is only the "how to draw it" half; see progression.js COSMETIC_DRAW/
   // COLOR_TINTS for what each item looks like and how equip/unequip/buy work).
-  function drawEquippedCosmetics(ctx, dw, dh, sx, sy, sw, sh, overrideEquipped, walkFrame) {
+  function drawEquippedCosmetics(ctx, dw, dh, sx, sy, sw, sh, overrideEquipped, walkFrame, hatMode) {
     const tint = window.Progression.getEquippedColorTint(overrideEquipped);
-    if (tint && shellMaskSheet) {
+    if (tint && shellMaskSheet && hatMode !== 'only') {
       tintScratch.width = dw; tintScratch.height = dh;
       tintScratchCtx.clearRect(0, 0, dw, dh);
       tintScratchCtx.drawImage(shellMaskSheet, sx, sy, sw, sh, 0, 0, dw, dh);
@@ -1681,7 +1683,7 @@
       tintScratchCtx.globalCompositeOperation = 'source-over';
       ctx.drawImage(tintScratch, -dw / 2, -dh / 2);
     }
-    window.Progression.drawEquippedCosmetics(ctx, dw, dh, overrideEquipped, walkFrame);
+    window.Progression.drawEquippedCosmetics(ctx, dw, dh, overrideEquipped, walkFrame, hatMode);
   }
 
   // Shop-panel live preview (progression.js calls this by canvas element, no world state involved):
