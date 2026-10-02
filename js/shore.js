@@ -90,8 +90,12 @@ const Shore = (() => {
     const sandPat = tmp.createPattern(sandImg, 'repeat');
     const waterPat = tmp.createPattern(waterImg, 'repeat');
     let L = null;
+    // Mask cells are cached in a window padded by PAD cells and only recomputed ~20x/sec (or when the
+    // camera leaves the window) — the per-cell wave math was the main cost on phones.
+    const PAD = 6, TICK = 20;
+    let cache = null;
     function layers(vw, vh) {
-      const mw = Math.ceil(vw / RES) + 2, mh = Math.ceil(vh / RES) + 2;
+      const mw = Math.ceil(vw / RES) + 2 + 2 * PAD, mh = Math.ceil(vh / RES) + 2 + 2 * PAD;
       if (L && L.mw === mw && L.mh === mh && L.vw === vw && L.vh === vh) return L;
       const mk = (r, g, b) => {
         const c = canvasOf(mw, mh), x = c.getContext('2d'), id = x.createImageData(mw, mh);
@@ -106,12 +110,17 @@ const Shore = (() => {
     function draw(ctx, camX, camY, vw, vh, time = 0) {
       camX = Math.round(camX); camY = Math.round(camY);
       const l = layers(vw, vh);
-      const mx0 = Math.floor(camX / RES), my0 = Math.floor(camY / RES);
+      const nx = Math.floor(camX / RES), ny = Math.floor(camY / RES), need = Math.ceil(vw / RES) + 2, needH = Math.ceil(vh / RES) + 2;
+      const tick = Math.floor(time * TICK);
+      const stale = !cache || cache.l !== l || cache.tick !== tick || nx < cache.mx0 || ny < cache.my0 ||
+        nx + need > cache.mx0 + l.mw || ny + needH > cache.my0 + l.mh;
+      if (stale) cache = { l, tick, mx0: nx - PAD, my0: ny - PAD };
+      const mx0 = cache.mx0, my0 = cache.my0;
       const wd = l.wet.id.data, fd = l.foam.id.data, md = l.mask.id.data, sd = l.smask.id.data;
       const soft = !!underField;
       const t = time * o.speed;
 
-      for (let y = 0; y < l.mh; y++) {
+      if (stale) for (let y = 0; y < l.mh; y++) {
         const gy = my0 + y;
         for (let x = 0; x < l.mw; x++) {
           const gx = mx0 + x, i = (y * l.mw + x) * 4 + 3;
@@ -133,8 +142,10 @@ const Shore = (() => {
           } else fd[i] = 0;
         }
       }
-      l.wet.x.putImageData(l.wet.id, 0, 0); l.foam.x.putImageData(l.foam.id, 0, 0); l.mask.x.putImageData(l.mask.id, 0, 0);
-      if (soft) l.smask.x.putImageData(l.smask.id, 0, 0);
+      if (stale) {
+        l.wet.x.putImageData(l.wet.id, 0, 0); l.foam.x.putImageData(l.foam.id, 0, 0); l.mask.x.putImageData(l.mask.id, 0, 0);
+        if (soft) l.smask.x.putImageData(l.smask.id, 0, 0);
+      }
       const ox = mx0 * RES - camX, oy = my0 * RES - camY, ow = l.mw * RES, oh = l.mh * RES;
 
       const prevS = ctx.imageSmoothingEnabled;
