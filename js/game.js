@@ -929,6 +929,7 @@
           turtle.y += ny * KNOCKBACK_DIST;
           triggerShake(6, 0.25);
           spawnSandPuff(s.x, s.y);
+          if (window.TT_SOUND) window.TT_SOUND.sand();
           if (Math.random() < CASTLE_COIN_CHANCE) coinPickups.dropAt(s.x, s.y + 30); // coinPickups is defined later but only used at runtime
           continue;
         }

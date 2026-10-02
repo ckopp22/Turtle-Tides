@@ -100,6 +100,9 @@
   swimClip.loop = true;
   swimClip.volume = 0.1;
   swimClip.playbackRate = 0.7;
+  // Sandcastle knock-down SFX (assets/sfx/sand.mp3), played from game.js via TT_SOUND.sand.
+  const sandClip = new Audio('assets/sfx/sand.mp3');
+  sandClip.volume = 0.6;
   const Sound = {
     crack: () => {
       if (!soundOn) return;
@@ -142,6 +145,11 @@
       if (active && soundOn) { if (swimClip.paused) swimClip.play().catch(() => {}); }
       else if (!swimClip.paused) swimClip.pause();
     },
+    sand: () => {
+      if (!soundOn) return;
+      sandClip.currentTime = 0;
+      sandClip.play().catch(() => {});
+    },
     hatch: () => beep(520, 0.35, 'triangle'),
     click: () => beep(440, 0.08, 'sine'),
     whoosh: () => beep(280, 0.45, 'sawtooth'),
@@ -154,6 +162,7 @@
     coin: () => Sound.coin(),
     bite: () => Sound.bite(),
     shell: () => Sound.shell(),
+    sand: () => Sound.sand(),
     walking: (active, rate) => Sound.walking(active, rate),
     swimming: (active, floating) => Sound.swimming(active, floating),
     toggle: () => { soundOn = !soundOn; writeSound(soundOn); return soundOn; },
