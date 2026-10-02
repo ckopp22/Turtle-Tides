@@ -1353,6 +1353,7 @@
           if (window.Progression.tryPickup(key)) {
             if (key === 'coconuts' && window.TT_SOUND) window.TT_SOUND.coconut();
             if (key === 'coins' && window.TT_SOUND) window.TT_SOUND.coin();
+            if (key === 'shells' && window.TT_SOUND) window.TT_SOUND.shell();
             it.active = false;
             it.respawnAt = gameTime + opts.respawnSeconds;
             if (it.temp) items.splice(i, 1);
