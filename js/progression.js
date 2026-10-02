@@ -141,6 +141,7 @@
     state.banked.coins -= item.cost;
     state.cosmetics.owned.push(id);
     persist();
+    if (window.TT_SOUND) window.TT_SOUND.purchase();
     return true;
   }
   function equipCosmetic(id) {
@@ -290,6 +291,7 @@
     state.banked.shells += state.carried.shells;
     state.carried = { coins: 0, coconuts: 0, shells: 0 };
     persist();
+    if (window.TT_SOUND) window.TT_SOUND.bank();
     return true;
   }
   function loseCarried() {
@@ -474,6 +476,7 @@
       showCongratsBanner();
     }
     persist();
+    if (window.TT_SOUND) window.TT_SOUND.purchase();
     return true;
   }
 

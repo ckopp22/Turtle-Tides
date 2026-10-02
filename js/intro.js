@@ -107,6 +107,13 @@
   // (HUD buttons, shop/upgrade panels, name prompt) is covered by one delegated listener below.
   const clickClip = new Audio('assets/sfx/click.mp3');
   clickClip.volume = 0.6;
+  // Purchase SFX (assets/sfx/purchase.mp3), played from progression.js when an upgrade or closet item is bought.
+  const purchaseClip = new Audio('assets/sfx/purchase.mp3');
+  purchaseClip.volume = 0.6;
+  // Bank SFX (assets/sfx/coindrop.mp3 + bookdrop.mp3), played together from progression.js bankCarried() on returning home.
+  const coindropClip = new Audio('assets/sfx/coindrop.mp3');
+  const bookdropClip = new Audio('assets/sfx/bookdrop.mp3');
+  coindropClip.volume = bookdropClip.volume = 0.6;
   // Heart-loss SFX (assets/sfx/umph.mp3), played from progression.js takeHit() (damage and hunger both go through it).
   const umphClip = new Audio('assets/sfx/umph.mp3');
   umphClip.volume = 0.6;
@@ -180,6 +187,15 @@
       fullClip.currentTime = 0;
       fullClip.play().catch(() => {});
     },
+    purchase: () => {
+      if (!soundOn) return;
+      purchaseClip.currentTime = 0;
+      purchaseClip.play().catch(() => {});
+    },
+    bank: () => {
+      if (!soundOn) return;
+      for (const c of [coindropClip, bookdropClip]) { c.currentTime = 0; c.play().catch(() => {}); }
+    },
     hatch: () => beep(520, 0.35, 'triangle'),
     click: () => {
       if (!soundOn) return;
@@ -192,7 +208,9 @@
   // preference as this screen's own mute button, instead of tracking a second copy of it.
   // Bubble phase so it runs after the button's own handler (e.g. the HUD sound toggle flips soundOn first).
   document.addEventListener('click', e => {
-    if (e.target.closest && e.target.closest('button')) Sound.click();
+    const btn = e.target.closest && e.target.closest('button');
+    // buy buttons play purchase.mp3 instead of the generic click (a disabled button never fires click)
+    if (btn && !btn.classList.contains('tt-upgrade-buy')) Sound.click();
   });
   window.TT_SOUND = {
     get: () => soundOn,
@@ -202,6 +220,8 @@
     shell: () => Sound.shell(),
     sand: () => Sound.sand(),
     umph: () => Sound.umph(),
+    purchase: () => Sound.purchase(),
+    bank: () => Sound.bank(),
     gameover: () => Sound.gameover(),
     full: seconds => Sound.full(seconds),
     walking: (active, rate) => Sound.walking(active, rate),
@@ -825,7 +845,6 @@
     if (window.TurtleGame && window.TurtleGame.start) window.TurtleGame.start(slot, data);
   }
   function startZoomToIsland(data, slot) {
-    Sound.whoosh();
     startZoom(() => launchIsland(data, slot));
   }
 
