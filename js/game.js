@@ -67,6 +67,7 @@
 
   const TURTLE_RADIUS = 36;          // used for world-edge clamping / camera, not obstacle collision
   const TURTLE_BODY_RADIUS = 22;     // smaller, body-only circle used for obstacle collision (excludes flippers/tail)
+  const PILE_LIFETIME = 10;          // seconds a knocked-down sandcastle's sand pile stays before vanishing
   const KNOCKBACK_DIST = 16;         // one-time shove away from a sandcastle the instant it's knocked down
   const DEBUG_HITBOXES = false;      // true: draw red outlines for every collision hitbox in view
   const MAX_SPEED = 180;   // px/s, base speed before the water/land multiplier below
@@ -721,7 +722,7 @@
   };
   for (const name of ['pine_tall', 'oak_tree', 'tree_cluster3', 'round_tree_med', 'round_tree_single',
     'pine_sapling', 'dead_tree_med', 'dead_tree_small', 'round_tree_small',
-    'driftwood_stick', 'sandcastle_big', 'rock_beach']) {
+    'driftwood_stick', 'sandcastle_big', 'sandpile', 'rock_beach']) {
     const img = new Image();
     img.onload = () => computeSpriteBBox(img, name);
     img.src = `assets/scenery/${name}.png`;
@@ -842,7 +843,7 @@
         scenery.push({ x, y, r: 34, cr: 36, type: 'sprite', sprite: 'rock_beach', h: 76, collide: true });
       } else if (biome === 'beach' && rand() < 0.14) {
         scenery.push({ x, y, r: 12, cr: 18, type: 'sprite', sprite: 'driftwood_stick', h: 60, collide: true });
-      } else if (biome === 'beach' && rand() < 0.06) {
+      } else if (biome === 'beach' && (rand(), Math.random() < 0.06)) { // unseeded roll: castles land on different beach spots each load (rand() kept so tree layout is unchanged)
         // rare beach flourish, straight off the reference sheet. knockable: turtle bumping into it
         // flattens it into a walkable rubble pile — see resolveObstacleCollisions/drawScenerySprite.
         scenery.push({ x, y, r: 24, cr: 38, type: 'sprite', sprite: 'sandcastle_big', h: 90, collide: true, knockable: true, knocked: false });
@@ -915,6 +916,7 @@
           // First bump knocks it down: swap to the rubble pile, stop colliding, and give the turtle
           // a little kickback + screen shake so the impact reads before it walks on through.
           s.knocked = true;
+          s.knockedAt = gameTime;
           s.collide = false;
           const nx = dist0 > 0.001 ? dx0 / dist0 : 0, ny = dist0 > 0.001 ? dy0 / dist0 : -1;
           turtle.x += nx * KNOCKBACK_DIST;
@@ -1010,27 +1012,10 @@
 
   function drawScenerySprite(s) {
       if (s.knocked) {
-        // Flattened rubble pile left behind once the turtle bumps a sandcastle — a low, uneven sand
-        // mound with a few crumbled block edges, walkable (see resolveObstacleCollisions).
-        ctx.fillStyle = '#d8b988';
-        ctx.beginPath();
-        ctx.ellipse(s.x, s.y, s.r * 1.5, s.r * 0.55, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = '#c7a475';
-        ctx.beginPath();
-        ctx.ellipse(s.x - s.r * 0.4, s.y - s.r * 0.1, s.r * 0.6, s.r * 0.3, 0.2, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.ellipse(s.x + s.r * 0.5, s.y + s.r * 0.05, s.r * 0.5, s.r * 0.25, -0.3, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = '#b08f60';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.moveTo(s.x - s.r * 0.3, s.y - s.r * 0.2);
-        ctx.lineTo(s.x + s.r * 0.1, s.y - s.r * 0.05);
-        ctx.moveTo(s.x - s.r * 0.6, s.y + s.r * 0.15);
-        ctx.lineTo(s.x - s.r * 0.2, s.y + s.r * 0.25);
-        ctx.stroke();
+        // Sand pile left behind once the turtle bumps a sandcastle — walkable (see resolveObstacleCollisions).
+        const pile = SPRITES.sandpile;
+        if (gameTime - s.knockedAt > PILE_LIFETIME) return; // pile has vanished
+        if (pile.complete && pile.naturalWidth) ctx.drawImage(pile, s.x - 28, s.y - 50, 56, 56); // sizes are a guess
         return;
       }
       if (s.type === 'sprite') {
@@ -1284,8 +1269,8 @@
   function randomLandSpot() {
     let x = CENTER.x, y = CENTER.y;
     for (let i = 0; i < 200; i++) {
-      x = rand() * WORLD_SIZE;
-      y = rand() * WORLD_SIZE;
+      x = Math.random() * WORLD_SIZE; // unseeded so pickup spots differ every load
+      y = Math.random() * WORLD_SIZE;
       const distFromCenter = Math.hypot(x - CENTER.x, y - CENTER.y);
       if (distFromCenter > WORLD_SIZE / 2 - EDGE_FOG_WIDTH * 0.4) continue; // keep clear of the far fog fringe
       if (isWater(x, y)) continue;
