@@ -68,6 +68,7 @@
   const TURTLE_RADIUS = 36;          // used for world-edge clamping / camera, not obstacle collision
   const TURTLE_BODY_RADIUS = 22;     // smaller, body-only circle used for obstacle collision (excludes flippers/tail)
   const PILE_LIFETIME = 10;          // seconds a knocked-down sandcastle's sand pile stays before vanishing
+  const CASTLE_COIN_CHANCE = 0.2;    // chance a knocked-down sandcastle pops out a coin
   const KNOCKBACK_DIST = 16;         // one-time shove away from a sandcastle the instant it's knocked down
   const DEBUG_HITBOXES = false;      // true: draw red outlines for every collision hitbox in view
   const MAX_SPEED = 180;   // px/s, base speed before the water/land multiplier below
@@ -928,6 +929,7 @@
           turtle.y += ny * KNOCKBACK_DIST;
           triggerShake(6, 0.25);
           spawnSandPuff(s.x, s.y);
+          if (Math.random() < CASTLE_COIN_CHANCE) coinPickups.dropAt(s.x, s.y + 30); // coinPickups is defined later but only used at runtime
           continue;
         }
       }
@@ -1326,17 +1328,32 @@
       const p = randomLandSpot();
       items.push({ x: p.x, y: p.y, active: true, respawnAt: 0, bobSeed: rand() * Math.PI * 2 });
     }
+    // One-off bonus pickup dropped at a spot (e.g. from a knocked-down sandcastle); removed once taken.
+    function dropAt(x, y) {
+      items.push({ x, y, active: true, respawnAt: 0, bobSeed: Math.random() * Math.PI * 2, temp: true, popAt: gameTime });
+    }
+    // Hop arc for a dropped item: a high launch, then a smaller bounce, then rest (0 = landed).
+    const POP_DUR1 = 0.7, POP_DUR2 = 0.35, POP_H1 = 110, POP_H2 = 28;
+    function popHeight(it) {
+      const t = gameTime - it.popAt;
+      if (t < POP_DUR1) { const u = t / POP_DUR1; return POP_H1 * 4 * u * (1 - u); }
+      if (t < POP_DUR1 + POP_DUR2) { const u = (t - POP_DUR1) / POP_DUR2; return POP_H2 * 4 * u * (1 - u); }
+      return 0;
+    }
     function update() {
       const pickupDist = TURTLE_BODY_RADIUS + opts.pickupRadius;
-      for (const it of items) {
+      for (let i = items.length - 1; i >= 0; i--) {
+        const it = items[i];
         if (!it.active) {
           if (gameTime >= it.respawnAt) respawn(it);
           continue;
         }
+        if (it.popAt !== undefined && popHeight(it) > 0) continue; // can't grab it mid-hop
         if (Math.hypot(turtle.x - it.x, turtle.y - it.y) < pickupDist) {
           if (window.Progression.tryPickup(key)) {
             it.active = false;
             it.respawnAt = gameTime + opts.respawnSeconds;
+            if (it.temp) items.splice(i, 1);
           }
           // else: hull is full — leave it active on the ground, Progression flashes the hull-full cue
         }
@@ -1349,14 +1366,17 @@
         if (it.x < camX - margin || it.x > camX + vw + margin || it.y < camY - margin || it.y > camY + vh + margin) continue;
         const bob = Math.sin(gameTime * opts.bobSpeed + it.bobSeed) * opts.bobAmplitude;
         ctx.save();
-        ctx.globalAlpha = 0.25;
+        // Assumes the pickup's own shadow was too faint to read: darker/wider, and it shrinks as the item hops up.
+        const hopH = it.popAt !== undefined ? popHeight(it) : 0;
+        ctx.globalAlpha = 0.45 * (1 - Math.min(hopH, 110) / 220);
         ctx.fillStyle = '#000';
-        ctx.beginPath(); ctx.ellipse(it.x, it.y + 4, opts.drawH * 0.32, opts.drawH * 0.14, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(it.x, it.y + 22, opts.drawH * 0.4 * (1 - hopH / 400), opts.drawH * 0.18 * (1 - hopH / 400), 0, 0, Math.PI * 2); ctx.fill();
         ctx.restore();
-        opts.drawItem(it.x, it.y + bob);
+        const hop = it.popAt !== undefined ? popHeight(it) : 0;
+        opts.drawItem(it.x, it.y + (hop > 0 ? -hop : bob));
       }
     }
-    return { update, draw };
+    return { update, draw, dropAt };
   }
 
   const coinImg = new Image();

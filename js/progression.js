@@ -426,19 +426,19 @@
     hearts: {
       label: 'Hearts', icon: 'assets/items/heart_full.png', level: () => state.heartsLevel, maxLevel: () => CONFIG.hearts.upgradeCosts.length,
       cost: () => CONFIG.hearts.upgradeCosts[state.heartsLevel],
-      next: () => CONFIG.hearts.startMax + state.heartsLevel + 1,
+      next: () => `${CONFIG.hearts.startMax + state.heartsLevel + 1} total`,
       apply: () => { state.heartsLevel++; state.hearts = maxHearts(); },
     },
     hull: {
       label: 'Hull', icon: 'assets/items/backpack.png', level: () => state.hullLevel, maxLevel: () => CONFIG.hull.capTiers.length - 1,
       cost: () => CONFIG.hull.upgradeCosts[state.hullLevel],
-      next: () => CONFIG.hull.capTiers[state.hullLevel + 1],
+      next: () => `carry ${CONFIG.hull.capTiers[state.hullLevel + 1]} items`,
       apply: () => { state.hullLevel++; },
     },
     home: {
       label: 'Home', icon: 'assets/items/home_icon.png', level: () => state.homeLevel, maxLevel: () => CONFIG.home.levels.length - 1,
       cost: () => CONFIG.home.levels[state.homeLevel + 1].cost,
-      next: () => state.homeLevel + 1,
+      next: () => `level ${state.homeLevel + 1}`,
       apply: () => { state.homeLevel++; },
     },
   };
@@ -972,7 +972,7 @@
       return `<div class="tt-upgrade-row tt-shelf-row">
         <img class="tt-upgrade-icon" src="${t.icon}" alt="">
         <div class="tt-upgrade-info">
-          <strong>${t.label}${maxed ? '' : ` (${t.next()})`}</strong>
+          <strong>${t.label}${maxed ? '' : `- ${t.next()}`}</strong>
           <div class="tt-upgrade-detail">${maxed ? 'Maxed out' : `${t.cost()} coins`}</div>
         </div>
         <button type="button" class="tt-upgrade-buy" data-track="${key}" ${maxed || !afford ? 'disabled' : ''}>${maxed ? 'Max' : 'Buy'}</button>
