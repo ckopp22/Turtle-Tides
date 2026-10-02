@@ -135,7 +135,8 @@
       if (active && soundOn) { if (walkClip.paused) walkClip.play().catch(() => {}); }
       else if (!walkClip.paused) walkClip.pause();
     },
-    swimming: active => {
+    swimming: (active, floating) => {
+      swimClip.volume = floating ? 0.3 : 0.6; // half volume while just floating
       if (active && soundOn) { if (swimClip.paused) swimClip.play().catch(() => {}); }
       else if (!swimClip.paused) swimClip.pause();
     },
@@ -152,7 +153,7 @@
     bite: () => Sound.bite(),
     shell: () => Sound.shell(),
     walking: active => Sound.walking(active),
-    swimming: active => Sound.swimming(active),
+    swimming: (active, floating) => Sound.swimming(active, floating),
     toggle: () => { soundOn = !soundOn; writeSound(soundOn); return soundOn; },
   };
 
