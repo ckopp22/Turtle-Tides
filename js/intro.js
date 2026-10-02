@@ -79,8 +79,8 @@
   // Real splash SFX (assets/sfx/splash.mp3): played whenever a save lands on the island (see launchIsland).
   const splashClip = new Audio('assets/sfx/splash.mp3');
   splashClip.volume = 0.6;
-  // Coconut pickup SFX (assets/sfx/coconuts.mp3), played from game.js via TT_SOUND.coconut.
-  const coconutClip = new Audio('assets/sfx/coconuts.mp3');
+  // Coconut pickup SFX (assets/sfx/bag.m4a), played from game.js via TT_SOUND.coconut.
+  const coconutClip = new Audio('assets/sfx/bag.m4a');
   coconutClip.volume = 0.6;
   // Coin pickup SFX (assets/sfx/coin.mp3), played from game.js via TT_SOUND.coin.
   const coinClip = new Audio('assets/sfx/coin.mp3');
