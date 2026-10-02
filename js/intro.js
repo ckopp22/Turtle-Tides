@@ -132,7 +132,8 @@
       shellClip.currentTime = 0;
       shellClip.play().catch(() => {});
     },
-    walking: active => {
+    walking: (active, rate) => {
+      if (rate) walkClip.playbackRate = rate;
       if (active && soundOn) { if (walkClip.paused) walkClip.play().catch(() => {}); }
       else if (!walkClip.paused) walkClip.pause();
     },
@@ -153,7 +154,7 @@
     coin: () => Sound.coin(),
     bite: () => Sound.bite(),
     shell: () => Sound.shell(),
-    walking: active => Sound.walking(active),
+    walking: (active, rate) => Sound.walking(active, rate),
     swimming: (active, floating) => Sound.swimming(active, floating),
     toggle: () => { soundOn = !soundOn; writeSound(soundOn); return soundOn; },
   };
