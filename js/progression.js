@@ -21,6 +21,8 @@
       slowMultiplier: 0.55,        // movement speed multiplier while hunger is at 0
       graceSeconds: 8,             // time at 0 hunger before heart loss starts
       heartLossIntervalSeconds: 6, // one heart lost per this many seconds once past the grace period
+      starveDimSeconds: 4,         // screen dims over this long before the hunger tick that kills the last heart
+      starveDimMax: 0.8,           // dim alpha reached right as that tick lands (the death fade takes over from there)
     },
     hull: {
       capTiers: [3, 5, 10, 15, 20, 25], // index 0 = starting capacity
@@ -339,7 +341,7 @@
   function setRespawnHandler(fn) { respawnHandler = fn; } // game.js hooks this to reset turtle.x/y
   // Death sequence hook: game.js plays the fade-out and then calls respawnAtHome() itself. Without a
   // handler, dying respawns instantly like before.
-  let deathHandler = null, dying = false;
+  let deathHandler = null, dying = false, starveDim = 0;
   function setDeathHandler(fn) { deathHandler = fn; }
   function respawnAtHome() {
     dying = false;
@@ -349,6 +351,7 @@
     state.hungerZeroTimer = 0;
     state.hungerHeartTicks = 0;
     state.invulnTimer = 0;
+    starveDim = 0;
     if (lost > 0) state.lastLostMessage = { text: `Lost ${lost} item${lost === 1 ? '' : 's'} from that trip`, timer: 3 };
     persist();
     if (respawnHandler) respawnHandler();
@@ -401,6 +404,13 @@
     } else {
       state.hungerZeroTimer = 0;
       state.hungerHeartTicks = 0;
+    }
+    // Starving on the last heart: dim ahead of the killing tick so the turtle looks like it's fading out.
+    starveDim = 0;
+    if (awayFromHome && state.hearts <= 1 && state.hunger <= 0 && state.hungerZeroTimer > 0) {
+      const killAt = CONFIG.hunger.graceSeconds + (state.hungerHeartTicks + 1) * CONFIG.hunger.heartLossIntervalSeconds;
+      const left = killAt - state.hungerZeroTimer;
+      starveDim = CONFIG.hunger.starveDimMax * Math.max(0, Math.min(1, 1 - left / CONFIG.hunger.starveDimSeconds));
     }
     return speedMult;
   }
@@ -898,6 +908,26 @@
     soundBtn.addEventListener('click', () => { window.TT_SOUND.toggle(); updateSoundButtonLabel(); });
     document.body.appendChild(soundBtn);
     updateSoundButtonLabel();
+    ensureMusicButton();
+  }
+
+  // ---- Music toggle (top-right, left of the sound toggle) — mutes just the background music.
+  let musicBtn = null;
+  const MUSIC_ON_SVG = '<svg width="26" height="26" viewBox="0 0 26 26"><path d="M10 19V6l11-2v13" stroke="#3a2a10" stroke-width="2" fill="none" stroke-linejoin="round"/><ellipse cx="7.5" cy="19" rx="3" ry="2.3" fill="#3a2a10"/><ellipse cx="18.5" cy="17" rx="3" ry="2.3" fill="#3a2a10"/></svg>';
+  const MUSIC_OFF_SVG = MUSIC_ON_SVG.replace('</svg>', '<path d="M3 23L23 3" stroke="#d33a3a" stroke-width="2.5" stroke-linecap="round"/></svg>');
+  function updateMusicButtonLabel() {
+    if (musicBtn) musicBtn.innerHTML = (window.TT_SOUND && window.TT_SOUND.musicGet()) ? MUSIC_ON_SVG : MUSIC_OFF_SVG;
+  }
+  function ensureMusicButton() {
+    if (musicBtn || !window.TT_SOUND) return;
+    musicBtn = document.createElement('button');
+    musicBtn.id = 'tt-music-btn';
+    musicBtn.className = 'tt-icon-btn';
+    musicBtn.type = 'button';
+    musicBtn.title = 'Music';
+    musicBtn.addEventListener('click', () => { window.TT_SOUND.musicToggle(); updateMusicButtonLabel(); });
+    document.body.appendChild(musicBtn);
+    updateMusicButtonLabel();
   }
 
   // ---- Turtle Shop menu (L5 skill) — same DOM-overlay pattern as the upgrade panel, shown only
@@ -1019,7 +1049,7 @@
   }
 
   window.Progression = {
-    tryPickup, bankCarried, takeHit, isInvulnerable, setRespawnHandler, setDeathHandler, respawnAtHome,
+    tryPickup, bankCarried, takeHit, getStarveDim: () => starveDim, isInvulnerable, setRespawnHandler, setDeathHandler, respawnAtHome,
     update, updateSleep, getSleepConfig, swimSpeedMultiplier, moveSpeedMultiplier, toggleDayNight, drawHUD, setHomeButtonVisible, tryEatFromHud,
     buyUpgrade, canUpgrade,
     attachSlot, getSaveData, persist,

@@ -95,7 +95,9 @@
   // Death sequence: slow fade to black, a beat of full black, then respawn on the island.
   const DEATH_FADE_SECONDS = 2.5, DEATH_BLACK_SECONDS = 1;
   let deathTimer = -1; // -1 = alive; otherwise seconds since death
+  let deathStartDim = 0; // starvation dim already on screen when death hits, so the fade continues from it
   function startDeath() {
+    deathStartDim = window.Progression.getStarveDim();
     state = 'dying'; stateTime = 0; deathTimer = 0;
     if (window.TT_SOUND) window.TT_SOUND.gameover();
   }
@@ -1832,8 +1834,12 @@
     drawNightSky(); // screen space, under the HUD/joystick so they stay fully readable
     drawJoystick(); // screen space
     window.Progression.drawHUD(ctx); // screen space
-    if (deathTimer >= 0) {
-      ctx.fillStyle = `rgba(0,0,0,${Math.min(1, deathTimer / DEATH_FADE_SECONDS)})`;
+    // Starvation dim (see Progression.getStarveDim) or, once dead, the fade to black picking up from it.
+    const dimA = deathTimer >= 0
+      ? deathStartDim + (1 - deathStartDim) * Math.min(1, deathTimer / DEATH_FADE_SECONDS)
+      : window.Progression.getStarveDim();
+    if (dimA > 0) {
+      ctx.fillStyle = `rgba(0,0,0,${dimA})`;
       ctx.fillRect(0, 0, viewW, viewH);
     }
   }

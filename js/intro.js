@@ -36,6 +36,12 @@
     try { const v = localStorage.getItem(SOUND_KEY); return v === null ? true : v === '1'; }
     catch { return true; }
   }
+  const MUSIC_KEY = 'tt_musicOn';
+  function readMusic() {
+    try { const v = localStorage.getItem(MUSIC_KEY); return v === null ? true : v === '1'; }
+    catch { return true; }
+  }
+  function writeMusic(on) { try { localStorage.setItem(MUSIC_KEY, on ? '1' : '0'); } catch {} }
   function writeSound(on) { try { localStorage.setItem(SOUND_KEY, on ? '1' : '0'); } catch {} }
   function readSlot(n) {
     try {
@@ -59,6 +65,7 @@
   function unlockAudio() {
     if (audioCtx) return;
     try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch {}
+    loadBankBuffers();
   }
   function beep(freq, duration, type) {
     if (!soundOn || !audioCtx) return;
@@ -111,9 +118,86 @@
   const purchaseClip = new Audio('assets/sfx/purchase.mp3');
   purchaseClip.volume = 0.6;
   // Bank SFX (assets/sfx/coindrop.mp3 + bookdrop.mp3), played together from progression.js bankCarried() on returning home.
-  const coindropClip = new Audio('assets/sfx/coindrop.mp3');
-  const bookdropClip = new Audio('assets/sfx/bookdrop.mp3');
-  coindropClip.volume = bookdropClip.volume = 0.6;
+  // Decoded WebAudio buffers + one shared start time so the two clips are sample-aligned (separate
+  // <audio> elements drift by load/decode latency). Falls back to <audio> if the context isn't ready.
+  const bankBuffers = [];
+  let bankBuffersRequested = false;
+  const bankFallback = ['coindrop', 'bookdrop'].map(n => { const a = new Audio(`assets/sfx/${n}.mp3`); a.volume = 0.6; return a; });
+  function leadSilence(buf) {
+    const d = buf.getChannelData(0), thresh = 0.01;
+    for (let i = 0; i < d.length; i++) if (Math.abs(d[i]) > thresh) return Math.max(0, i / buf.sampleRate - 0.005);
+    return 0;
+  }
+  function loadBankBuffers() {
+    if (!audioCtx || bankBuffersRequested) return;
+    bankBuffersRequested = true;
+    ['coindrop', 'bookdrop'].forEach((n, i) => {
+      fetch(`assets/sfx/${n}.mp3`).then(r => r.arrayBuffer()).then(b => audioCtx.decodeAudioData(b))
+        .then(buf => { bankBuffers[i] = buf; }).catch(() => {});
+    });
+    // Pickup SFX: same decoded-buffer + trimmed-silence trick to kill the <audio> start delay on collect.
+    for (const f of ['bag.m4a', 'shell.mp3', 'coin.mp3', 'sand.mp3', 'stomp.mp3']) {
+      fetch(`assets/sfx/${f}`).then(r => r.arrayBuffer()).then(b => audioCtx.decodeAudioData(b))
+        .then(buf => { pickupBuffers[f] = buf; }).catch(() => {});
+    }
+  }
+  const pickupBuffers = {};
+  // maxLen (seconds, optional) plays only that much of the clip from its first audible sample, with a short fade-out.
+  function playPickup(file, clip, maxLen, when) {
+    const buf = pickupBuffers[file];
+    if (audioCtx && buf) {
+      const src = audioCtx.createBufferSource(), gain = audioCtx.createGain();
+      const t = when || audioCtx.currentTime;
+      src.buffer = buf; gain.gain.value = 0.6;
+      src.connect(gain); gain.connect(audioCtx.destination);
+      if (maxLen) {
+        gain.gain.setValueAtTime(0.6, t + maxLen - 0.04);
+        gain.gain.linearRampToValueAtTime(0, t + maxLen);
+        src.start(t, leadSilence(buf), maxLen);
+      } else src.start(t, leadSilence(buf));
+    } else { clip.currentTime = 0; clip.play().catch(() => {}); }
+  }
+  // Stomp SFX (assets/sfx/stomp.mp3): the file holds several stomps; only the first (~0.6s) is used.
+  const stompClip = new Audio('assets/sfx/stomp.mp3');
+  stompClip.volume = 0.6;
+  // Beach ambience loop (assets/sfx/beach.mp3): plays on the main menu + save-slot screens only, fades out
+  // when the game starts. Browsers block autoplay, so a refused play() retries on the first input.
+  const BEACH_VOL = 0.4;
+  const beachClip = new Audio('assets/sfx/beach.mp3');
+  beachClip.loop = true;
+  beachClip.volume = BEACH_VOL;
+  let beachFade = null;
+  function syncBeach() {
+    const want = soundOn && (currentScene === SCENES.BEACH_MENU || currentScene === SCENES.SAVE_SLOTS);
+    clearInterval(beachFade); beachFade = null;
+    if (want) {
+      beachClip.volume = BEACH_VOL;
+      if (beachClip.paused) beachClip.play().catch(() => {});
+    } else if (!beachClip.paused) {
+      beachFade = setInterval(() => {
+        beachClip.volume = Math.max(0, beachClip.volume - 0.05);
+        if (beachClip.volume <= 0) { clearInterval(beachFade); beachFade = null; beachClip.pause(); }
+      }, 50);
+    }
+  }
+  ['pointerdown', 'keydown'].forEach(t => window.addEventListener(t, syncBeach, { passive: true }));
+  // Gameplay background music (assets/sfx/music1-3.mp3): cycles through the tracks while in the game, quietly.
+  // Has its own on/off (the top-right music button in progression.js) on top of the master sound toggle.
+  const MUSIC_VOL = 0.12;
+  const musicClips = [1, 2, 3].map(n => {
+    const a = new Audio(`assets/sfx/music${n}.mp3`);
+    a.volume = MUSIC_VOL;
+    a.addEventListener('ended', () => { musicIdx = (musicIdx + 1) % musicClips.length; syncMusic(); });
+    return a;
+  });
+  let musicIdx = 0, musicOn = readMusic();
+  function syncMusic() {
+    const want = soundOn && musicOn && currentScene === SCENES.GAME_HANDOFF;
+    musicClips.forEach((c, i) => { if (i !== musicIdx && !c.paused) c.pause(); });
+    const cur = musicClips[musicIdx];
+    if (want) { if (cur.paused) { if (cur.ended) cur.currentTime = 0; cur.play().catch(() => {}); } }
+    else if (!cur.paused) cur.pause();
+  }
   // Heart-loss SFX (assets/sfx/umph.mp3), played from progression.js takeHit() (damage and hunger both go through it).
   const umphClip = new Audio('assets/sfx/umph.mp3');
   umphClip.volume = 0.6;
@@ -142,18 +226,15 @@
     },
     coin: () => {
       if (!soundOn) return;
-      coinClip.currentTime = 0;
-      coinClip.play().catch(() => {});
+      playPickup('coin.mp3', coinClip);
     },
     coconut: () => {
       if (!soundOn) return;
-      coconutClip.currentTime = 0;
-      coconutClip.play().catch(() => {});
+      playPickup('bag.m4a', coconutClip);
     },
     shell: () => {
       if (!soundOn) return;
-      shellClip.currentTime = 0;
-      shellClip.play().catch(() => {});
+      playPickup('shell.mp3', shellClip);
     },
     walking: (active, rate) => {
       if (rate) walkClip.playbackRate = rate;
@@ -167,8 +248,16 @@
     },
     sand: () => {
       if (!soundOn) return;
-      sandClip.currentTime = 0;
-      sandClip.play().catch(() => {});
+      // sand + stomp share one start time so they land together
+      if (audioCtx && pickupBuffers['sand.mp3'] && pickupBuffers['stomp.mp3']) {
+        const t = audioCtx.currentTime + 0.01;
+        playPickup('sand.mp3', sandClip, 0, t);
+        playPickup('stomp.mp3', stompClip, 0.6, t);
+      } else {
+        sandClip.currentTime = 0; sandClip.play().catch(() => {});
+        stompClip.currentTime = 0; stompClip.play().catch(() => {});
+        setTimeout(() => stompClip.pause(), 600);
+      }
     },
     umph: () => {
       if (!soundOn) return;
@@ -194,7 +283,17 @@
     },
     bank: () => {
       if (!soundOn) return;
-      for (const c of [coindropClip, bookdropClip]) { c.currentTime = 0; c.play().catch(() => {}); }
+      if (audioCtx && bankBuffers[0] && bankBuffers[1]) {
+        const t = audioCtx.currentTime + 0.02, gain = audioCtx.createGain();
+        gain.gain.value = 0.6; gain.connect(audioCtx.destination);
+        // skip each clip's leading silence so the first audible sample of both lands on t
+        for (const buf of bankBuffers) {
+          const src = audioCtx.createBufferSource(); src.buffer = buf; src.connect(gain);
+          src.start(t, leadSilence(buf));
+        }
+      } else {
+        for (const c of bankFallback) { c.currentTime = 0; c.play().catch(() => {}); }
+      }
     },
     hatch: () => beep(520, 0.35, 'triangle'),
     click: () => {
@@ -226,7 +325,9 @@
     full: seconds => Sound.full(seconds),
     walking: (active, rate) => Sound.walking(active, rate),
     swimming: (active, floating) => Sound.swimming(active, floating),
-    toggle: () => { soundOn = !soundOn; writeSound(soundOn); return soundOn; },
+    toggle: () => { soundOn = !soundOn; writeSound(soundOn); syncMusic(); return soundOn; },
+    musicGet: () => musicOn,
+    musicToggle: () => { musicOn = !musicOn; writeMusic(musicOn); syncMusic(); return musicOn; },
   };
 
   // ---- Sizing (mirrors game.js's own resize() so both agree on the same viewport). ----
@@ -257,6 +358,8 @@
     teardownScene();
     currentScene = SCENES[name];
     if (currentScene.enter) currentScene.enter(data);
+    syncBeach();
+    syncMusic();
   }
 
   // ---- Zoom overlay: a simple eased whiteout used both for egg->menu and slot->island transitions,
@@ -658,7 +761,7 @@
     unlockAudio();
     const { x, y } = pointerPos(e);
     const L = layoutMenu();
-    if (inRect(x, y, L.mute)) { soundOn = !soundOn; writeSound(soundOn); Sound.click(); return; }
+    if (inRect(x, y, L.mute)) { soundOn = !soundOn; writeSound(soundOn); syncBeach(); syncMusic(); Sound.click(); return; }
     if (inRect(x, y, L.play)) { Sound.click(); goto('SAVE_SLOTS'); }
   }
   const BEACH_MENU = {

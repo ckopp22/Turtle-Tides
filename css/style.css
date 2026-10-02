@@ -169,6 +169,24 @@ html, body {
   cursor: pointer;
 }
 
+/* Music toggle (progression.js) — left of the sound toggle. */
+#tt-music-btn {
+  position: fixed;
+  right: 122px;
+  top: 14px;
+  z-index: 9;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  border: 2px solid #c9a15f;
+  background: #ffcb80;
+  cursor: pointer;
+}
+
 /* Leave-game button (progression.js) — top right, left of the sound toggle. Red so it reads as an
    exit/quit action distinct from the other (orange) icon buttons. */
 #tt-leave-btn {
