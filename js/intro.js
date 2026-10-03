@@ -174,9 +174,12 @@
       beachClip.volume = BEACH_VOL;
       if (beachClip.paused) beachClip.play().catch(() => {});
     } else if (!beachClip.paused) {
+      // iOS Safari ignores media.volume (always 1), so the volume never reaches 0 there — count ticks
+      // and pause after ~1s regardless, or the beach loop keeps playing into gameplay.
+      let ticks = 0;
       beachFade = setInterval(() => {
         beachClip.volume = Math.max(0, beachClip.volume - 0.05);
-        if (beachClip.volume <= 0) { clearInterval(beachFade); beachFade = null; beachClip.pause(); }
+        if (beachClip.volume <= 0 || ++ticks >= 20) { clearInterval(beachFade); beachFade = null; beachClip.pause(); }
       }, 50);
     }
   }
