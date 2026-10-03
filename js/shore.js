@@ -127,6 +127,11 @@ const Shore = (() => {
           if (gx < 0 || gy < 0 || gx >= mw0 || gy >= mh0) { wd[i] = fd[i] = md[i] = sd[i] = 0; continue; }
           const k = gy * mw0 + gx, f = F[k], sa = SA[k];
           if (soft) sd[i] = sa;
+          // Cells far from the waterline have a constant result whatever the wave phase: deep water
+          // (f > 0.812: mask full, no wet/foam; both gaussians are < exp(-9) there) and deep land
+          // (f <= 0.26: all zero). Skips the sin/exp/pow work for most of the view, same output.
+          if (f > 0.812) { md[i] = 255; wd[i] = 0; fd[i] = 0; continue; }
+          if (f <= 0.26) { md[i] = 0; wd[i] = 0; fd[i] = 0; continue; }
           const u = (t + P[k]) % 1;                   // this spot's position in its wave cycle
           const e = Math.sin(Math.PI * u);            // 0 → 1 → 0 : arrives, laps, drains
           const th = 0.5 - 0.035 * e;                 // waterline creeps up at the peak
