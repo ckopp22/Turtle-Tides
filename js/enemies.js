@@ -1,7 +1,7 @@
 // enemies.js — enemy config, spawning, and per-enemy state machine. Kept separate from game.js like
 // progression.js: game.js hands over a small world API via Enemies.init(), then calls update()/
 // collectVisible()/drawDebug() each frame. Every tunable number lives in CONFIG below.
-// Step 1: crab only. TODO: bear, snake, seagull (add a CONFIG.types entry + their special states).
+// Crab and bear so far. TODO: snake, seagull (add a CONFIG.types entry + their special states).
 (() => {
   'use strict';
 
@@ -44,6 +44,18 @@
         rows: { idle: 0, walk: 1, attack: 2, burrow: 3 },
         debugKey: '5',
       },
+      bear: {
+        sheet: 'assets/enemies/bear_spritesheet.png',
+        biome: 'forestThick', count: 3,
+        speed: 0.45, detect: 4.5, attackRange: 1.1,
+        damage: 2, windup: 0.6, attackTime: 0.9, cooldown: 2, // long recovery: stands still this long after a swipe
+        bodyRadius: 24,
+        sleepChance: 0.35, sleepMin: 5, sleepMax: 12, // seconds asleep
+        sleepDetectMult: 0.5, // a sleeping bear's detection radius is this fraction of normal
+        wakeTime: 1,          // seconds to wake up before it starts chasing
+        rows: { idle: 0, walk: 1, attack: 2, sleep: 3 },
+        debugKey: '6',
+      },
     },
   };
 
@@ -53,11 +65,12 @@
     const c = CONFIG.types[k];
     c.detect2 = sq(c.detect); c.attack2 = sq(c.attackRange); c.hit2 = sq(c.attackRange * CONFIG.hitRangeSlack);
     c.ambush2 = c.ambush ? sq(c.ambush) : 0;
+    c.sleepDetect2 = c.sleepChance ? c.detect2 * c.sleepDetectMult * c.sleepDetectMult : 0;
   }
   const LOSE2 = sq(CONFIG.loseInterestDist), LEASH2 = sq(CONFIG.leash);
 
   const WANDER = 'wander', BURROW = 'burrow', HIDDEN = 'hidden', EMERGE = 'emerge',
-    CHASE = 'chase', ATTACK = 'attack', RETURN = 'return';
+    CHASE = 'chase', ATTACK = 'attack', RETURN = 'return', SLEEP = 'sleep', WAKE = 'wake';
   const FRAMES = 6;
 
   let api = null;
@@ -168,6 +181,10 @@
     return false;
   }
 
+  function face(e, dx, dy) {
+    if (e.cfg.flipsSideways) { if (Math.abs(dx) > 1) e.flip = dx > 0 ? 1 : -1; }
+    else e.angle = Math.atan2(dy, dx);
+  }
   function startChase(e) { e.lose = 0; e.stuck = 0; e.unreach = 0; e.hasTarget = false; setState(e, CHASE); }
   function giveUpChase(e) {
     e.giveUp = CONFIG.giveUpCooldown; e.lose = 0; e.stuck = 0; e.unreach = 0;
@@ -206,6 +223,7 @@
           e.pause -= dt;
           if (e.pause <= 0) {
             if (c.burrowTime && Math.random() < c.burrowChance) { setState(e, BURROW); return; }
+            if (c.sleepChance && Math.random() < c.sleepChance) { e.hiddenFor = rnd(c.sleepMin, c.sleepMax); setState(e, SLEEP); return; }
             if (!pickWanderTarget(e)) e.pause = rnd(CONFIG.pauseMin, CONFIG.pauseMax);
           }
         } else {
@@ -238,9 +256,29 @@
         }
         return;
       }
+      case SLEEP: { // bear: lies down; notices the turtle only at a reduced radius, then takes a moment to wake
+        e.row = R.sleep; e.frame = Math.floor(e.t * 3) % FRAMES;
+        if (canSee && d2 < c.sleepDetect2) { e.emergeToChase = true; setState(e, WAKE); }
+        else if (e.t >= e.hiddenFor) { e.emergeToChase = false; setState(e, WAKE); }
+        return;
+      }
+      case WAKE: {
+        if (e.t < c.wakeTime * 0.5) { e.row = R.sleep; e.frame = Math.floor(e.t * 3) % FRAMES; }
+        else { e.row = R.idle; e.frame = Math.floor(e.anim * 5) % FRAMES; }
+        if (e.t >= c.wakeTime) {
+          if (e.emergeToChase && canSee) startChase(e);
+          else { setState(e, WANDER); e.pause = rnd(0.5, 1.5); }
+        }
+        return;
+      }
       case CHASE: {
         if (!alive || safe) { giveUpChase(e); return; }
-        if (d2 <= c.attack2 && e.cd <= 0) { e.hitDone = false; setState(e, ATTACK); return; }
+        if (d2 <= c.attack2) {
+          face(e, dx, dy);
+          if (e.cd <= 0) { e.hitDone = false; setState(e, ATTACK); return; }
+          setAnim(e, R.idle, 5, FRAMES); // in range but recovering from the last swing: hold still
+          return;
+        }
         if (d2 > LOSE2) { e.lose += dt; if (e.lose > CONFIG.loseInterestSeconds) { giveUpChase(e); return; } }
         else e.lose = 0;
         // Land enemies can't follow into water: stop at the shore and lose interest after a few seconds.
@@ -328,7 +366,7 @@
       if (!e.active) continue;
       if (e.x < camX - 400 || e.x > camX + vw + 400 || e.y < camY - 400 || e.y > camY + vh + 400) continue;
       const c = e.cfg;
-      circle(e.x, e.y, Math.sqrt(c.detect2), 'rgba(255,220,0,0.8)');
+      circle(e.x, e.y, Math.sqrt(e.state === SLEEP && c.sleepDetect2 ? c.sleepDetect2 : c.detect2), 'rgba(255,220,0,0.8)');
       circle(e.x, e.y, Math.sqrt(c.attack2), 'rgba(255,60,60,0.9)');
       if (c.ambush2) circle(e.x, e.y, Math.sqrt(c.ambush2), 'rgba(0,220,255,0.8)');
       circle(e.sx, e.sy, Math.sqrt(LEASH2), 'rgba(255,255,255,0.45)');
