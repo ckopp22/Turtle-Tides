@@ -344,12 +344,18 @@
       }
       g.putImageData(img, 0, 0); // flush progress so the page shows the map filling in, not a freeze
       if (ry < rows) setTimeout(step, 0);
+      else if (window.createImageBitmap) {
+        // iOS drew straight from this 1300x1300 CPU-backed canvas at ~10 fps; an ImageBitmap is a
+        // GPU-friendly immutable copy, so the per-frame drawImage in drawTerrain() stays cheap.
+        createImageBitmap(c).then(b => { terrainBitmap = b; }).catch(() => {});
+      }
     }
     step();
     return c;
   }
   // Built once at load (reused as-is on resize); rebuilding only makes sense if WORLD_SIZE or the
   // noise seed ever changes, neither of which happens at runtime.
+  let terrainBitmap = null;
   const terrainCanvas = buildTerrainChunked();
 
   function drawTerrain() {
@@ -359,7 +365,7 @@
     const sx = camX / TERRAIN_CELL, sy = camY / TERRAIN_CELL;
     const sw = vw / TERRAIN_CELL, sh = vh / TERRAIN_CELL;
     ctx.imageSmoothingEnabled = true; // let the upscale add extra softness to the shoreline blend
-    ctx.drawImage(terrainCanvas, sx, sy, sw, sh, camX, camY, vw, vh);
+    ctx.drawImage(terrainBitmap || terrainCanvas, sx, sy, sw, sh, camX, camY, vw, vh);
   }
 
   // None of the tile art (sand3, grass3) tiles cleanly on its own — opposite edges don't match,
