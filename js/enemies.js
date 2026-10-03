@@ -42,7 +42,7 @@
         damage: 1, windup: 0.36, attackTime: 0.72, cooldown: 1.2, // seconds; hit lands at `windup`
         bodyRadius: 18,      // world px, for obstacle collision
         flipsSideways: true,
-        swipe: { lunge: 12, arcDist: 38, arcRadius: 32, arcTime: 0.25 }, // pinch lunge (world px) + claw-swipe arc at the hit frame
+        lunge: 12,           // world px the crab lunges toward the turtle around the pinch's hit frame
         burrowChance: 0.5, burrowTime: 0.6, hiddenMin: 3, hiddenMax: 7, // seconds
         rows: { idle: 0, walk: 1, attack: 2, burrow: 3 },
         debugKey: '5',
@@ -460,28 +460,17 @@
       g.beginPath(); g.ellipse(e.x, e.y + 20, 17, 7, 0, 0, Math.PI * 2); g.fill();
       g.globalAlpha = 1;
     }
-    const sw = e.cfg.swipe, atk = sw && e.state === ATTACK;
+    const lunge = e.cfg.lunge, atk = lunge && e.state === ATTACK;
     let lx = 0, ly = 0;
     if (atk) { // lunge toward the turtle around the hit frame
       const u = Math.max(0, Math.min(1, (e.t - (e.cfg.windup - 0.12)) / 0.24));
-      lx = Math.cos(e.atkAngle) * Math.sin(u * Math.PI) * sw.lunge; ly = Math.sin(e.atkAngle) * Math.sin(u * Math.PI) * sw.lunge;
+      lx = Math.cos(e.atkAngle) * Math.sin(u * Math.PI) * lunge; ly = Math.sin(e.atkAngle) * Math.sin(u * Math.PI) * lunge;
     }
     g.translate(e.x + lx, (air ? e.y - 10 : e.y) + ly);
     if (e.cfg.flipsSideways) { if (e.flip < 0) g.scale(-1, 1); }
     else g.rotate(Math.round((e.angle + Math.PI / 2) / (Math.PI / 4)) * (Math.PI / 4)); // art faces up; snap to 8 directions
     g.drawImage(img, e.frame * F, e.row * F, F, F, -D / 2, -D / 2, D, D);
     g.restore();
-    if (atk && e.t >= e.cfg.windup && e.t < e.cfg.windup + sw.arcTime) { // claw-swipe arc, fading out
-      const p = (e.t - e.cfg.windup) / sw.arcTime;
-      g.save();
-      g.translate(e.x + Math.cos(e.atkAngle) * sw.arcDist, e.y + Math.sin(e.atkAngle) * sw.arcDist);
-      g.globalAlpha = 1 - p * 0.7; g.lineCap = 'round';
-      const sweep = (p - 0.5) * 1.6; // the arc's centre sweeps across as it fades
-      g.beginPath(); g.arc(0, 0, sw.arcRadius, e.atkAngle + Math.PI + sweep - 0.6, e.atkAngle + Math.PI + sweep + 0.6);
-      g.strokeStyle = 'rgba(70,30,10,0.6)'; g.lineWidth = 10; g.stroke(); // dark underlay so the white reads on sand
-      g.strokeStyle = '#fff'; g.lineWidth = 5; g.stroke();
-      g.restore();
-    }
   }
 
   // Pushes each on-screen enemy's depth-sort proxy into game.js's visible list (reused buffer, no allocation).
