@@ -1,7 +1,7 @@
 // enemies.js — enemy config, spawning, and per-enemy state machine. Kept separate from game.js like
 // progression.js: game.js hands over a small world API via Enemies.init(), then calls update()/
 // collectVisible()/drawDebug() each frame. Every tunable number lives in CONFIG below.
-// Crab and bear so far. TODO: snake, seagull (add a CONFIG.types entry + their special states).
+// Crab, bear and snake so far. TODO: seagull (add a CONFIG.types entry + its special states).
 (() => {
   'use strict';
 
@@ -56,6 +56,18 @@
         rows: { idle: 0, walk: 1, attack: 2, sleep: 3 },
         debugKey: '6',
       },
+      snake: {
+        sheet: 'assets/enemies/snake_spritesheet.png',
+        biome: 'deadTrees', count: 3,
+        speed: 1.15,         // faster than the player's base land speed
+        detect: 4, attackRange: 0.8,
+        damage: 1, windup: 0.25, attackTime: 0.5, cooldown: 1,
+        bodyRadius: 14,
+        straightLine: true,  // chase = straight line at the turtle, no steering; being blocked stuns it
+        stunTime: 1,         // seconds
+        rows: { idle: 0, walk: 1, attack: 2, sleep: 3 }, // walk = slither, attack = strike, sleep = coil_sleep
+        debugKey: '7',
+      },
     },
   };
 
@@ -70,7 +82,7 @@
   const LOSE2 = sq(CONFIG.loseInterestDist), LEASH2 = sq(CONFIG.leash);
 
   const WANDER = 'wander', BURROW = 'burrow', HIDDEN = 'hidden', EMERGE = 'emerge',
-    CHASE = 'chase', ATTACK = 'attack', RETURN = 'return', SLEEP = 'sleep', WAKE = 'wake';
+    CHASE = 'chase', ATTACK = 'attack', RETURN = 'return', SLEEP = 'sleep', WAKE = 'wake', STUN = 'stun';
   const FRAMES = 6;
 
   let api = null;
@@ -185,6 +197,16 @@
     if (e.cfg.flipsSideways) { if (Math.abs(dx) > 1) e.flip = dx > 0 ? 1 : -1; }
     else e.angle = Math.atan2(dy, dx);
   }
+  // Shared by CHASE and STUN: gives up on the turtle's safe-zone / too-far / unreachable conditions.
+  function chaseChecks(e, dt, d2, safe, alive) {
+    if (!alive || safe) { giveUpChase(e); return true; }
+    if (d2 > LOSE2) { e.lose += dt; if (e.lose > CONFIG.loseInterestSeconds) { giveUpChase(e); return true; } }
+    else e.lose = 0;
+    // Land enemies can't follow into water: stop at the shore and lose interest after a few seconds.
+    if (!api.walkable(api.turtle.x, api.turtle.y)) { e.unreach += dt; if (e.unreach > CONFIG.unreachableSeconds) { giveUpChase(e); return true; } }
+    else e.unreach = 0;
+    return false;
+  }
   function startChase(e) { e.lose = 0; e.stuck = 0; e.unreach = 0; e.hasTarget = false; setState(e, CHASE); }
   function giveUpChase(e) {
     e.giveUp = CONFIG.giveUpCooldown; e.lose = 0; e.stuck = 0; e.unreach = 0;
@@ -272,22 +294,34 @@
         return;
       }
       case CHASE: {
-        if (!alive || safe) { giveUpChase(e); return; }
+        if (chaseChecks(e, dt, d2, safe, alive)) return;
         if (d2 <= c.attack2) {
           face(e, dx, dy);
           if (e.cd <= 0) { e.hitDone = false; setState(e, ATTACK); return; }
           setAnim(e, R.idle, 5, FRAMES); // in range but recovering from the last swing: hold still
           return;
         }
-        if (d2 > LOSE2) { e.lose += dt; if (e.lose > CONFIG.loseInterestSeconds) { giveUpChase(e); return; } }
-        else e.lose = 0;
-        // Land enemies can't follow into water: stop at the shore and lose interest after a few seconds.
-        if (!api.walkable(T.x, T.y)) { e.unreach += dt; if (e.unreach > CONFIG.unreachableSeconds) { giveUpChase(e); return; } }
-        else e.unreach = 0;
+        if (c.straightLine) {
+          // No pathfinding, no sliding: if the straight step is blocked (obstacle, water, island, world edge) it stuns.
+          const dist = Math.sqrt(d2), step = Math.min(chaseSpeed * dt, dist);
+          face(e, dx, dy);
+          setAnim(e, R.walk, CONFIG.animFps * 1.5, FRAMES);
+          if (dist > 1) {
+            const nx = e.x + dx / dist * step, ny = e.y + dy / dist * step;
+            if (open(e, nx, ny)) { e.x = nx; e.y = ny; } else setState(e, STUN);
+          }
+          return;
+        }
         const progress = stepToward(e, T.x, T.y, chaseSpeed, dt);
         e.stuck = progress < 0.3 ? e.stuck + dt : Math.max(0, e.stuck - dt);
         if (e.stuck > CONFIG.stuckSeconds) { giveUpChase(e); return; }
         setAnim(e, R.walk, CONFIG.animFps * 1.5, FRAMES);
+        return;
+      }
+      case STUN: { // snake: can't move or attack for exactly stunTime, then targets the turtle again
+        e.row = R.sleep; e.frame = Math.floor(e.t * 3) % FRAMES;
+        if (chaseChecks(e, dt, d2, safe, alive)) return;
+        if (e.t >= c.stunTime) setState(e, CHASE);
         return;
       }
       case ATTACK: {
