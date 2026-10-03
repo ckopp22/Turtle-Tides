@@ -715,7 +715,7 @@
   // ---- Mainland scenery: trees (all 4 biomes) and beach rocks are obstacles (trunk-only circle
   // collision); driftwood is decorative. Placed by dart-throwing so spacing stays natural, with a
   // per-biome minimum distance so the west forest reads dense but the east forest stays open. ----
-  const SPACING = { forestThick: 120, forestOpen: 150, deadTrees: 140, beach: 170 };
+  const SPACING = { forestThick: 145, forestOpen: 150, deadTrees: 140, beach: 170 };
   const scenery = [];       // { x, y, r, h, sprite, type, collide } — everything drawn
   let obstacleGrid;         // built after placement: cell key -> array of scenery indices (collide only)
   const OBSTACLE_CELL = 220;
