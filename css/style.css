@@ -153,11 +153,11 @@ html, body {
 /* Sound toggle (progression.js) — top right, mirrors intro.js's mute button styling/position. */
 #tt-sound-btn {
   position: fixed;
-  right: 68px;
+  right: 56px;
   top: 14px;
   z-index: 9;
-  width: 44px;
-  height: 44px;
+  width: 34px;
+  height: 34px;
   padding: 0;
   display: flex;
   align-items: center;
@@ -165,18 +165,18 @@ html, body {
   border-radius: 10px;
   border: 2px solid #c9a15f;
   background: #ffcb80;
-  font-size: 20px;
+  font-size: 16px;
   cursor: pointer;
 }
 
 /* Music toggle (progression.js) — left of the sound toggle. */
 #tt-music-btn {
   position: fixed;
-  right: 122px;
+  right: 98px;
   top: 14px;
   z-index: 9;
-  width: 44px;
-  height: 44px;
+  width: 34px;
+  height: 34px;
   padding: 0;
   display: flex;
   align-items: center;
@@ -194,8 +194,8 @@ html, body {
   right: 14px;
   top: 14px;
   z-index: 9;
-  width: 44px;
-  height: 44px;
+  width: 34px;
+  height: 34px;
   padding: 0;
   display: flex;
   align-items: center;
@@ -204,7 +204,7 @@ html, body {
   border: 2px solid #b5675f;
   background: #e8837b;
   color: #fff;
-  font: 700 18px system-ui, sans-serif;
+  font: 700 15px system-ui, sans-serif;
   line-height: 1;
   cursor: pointer;
 }
