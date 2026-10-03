@@ -1,7 +1,7 @@
 // enemies.js — enemy config, spawning, and per-enemy state machine. Kept separate from game.js like
 // progression.js: game.js hands over a small world API via Enemies.init(), then calls update()/
 // collectVisible()/drawDebug() each frame. Every tunable number lives in CONFIG below.
-// Crab, bear and snake so far. TODO: seagull (add a CONFIG.types entry + its special states).
+// Each enemy type is one CONFIG.types entry; special behavior hangs off flags (burrowTime, sleepChance, straightLine, flies).
 (() => {
   'use strict';
 
@@ -67,6 +67,17 @@
         stunTime: 1,         // seconds
         rows: { idle: 0, walk: 1, attack: 2, sleep: 3 }, // walk = slither, attack = strike, sleep = coil_sleep
         debugKey: '7',
+      },
+      seagull: {
+        sheet: 'assets/enemies/seagull_spritesheet.png',
+        biome: 'forestOpen', count: 3,
+        speed: 0.85,
+        detect: 9, attackRange: 0.9, // detection is about 2x the others
+        damage: 1, windup: 0.35, attackTime: 0.7, cooldown: 1.5,
+        bodyRadius: 14,
+        flies: true,         // chase/return flight ignores water and obstacles (never enters the home island)
+        rows: { idle: 0, walk: 1, attack: 2, fly: 3 }, // attack = peck
+        debugKey: '8',
       },
     },
   };
@@ -157,20 +168,20 @@
   }
 
   // ---- Movement (land enemies): axis-sliding against water, the island, obstacles, and the world edge ----
-  function open(e, x, y) { return api.walkable(x, y) && !api.blockedAt(x, y, e.cfg.bodyRadius); }
-  function tryMove(e, mx, my) {
-    if (open(e, e.x + mx, e.y + my)) { e.x += mx; e.y += my; return; }
-    if (mx !== 0 && open(e, e.x + mx, e.y)) { e.x += mx; return; }
-    if (my !== 0 && open(e, e.x, e.y + my)) { e.y += my; }
+  function open(e, x, y, fly) { return fly ? api.flyable(x, y) : api.walkable(x, y) && !api.blockedAt(x, y, e.cfg.bodyRadius); }
+  function tryMove(e, mx, my, fly) {
+    if (open(e, e.x + mx, e.y + my, fly)) { e.x += mx; e.y += my; return; }
+    if (mx !== 0 && open(e, e.x + mx, e.y, fly)) { e.x += mx; return; }
+    if (my !== 0 && open(e, e.x, e.y + my, fly)) { e.y += my; }
   }
   // Steps toward (tx, ty); returns the fraction (0..1) of the intended step that made progress along
   // the heading, so callers can tell "blocked / sliding along a wall" from "moving freely".
-  function stepToward(e, tx, ty, speed, dt) {
+  function stepToward(e, tx, ty, speed, dt, fly) {
     const dx = tx - e.x, dy = ty - e.y, dist = Math.sqrt(dx * dx + dy * dy);
     if (dist < 1) return 1;
     const step = Math.min(speed * dt, dist), ux = dx / dist, uy = dy / dist;
     const ox = e.x, oy = e.y;
-    tryMove(e, ux * step, uy * step);
+    tryMove(e, ux * step, uy * step, fly);
     if (e.cfg.flipsSideways) { if (Math.abs(ux) > 0.2) e.flip = ux > 0 ? 1 : -1; }
     else e.angle = Math.atan2(uy, ux);
     return step > 0 ? ((e.x - ox) * ux + (e.y - oy) * uy) / step : 1;
@@ -203,7 +214,7 @@
     if (d2 > LOSE2) { e.lose += dt; if (e.lose > CONFIG.loseInterestSeconds) { giveUpChase(e); return true; } }
     else e.lose = 0;
     // Land enemies can't follow into water: stop at the shore and lose interest after a few seconds.
-    if (!api.walkable(api.turtle.x, api.turtle.y)) { e.unreach += dt; if (e.unreach > CONFIG.unreachableSeconds) { giveUpChase(e); return true; } }
+    if (!e.cfg.flies && !api.walkable(api.turtle.x, api.turtle.y)) { e.unreach += dt; if (e.unreach > CONFIG.unreachableSeconds) { giveUpChase(e); return true; } }
     else e.unreach = 0;
     return false;
   }
@@ -231,10 +242,10 @@
       case WANDER: case RETURN: {
         if (canSee && d2 < c.detect2) { startChase(e); return; }
         if (e.state === RETURN) {
-          const progress = stepToward(e, e.sx, e.sy, wanderSpeed, dt);
+          const progress = stepToward(e, e.sx, e.sy, wanderSpeed, dt, c.flies);
           e.stuck = progress < 0.3 ? e.stuck + dt : 0;
           const rx = e.sx - e.x, ry = e.sy - e.y;
-          setAnim(e, R.walk, CONFIG.animFps, FRAMES);
+          setAnim(e, c.flies ? R.fly : R.walk, CONFIG.animFps, FRAMES);
           if (rx * rx + ry * ry < 16 * 16 || e.stuck > 1.5 || e.t > 20) {
             if (c.burrowTime) setState(e, BURROW); else { setState(e, WANDER); e.pause = rnd(CONFIG.pauseMin, CONFIG.pauseMax); }
           }
@@ -298,7 +309,7 @@
         if (d2 <= c.attack2) {
           face(e, dx, dy);
           if (e.cd <= 0) { e.hitDone = false; setState(e, ATTACK); return; }
-          setAnim(e, R.idle, 5, FRAMES); // in range but recovering from the last swing: hold still
+          setAnim(e, c.flies ? R.fly : R.idle, 5, FRAMES); // in range but recovering from the last swing: hold still
           return;
         }
         if (c.straightLine) {
@@ -312,10 +323,10 @@
           }
           return;
         }
-        const progress = stepToward(e, T.x, T.y, chaseSpeed, dt);
+        const progress = stepToward(e, T.x, T.y, chaseSpeed, dt, c.flies);
         e.stuck = progress < 0.3 ? e.stuck + dt : Math.max(0, e.stuck - dt);
-        if (e.stuck > CONFIG.stuckSeconds) { giveUpChase(e); return; }
-        setAnim(e, R.walk, CONFIG.animFps * 1.5, FRAMES);
+        if (!c.flies && e.stuck > CONFIG.stuckSeconds) { giveUpChase(e); return; }
+        setAnim(e, c.flies ? R.fly : R.walk, CONFIG.animFps * 1.5, FRAMES);
         return;
       }
       case STUN: { // snake: can't move or attack for exactly stunTime, then targets the turtle again
@@ -371,7 +382,13 @@
     const F = img.naturalWidth / FRAMES, D = CONFIG.drawSize;
     g.save();
     g.imageSmoothingEnabled = false; // pixel art; save/restore keeps the rest of the game's smoothing as-is
-    g.translate(e.x, e.y);
+    const air = e.cfg.flies && (e.state === CHASE || e.state === ATTACK || e.state === RETURN);
+    if (air) { // soft ground shadow, sprite lifted above it
+      g.globalAlpha = 0.25; g.fillStyle = '#000';
+      g.beginPath(); g.ellipse(e.x, e.y + 20, 17, 7, 0, 0, Math.PI * 2); g.fill();
+      g.globalAlpha = 1;
+    }
+    g.translate(e.x, air ? e.y - 10 : e.y);
     if (e.cfg.flipsSideways) { if (e.flip < 0) g.scale(-1, 1); }
     else g.rotate(Math.round((e.angle + Math.PI / 2) / (Math.PI / 4)) * (Math.PI / 4)); // art faces up; snap to 8 directions
     g.drawImage(img, e.frame * F, e.row * F, F, F, -D / 2, -D / 2, D, D);
@@ -386,6 +403,7 @@
       if (!e.active) continue;
       if (e.x < camX - m || e.x > camX + vw + m || e.y < camY - m || e.y > camY + vh + m) continue;
       e.proxy.x = e.x; e.proxy.y = e.y + CONFIG.drawSize * 0.3; // sort by roughly where it touches the ground
+      if (e.cfg.flies && (e.state === CHASE || e.state === ATTACK || e.state === RETURN)) e.proxy.y += 1e6; // airborne: draws over trees
       buf.push(e.proxy);
     }
   }

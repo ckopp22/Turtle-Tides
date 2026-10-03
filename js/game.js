@@ -2010,6 +2010,7 @@
     turtle, worldSize: WORLD_SIZE, center: CENTER,
     basePlayerSpeed: MAX_SPEED * LAND_SPEED_MULT, // enemy speeds are fractions of this (skill bonuses ignored)
     walkable: (x, y) => { const dx = x - CENTER.x, dy = y - CENTER.y; return dx * dx + dy * dy <= ENEMY_WALK_R2 && !isWater(x, y) && !isHomeIsland(x, y); },
+    flyable: (x, y) => { const dx = x - CENTER.x, dy = y - CENTER.y; return dx * dx + dy * dy <= ENEMY_WALK_R2 && !isHomeIsland(x, y); }, // fliers cross water/obstacles, never the island
     isHomeIsland, inSandText: inSandTextZone, blockedAt,
     biomeAt: (x, y) => dominantBiome(x, y).biome, // allocates; only called when spawning / picking wander targets
     view: () => { viewRect.x = camX; viewRect.y = camY; viewRect.w = viewW / ZOOM; viewRect.h = viewH / ZOOM; return viewRect; },
