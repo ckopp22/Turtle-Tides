@@ -32,6 +32,8 @@
     animFps: 8,
     separation: 0.8,         // sprite widths: enemies push apart when closer than this, so a pack doesn't stack into one
     flankRadius: 70,         // world px: chasers aim at a personal spot this far around the turtle until they get close
+    farScreens: 1,           // enemies farther than this many screen widths update at a lower rate (off-screen anyway)
+    farTickSeconds: 0.1,     // ...once per this long, with the accumulated dt so they move at the same speed
     debugSpawnOffset: 150,   // world px: ?debug=1 spawn key puts the enemy this far from the turtle
     types: {
       crab: {
@@ -112,7 +114,7 @@
     const e = {
       type, cfg: type ? CONFIG.types[type] : null, active: false, respawnAt, debug: false,
       x: 0, y: 0, sx: 0, sy: 0, biome: '', state: WANDER, t: 0, anim: 0, row: 0, frame: 0,
-      tx: 0, ty: 0, hasTarget: false, pause: 0, flip: 1, angle: 0, cd: 0, giveUp: 0, steer: 0, steerT: 0, dodge: 0, dodgeT: 0, flank: 0, atkAngle: 0,
+      tx: 0, ty: 0, hasTarget: false, pause: 0, flip: 1, angle: 0, cd: 0, giveUp: 0, steer: 0, steerT: 0, dodge: 0, dodgeT: 0, flank: 0, atkAngle: 0, acc: 0,
       lose: 0, stuck: 0, unreach: 0, hiddenFor: 0, emergeToChase: false, hitDone: false,
       proxy: null,
     };
@@ -405,12 +407,17 @@
     updateSpawner();
     const T = api.turtle, v = api.view();
     const act = CONFIG.activeScreens * Math.max(v.w, v.h), act2 = act * act;
+    const far = CONFIG.farScreens * Math.max(v.w, v.h), far2 = far * far;
     const safe = api.isHomeIsland(T.x, T.y), alive = api.turtleAlive();
     for (const e of pool) {
       if (!e.active) continue;
       const dx = T.x - e.x, dy = T.y - e.y;
       if (dx * dx + dy * dy > act2) continue; // far away: frozen, costs nothing
-      tick(e, dt, safe, alive);
+      if (dx * dx + dy * dy > far2) { // far: tick at a low rate with the accumulated dt
+        e.acc += dt;
+        if (e.acc < CONFIG.farTickSeconds) continue;
+        tick(e, e.acc, safe, alive); e.acc = 0;
+      } else { tick(e, e.acc + dt, safe, alive); e.acc = 0; }
     }
     separate();
   }
