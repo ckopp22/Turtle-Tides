@@ -1918,7 +1918,7 @@
     visibleBuf.length = 0; // reused buffer: no per-frame array allocations
     for (const s of scenery) if (inView(s, vw, vh, margin)) visibleBuf.push(s);
     for (const s of homeDecorList) if (inView(s, vw, vh, margin)) visibleBuf.push(s);
-    if (window.Enemies) window.Enemies.collectVisible(visibleBuf, ctx, camX, camY, vw, vh, margin);
+    if (window.Enemies && !skip.enemies) window.Enemies.collectVisible(visibleBuf, ctx, camX, camY, vw, vh, margin);
     const visible = visibleBuf;
     if (perf) perf.visible = visible.length;
     drawSceneryWithTurtle(visible);

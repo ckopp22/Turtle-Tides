@@ -460,7 +460,7 @@
     if (!img || !img.complete || !img.naturalWidth) return;
     const F = img.naturalWidth / FRAMES, D = CONFIG.drawSize;
     g.save();
-    g.imageSmoothingEnabled = false; // pixel art; save/restore keeps the rest of the game's smoothing as-is
+    // (no imageSmoothingEnabled toggle here: flipping it per sprite is a slow path on mobile GPUs)
     const air = e.cfg.flies && (e.state === CHASE || e.state === ATTACK || e.state === RETURN);
     if (air) { // soft ground shadow, sprite lifted above it
       g.globalAlpha = 0.25; g.fillStyle = '#000';
