@@ -1,8 +1,23 @@
 (() => {
   'use strict';
 
+  // ?test=1: deterministic mode for before/after screenshot comparison (see the TEST block at the
+  // bottom). Seeds Math.random here, before any world generation or pickup placement uses it.
+  const TEST = new URLSearchParams(location.search).get('test') === '1';
+  if (TEST) {
+    let s = 0x1234abcd;
+    Math.random = () => { // mulberry32
+      s = (s + 0x6d2b79f5) | 0;
+      let t = Math.imul(s ^ (s >>> 15), 1 | s);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
   const canvas = document.getElementById('game');
-  const ctx = canvas.getContext('2d');
+  // Test mode forces software raster: Chrome otherwise flips a canvas from GPU to CPU mid-run after
+  // repeated readbacks, which shifts a few pixels between otherwise identical renders.
+  const ctx = canvas.getContext('2d', TEST ? { willReadFrequently: true } : undefined);
 
   // The canvas fills the window; 1 world unit = 1 CSS px, so the viewport (viewW x viewH,
   // set in resize()) just shows more world on a wide screen and more on a tall one — no letterboxing.
@@ -1404,7 +1419,7 @@
         opts.drawItem(it.x, it.y + (hop > 0 ? -hop : bob));
       }
     }
-    return { update, draw, dropAt };
+    return { update, draw, dropAt, items };
   }
 
   const coinImg = new Image();
@@ -1939,4 +1954,111 @@
     requestAnimationFrame(frame);
   }
   window.TurtleGame = { start, renderCosmeticPreview };
+
+  // ---- Test mode (?test=1): no intro, no rAF loop. Math.random is seeded (top of file) and every
+  // time input is a fixed number, so render() output is a pure function of the shot spec. Driven by
+  // test/serve.py + TT_TEST.run(): renders each shot below and POSTs the PNG for byte comparison.
+  if (TEST) {
+    const P = window.Progression;
+    const NONE = { color: 'color_default', hat: null, clothes: null, accessory: null };
+    const ready = () => terrainBitmap && shore && grassReady && sprite.complete && shellMaskSheet &&
+      Object.values(SPRITES).every(i => i.complete && i.naturalWidth) &&
+      [coinImg, coconutImg].every(i => i.complete && i.naturalWidth);
+    function shot(s) {
+      turtle.x = s.x; turtle.y = s.y; turtle.vx = turtle.vy = 0; turtle.angle = s.angle || 0;
+      walkFrame = s.walkFrame || 0; state = s.state || 'normal'; stateTime = s.stateTime || 0;
+      moveMode = s.moveMode || 'walk'; floating = !!s.floating; floatClock = s.floatClock || 0;
+      nightAmount = s.night || 0; gameTime = s.gameTime || 0; shakeTime = 0;
+      P.state.homeLevel = s.homeLevel || 0;
+      Object.assign(P.state.cosmetics.equipped, NONE, s.outfit || {});
+      ripples.length = 0; for (const r of s.ripples || []) ripples.push({ scale: 1, lifetime: RIPPLE_LIFETIME, ...r });
+      sandPuffs.length = 0; for (const p of s.puffs || []) sandPuffs.push(p);
+      // Shore.js reuses its wave mask across frames at a sub-cell camera offset, so its output depends
+      // on the previous shot. A throwaway draw at a different tick forces the real one to rebuild.
+      drawShore((s.t || 0) + 777);
+      render(s.t || 0);
+      return canvas.toDataURL('image/png');
+    }
+    const near = (items, x, y) => items.reduce((b, i) => Math.hypot(i.x - x, i.y - y) < Math.hypot(b.x - x, b.y - y) ? i : b);
+    const C = CENTER, ang = a => ({ x: C.x + Math.cos(a), y: C.y + Math.sin(a) });
+    function shotList() {
+      const L = [];
+      const add = (name, s) => L.push([name, s]);
+      // open water (ring between island and mainland), idle float + swim frames + wake ripples
+      add('water_idle', { x: C.x + 400, y: C.y, moveMode: 'swim', floating: true, floatClock: 1.3, t: 12.3 });
+      for (let f = 0; f < 4; f++) add('water_swim_f' + f, { x: C.x, y: C.y - 400, angle: -1.2, moveMode: 'swim', walkFrame: f, t: 3.7 + f,
+        ripples: [{ x: C.x - 20, y: C.y - 380, age: 0.2 }, { x: C.x - 40, y: C.y - 360, age: 0.5 }, { x: C.x, y: C.y - 400, age: 0.4, scale: 1.6, lifetime: 1.6 }] });
+      // island: shoreline, decor at several home levels, night glow
+      add('island_shore_e', { x: C.x + 230, y: C.y + 20, t: 5.1 });
+      add('island_home_l0', { x: HOME.x, y: HOME.y - 90, t: 1.1 });
+      add('island_home_l4', { x: HOME.x, y: HOME.y, homeLevel: 4, t: 2.2 });
+      add('island_home_max', { x: HOME.x - 20, y: HOME.y + 40, homeLevel: 20, t: 8.8 });
+      add('island_home_night', { x: HOME.x, y: HOME.y, homeLevel: 20, night: 1, t: 8.8 });
+      add('island_home_dusk', { x: HOME.x, y: HOME.y, homeLevel: 20, night: 0.4, t: 8.8 });
+      // mainland shore + sand/grass edge in each biome, and the sand text
+      for (const [n, a] of [['e', 0], ['s', Math.PI / 2], ['w', Math.PI], ['n', -Math.PI / 2]]) {
+        const d = ang(a);
+        for (const r of [WATER_OUTER_R - 20, WATER_OUTER_R + 120, WATER_OUTER_R + 330]) {
+          add(`shore_${n}_${r - WATER_OUTER_R}`, { x: C.x + (d.x - C.x) * r, y: C.y + (d.y - C.y) * r, angle: a, t: 4.4 });
+        }
+      }
+      add('sand_text', { x: SAND_TEXT_POS.x, y: SAND_TEXT_POS.y + 30, t: 6.6 });
+      add('forest_deep_w', { x: C.x - 1800, y: C.y + 100, t: 2 });
+      add('dead_deep_s', { x: C.x + 100, y: C.y + 1800, t: 2 });
+      add('open_deep_e', { x: C.x + 1800, y: C.y - 100, t: 2 });
+      add('beach_deep_n', { x: C.x - 100, y: C.y - 1800, t: 2 });
+      add('biome_border_se', { x: C.x + 1300, y: C.y + 1300, t: 2 });
+      add('world_corner', { x: 60, y: 60, t: 2 });
+      add('world_edge_se', { x: WORLD_SIZE - 60, y: WORLD_SIZE - 400, t: 2 });
+      // pickups (bob phase depends on gameTime) + mid-hop drop + sand puff
+      for (const [k, p] of [['coin', coinPickups], ['coconut', coconutPickups], ['shell', shellPickups]]) {
+        const it = near(p.items, C.x + 900, C.y - 700);
+        add('pickup_' + k, { x: it.x + 50, y: it.y + 40, gameTime: 3.3, t: 1 });
+        add('pickup_' + k + '_b', { x: it.x - 60, y: it.y + 10, gameTime: 4.1, t: 1 });
+      }
+      add('puff', { x: C.x + 100, y: C.y - WATER_OUTER_R - 200, t: 1, puffs: [
+        { x: C.x + 90, y: C.y - WATER_OUTER_R - 220, vx: 0, vy: 0, r: 12, t: 0.2, life: 0.8 },
+        { x: C.x + 120, y: C.y - WATER_OUTER_R - 190, vx: 0, vy: 0, r: 16, t: 0.5, life: 0.8 }] });
+      // outfits, walk + swim + states, over sand and grass (4 walk frames each for the head bob/sway)
+      const outfits = {
+        none: {}, coral_straw_tshirt_bow: { color: 'color_coral', hat: 'hat_straw', clothes: 'clothes_tshirt', accessory: 'accessory_bowtie' },
+        indigo_sailor_vest_scarf: { color: 'color_indigo', hat: 'hat_sailor', clothes: 'clothes_vest', accessory: 'accessory_scarf' },
+        gold_flower_cape_crab: { color: 'color_gold', hat: 'hat_flower', clothes: 'clothes_cape', accessory: 'accessory_crab' },
+        diving_goggles: { clothes: 'clothes_diving', accessory: 'accessory_goggles' },
+      };
+      for (const o in outfits) {
+        for (let f = 0; f < 4; f++) {
+          add(`outfit_${o}_walk${f}`, { x: C.x + 1100, y: C.y + 100, angle: 0.4, walkFrame: f, outfit: outfits[o], t: 2 });
+        }
+        add(`outfit_${o}_swim`, { x: C.x - 400, y: C.y, angle: 2.5, moveMode: 'swim', walkFrame: 1, outfit: outfits[o], t: 2 });
+        for (const st of ['sleeping', 'stunned', 'shell']) add(`outfit_${o}_${st}`, { x: C.x - 1100, y: C.y, state: st, stateTime: 0.7, outfit: outfits[o], t: 2 });
+      }
+      return L;
+    }
+    window.TT_TEST = {
+      ready, shot, shotList, init() { resize(); spawnTurtle(); P.attachSlot(null, null); },
+      // mode 'ref' writes references, 'cur' writes to the current dir and reports match vs ref.
+      async run(dir) {
+        const tag = `${window.innerWidth}x${window.innerHeight}`;
+        const res = { total: 0, same: 0, diff: [], missing: [] };
+        resize(); spawnTurtle(); P.attachSlot(null, null);
+        // Cosmetic images load lazily on first draw: touch every one, then let them finish loading.
+        for (const id of ['hat_flower', 'hat_sailor', 'hat_straw', 'clothes_vest', 'clothes_tshirt', 'clothes_cape', 'clothes_diving',
+          'accessory_bowtie', 'accessory_scarf', 'accessory_crab', 'accessory_goggles']) shot({ x: C.x, y: C.y, outfit: { [id.split('_')[0]]: id } });
+        await new Promise(r => setTimeout(r, 1500));
+        // Chrome lazily builds scaled copies of big sprites (e.g. pine_tall) after the first few draws, so
+        // pass 1 renders slightly differently from every later pass. Discard one full pass so refs and
+        // comparisons both start from the settled state.
+        for (const [, spec] of shotList()) shot(spec);
+        await new Promise(r => setTimeout(r, 300));
+        for (const [name, spec] of shotList()) {
+          const url = shot(spec);
+          const r = await (await fetch(`/save?dir=${dir}&name=${tag}_${name}`, { method: 'POST', body: await (await fetch(url)).blob() })).json();
+          res.total++;
+          if (r.same === true) res.same++; else if (r.same === false) res.diff.push(name); else if (dir === 'cur') res.missing.push(name);
+        }
+        return res;
+      },
+    };
+  }
 })();

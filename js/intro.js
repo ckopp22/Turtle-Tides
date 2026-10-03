@@ -999,6 +999,7 @@
     if (currentScene !== SCENES.GAME_HANDOFF || overlay) requestAnimationFrame(loop);
   }
   function beginIntro() {
+    if (new URLSearchParams(location.search).get('test') === '1') return; // game.js drives the canvas in test mode
     resize();
     if (!window.innerWidth || !window.innerHeight) { requestAnimationFrame(beginIntro); return; }
     lastT = performance.now();
