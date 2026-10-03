@@ -1816,6 +1816,9 @@
   }
 
   const visibleBuf = [];
+  // Debug bisecting on a phone: ?debug=1&skip=terrain,grass,shore turns those layers off.
+  const skip = {};
+  for (const k of (new URLSearchParams(location.search).get('skip') || '').split(',')) if (k) skip[k] = true;
   function render(t) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // 1 ctx unit = 1 CSS px; backing store already has the dpr scale-up
     ctx.fillStyle = '#0b3d4f';
@@ -1827,9 +1830,9 @@
     ctx.scale(ZOOM, ZOOM);
     ctx.translate(-camX, -camY);
 
-    drawTerrain();
-    drawGrassTextures();
-    if (shore) drawShore(t);
+    if (!skip.terrain) drawTerrain();
+    if (!skip.grass) drawGrassTextures();
+    if (shore && !skip.shore) drawShore(t);
     drawRipples(); // above water, below turtle/scenery
     drawSandText();
     ctx.drawImage(islandDetail.canvas, islandDetail.worldX, islandDetail.worldY);
