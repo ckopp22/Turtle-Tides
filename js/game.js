@@ -190,6 +190,7 @@
   canvas.addEventListener('touchend', endTouch);
   canvas.addEventListener('touchcancel', endTouch);
 
+  const dirBuf = { x: 0, y: 0 }; // reused result; update() only reads it right away
   function getDirection() {
     let dx = 0, dy = 0;
     if (keys.has('left')) dx -= 1;
@@ -198,15 +199,17 @@
     if (keys.has('down')) dy += 1;
     if (dx || dy) {
       const len = Math.hypot(dx, dy);
-      return { x: dx / len, y: dy / len };
+      dirBuf.x = dx / len; dirBuf.y = dy / len;
+      return dirBuf;
     }
     if (joy.active) {
       const jx = joy.x - joy.ox, jy = joy.y - joy.oy;
       const len = Math.hypot(jx, jy);
       const mag = Math.min(len / JOY_RADIUS, 1);
-      if (mag > JOY_DEADZONE) return { x: (jx / len) * mag, y: (jy / len) * mag };
+      if (mag > JOY_DEADZONE) { dirBuf.x = (jx / len) * mag; dirBuf.y = (jy / len) * mag; return dirBuf; }
     }
-    return { x: 0, y: 0 };
+    dirBuf.x = 0; dirBuf.y = 0;
+    return dirBuf;
   }
 
   // ---- Seeded RNG + value noise (both fixed-seed, so the world is identical every load) ----
@@ -250,8 +253,8 @@
   // in the west forest. +-15deg still wanders the border noticeably without flipping sectors outright.
   const BIOME_ANGLE_NOISE_DEG = 30;
   function biomeAngleNoise(x, y) { return (noise2(x / 480, y / 480) - 0.5) * BIOME_ANGLE_NOISE_DEG * DEG; }
-  function biomeWeights(angle) {
-    const w = {}; let sum = 0;
+  function biomeWeights(angle, out) {
+    const w = out || {}; let sum = 0; // `out` lets per-frame callers reuse one object instead of allocating
     for (const k in BIOME_CENTER_ANGLE) {
       let d = angle - BIOME_CENTER_ANGLE[k];
       d = Math.atan2(Math.sin(d), Math.cos(d)); // wrap to -PI..PI
@@ -578,12 +581,13 @@
   // Cheap presence check (a few sample points) so a biome with nothing in view this frame is
   // skipped entirely rather than compositing an empty viewport-sized layer.
   function grassBiomeInView(key, rcx, rcy, vw, vh) {
-    const pts = [[rcx, rcy], [rcx + vw, rcy], [rcx, rcy + vh], [rcx + vw, rcy + vh], [rcx + vw / 2, rcy + vh / 2]];
-    for (const [x, y] of pts) {
-      const dx = x - CENTER.x, dy = y - CENTER.y;
-      if (biomeWeights(Math.atan2(dy, dx) + biomeAngleNoise(x, y))[key] > 0.02) return true;
-    }
-    return false;
+    return biomePointHas(key, rcx, rcy) || biomePointHas(key, rcx + vw, rcy) || biomePointHas(key, rcx, rcy + vh) ||
+      biomePointHas(key, rcx + vw, rcy + vh) || biomePointHas(key, rcx + vw / 2, rcy + vh / 2);
+  }
+  const biomeScratch = {};
+  function biomePointHas(key, x, y) {
+    const dx = x - CENTER.x, dy = y - CENTER.y;
+    return biomeWeights(Math.atan2(dy, dx) + biomeAngleNoise(x, y), biomeScratch)[key] > 0.02;
   }
   // ---- "Turtle Tides" written in the sand, south outer ring (the coastal sand band every biome's
   // mainland shore gets, see SHORE_SAND_BAND above) — a static decorative easter egg, not gameplay.
@@ -921,19 +925,20 @@
     obstacleGrid = new Map();
     scenery.forEach((s, idx) => {
       if (!s.collide) return;
-      const k = `${Math.floor(s.x / OBSTACLE_CELL)},${Math.floor(s.y / OBSTACLE_CELL)}`;
+      const k = Math.floor(s.x / OBSTACLE_CELL) * 65536 + Math.floor(s.y / OBSTACLE_CELL);
       if (!obstacleGrid.has(k)) obstacleGrid.set(k, []);
       obstacleGrid.get(k).push(idx);
     });
   }
   buildObstacleGrid();
 
+  const nearbyBuf = []; // reused every call; callers only iterate it before the next call
   function nearbyObstacles(x, y, radius) {
-    const out = [];
+    const out = nearbyBuf; out.length = 0;
     const cx = Math.floor(x / OBSTACLE_CELL), cy = Math.floor(y / OBSTACLE_CELL);
     const span = Math.ceil(radius / OBSTACLE_CELL) + 1;
     for (let gy = cy - span; gy <= cy + span; gy++) for (let gx = cx - span; gx <= cx + span; gx++) {
-      const arr = obstacleGrid.get(`${gx},${gy}`);
+      const arr = obstacleGrid.get(gx * 65536 + gy);
       if (arr) for (const idx of arr) out.push(scenery[idx]);
     }
     return out;
@@ -1044,8 +1049,9 @@
   // reaches. TURTLE_DEPTH_FRONT_OFFSET compensates so the turtle reliably draws on top once it's
   // really in front of an asset's base, instead of a sliver of canopy/trunk art still covering it.
   const TURTLE_DEPTH_FRONT_OFFSET = 24;
+  const byY = (a, b) => a.y - b.y;
   function drawSceneryWithTurtle(list) {
-    list.sort((a, b) => a.y - b.y); // cheap back-to-front depth sort of the (small) visible set
+    list.sort(byY); // cheap back-to-front depth sort of the (small) visible set
     // Knocked-down sand piles are flat on the ground: always draw them under the turtle, never over it.
     for (const s of list) if (s.knocked) drawScenerySprite(s);
     const turtleDepthY = turtle.y + TURTLE_DEPTH_FRONT_OFFSET;
@@ -1516,6 +1522,7 @@
     }
   }
 
+  const NO_DIR = { x: 0, y: 0 };
   // ---- Update ----
   function update(dt) {
     stateTime += dt;
@@ -1538,7 +1545,7 @@
     const hungerSpeedMult = window.Progression.update(dt, !atHome);
     if (atHome) window.Progression.bankCarried();
 
-    const dir = state === 'normal' ? getDirection() : { x: 0, y: 0 };
+    const dir = state === 'normal' ? getDirection() : NO_DIR;
     const inWater = isWater(turtle.x, turtle.y);
     // Swim Speed only boosts water movement, Move Speed only boosts land movement (see
     // progression.js CONFIG.speed) — domains never overlap, so nothing to stack.
@@ -1707,7 +1714,7 @@
   let shellMaskSheet = null;
   const tintScratch = document.createElement('canvas');
   const tintScratchCtx = tintScratch.getContext('2d');
-  let tintKey = '';
+  let tintKeyTint = '', tintKeySx = -1, tintKeySy = -1, tintKeyDw = -1, tintKeyDh = -1; // last tinted frame, see drawEquippedCosmetics
   sprite.addEventListener('load', () => {
     const w = sprite.naturalWidth, h = sprite.naturalHeight;
     const fw = w / SHEET_COLS, fh = h / SHEET_ROWS;
@@ -1778,9 +1785,8 @@
     if (tint && shellMaskSheet && hatMode !== 'only') {
       // Rebuild only when the frame/tint/size changes — reassigning canvas width/height every frame
       // reallocates the backing store.
-      const key = `${tint}|${sx}|${sy}|${dw}|${dh}`;
-      if (key !== tintKey) {
-        tintKey = key;
+      if (tint !== tintKeyTint || sx !== tintKeySx || sy !== tintKeySy || dw !== tintKeyDw || dh !== tintKeyDh) {
+        tintKeyTint = tint; tintKeySx = sx; tintKeySy = sy; tintKeyDw = dw; tintKeyDh = dh;
         if (tintScratch.width !== dw || tintScratch.height !== dh) { tintScratch.width = dw; tintScratch.height = dh; }
         tintScratchCtx.clearRect(0, 0, dw, dh);
         tintScratchCtx.drawImage(shellMaskSheet, sx, sy, sw, sh, 0, 0, dw, dh);
@@ -1837,6 +1843,9 @@
   }
 
   const visibleBuf = [];
+  function inView(s, vw, vh, margin) {
+    return s.x > camX - margin && s.x < camX + vw + margin && s.y > camY - margin && s.y < camY + vh + margin;
+  }
   // Debug bisecting on a phone: ?debug=1&skip=terrain,grass,shore turns those layers off.
   const skip = {};
   for (const k of (new URLSearchParams(location.search).get('skip') || '').split(',')) if (k) skip[k] = true;
@@ -1865,10 +1874,9 @@
     // trees still draws only a couple dozen-to-hundred objects per frame.
     rebuildHomeDecorIfNeeded();
     const vw = viewW / ZOOM, vh = viewH / ZOOM, margin = 80;
-    const inView = s => s.x > camX - margin && s.x < camX + vw + margin && s.y > camY - margin && s.y < camY + vh + margin;
     visibleBuf.length = 0; // reused buffer: no per-frame array allocations
-    for (const s of scenery) if (inView(s)) visibleBuf.push(s);
-    for (const s of homeDecorList) if (inView(s)) visibleBuf.push(s);
+    for (const s of scenery) if (inView(s, vw, vh, margin)) visibleBuf.push(s);
+    for (const s of homeDecorList) if (inView(s, vw, vh, margin)) visibleBuf.push(s);
     const visible = visibleBuf;
     if (perf) perf.visible = visible.length;
     drawSceneryWithTurtle(visible);
