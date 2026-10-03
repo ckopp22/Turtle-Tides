@@ -30,6 +30,8 @@
     giveUpCooldown: 4,       // seconds after giving up before the enemy can notice the turtle again
     hitRangeSlack: 1.2,      // the hit lands if the turtle is within attackRange * this at the hit frame
     animFps: 8,
+    separation: 0.8,         // sprite widths: enemies push apart when closer than this, so a pack doesn't stack into one
+    flankRadius: 70,         // world px: chasers aim at a personal spot this far around the turtle until they get close
     debugSpawnOffset: 150,   // world px: ?debug=1 spawn key puts the enemy this far from the turtle
     types: {
       crab: {
@@ -109,7 +111,7 @@
     const e = {
       type, cfg: type ? CONFIG.types[type] : null, active: false, respawnAt, debug: false,
       x: 0, y: 0, sx: 0, sy: 0, biome: '', state: WANDER, t: 0, anim: 0, row: 0, frame: 0,
-      tx: 0, ty: 0, hasTarget: false, pause: 0, flip: 1, angle: 0, cd: 0, giveUp: 0, steer: 0, steerT: 0, dodge: 0, dodgeT: 0,
+      tx: 0, ty: 0, hasTarget: false, pause: 0, flip: 1, angle: 0, cd: 0, giveUp: 0, steer: 0, steerT: 0, dodge: 0, dodgeT: 0, flank: 0,
       lose: 0, stuck: 0, unreach: 0, hiddenFor: 0, emergeToChase: false, hitDone: false,
       proxy: null,
     };
@@ -249,7 +251,7 @@
     else e.unreach = 0;
     return false;
   }
-  function startChase(e) { e.lose = 0; e.stuck = 0; e.unreach = 0; e.hasTarget = false; setState(e, CHASE); }
+  function startChase(e) { e.flank = Math.random() * Math.PI * 2; e.lose = 0; e.stuck = 0; e.unreach = 0; e.hasTarget = false; setState(e, CHASE); }
   function giveUpChase(e) {
     e.giveUp = CONFIG.giveUpCooldown; e.lose = 0; e.stuck = 0; e.unreach = 0;
     setState(e, RETURN); // walks back to its spawn point; crabs burrow once they arrive
@@ -362,7 +364,12 @@
           }
           return;
         }
-        const progress = stepToward(e, T.x, T.y, chaseSpeed, dt, c.flies);
+        // Far away, aim at this enemy's own spot around the turtle so a pack arrives from different sides;
+        // once close, aim straight at the turtle.
+        const fr = CONFIG.flankRadius, close = Math.sqrt(c.attack2) + fr + 20;
+        const aimX = d2 > close * close ? T.x + Math.cos(e.flank) * fr : T.x;
+        const aimY = d2 > close * close ? T.y + Math.sin(e.flank) * fr : T.y;
+        const progress = stepToward(e, aimX, aimY, chaseSpeed, dt, c.flies);
         e.stuck = progress < 0.3 ? e.stuck + dt : Math.max(0, e.stuck - dt);
         if (!c.flies && e.stuck > CONFIG.stuckSeconds) { giveUpChase(e); return; }
         setAnim(e, c.flies ? R.fly : R.walk, CONFIG.animFps * 1.5, FRAMES);
@@ -403,6 +410,31 @@
       const dx = T.x - e.x, dy = T.y - e.y;
       if (dx * dx + dy * dy > act2) continue; // far away: frozen, costs nothing
       tick(e, dt, safe, alive);
+    }
+    separate();
+  }
+
+  // Pushes overlapping enemies apart (only ones above ground together or in the air together, and not
+  // burrowed/asleep) so a chasing pack reads as several animals. 12 enemies max: the pair loop is trivial.
+  const SEP2 = sq(CONFIG.separation);
+  function mobile(e) { return e.state !== HIDDEN && e.state !== BURROW && e.state !== EMERGE && e.state !== SLEEP && e.state !== WAKE; }
+  function airborne(e) { return e.cfg.flies && (e.state === CHASE || e.state === ATTACK || e.state === RETURN); }
+  function separate() {
+    const n = pool.length;
+    for (let i = 0; i < n; i++) {
+      const a = pool[i];
+      if (!a.active || !mobile(a)) continue;
+      for (let j = i + 1; j < n; j++) {
+        const b = pool[j];
+        if (!b.active || !mobile(b) || airborne(a) !== airborne(b)) continue;
+        const dx = b.x - a.x, dy = b.y - a.y, d2 = dx * dx + dy * dy;
+        if (d2 >= SEP2) continue;
+        const d = Math.sqrt(d2) || 0.001, push = (CONFIG.separation * U - d) * 0.5;
+        const ux = d2 < 1e-6 ? 1 : dx / d, uy = d2 < 1e-6 ? 0 : dy / d;
+        const fa = airborne(a);
+        if (open(a, a.x - ux * push, a.y - uy * push, fa)) { a.x -= ux * push; a.y -= uy * push; }
+        if (open(b, b.x + ux * push, b.y + uy * push, fa)) { b.x += ux * push; b.y += uy * push; }
+      }
     }
   }
 
