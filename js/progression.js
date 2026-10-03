@@ -358,11 +358,10 @@
     return lost;
   }
 
-  // Removes one heart (guarded by invulnerability). TODO: call this from bird/enemy contact once
-  // enemies exist in game.js — nothing calls it yet, this is just the hook.
-  function takeHit() {
+  // Removes `amount` hearts (default 1), guarded by invulnerability. Called by enemies.js on a landed hit.
+  function takeHit(amount = 1) {
     if (state.invulnTimer > 0 || dying) return false;
-    state.hearts = Math.max(0, state.hearts - 1);
+    state.hearts = Math.max(0, state.hearts - amount);
     state.invulnTimer = CONFIG.invulnSeconds;
     if (window.TT_SOUND) window.TT_SOUND.umph();
     if (state.hearts <= 0) {

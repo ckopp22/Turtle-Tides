@@ -103,6 +103,7 @@
     turtle.y = HOME.y - 90;
     turtle.vx = 0; turtle.vy = 0;
     spawned = true;
+    if (window.Enemies) window.Enemies.resetAggro(); // chasers give up when the turtle is back home
   }
   // Heart-loss respawns (Progression.takeHit hitting 0) snap the turtle back to the home spot the
   // same way the initial spawn does. Not exercised yet — no enemies call takeHit() until birds exist.
@@ -1014,6 +1015,43 @@
     }
   }
 
+  // Read-only "would a circle at (x, y) with radius r overlap any obstacle?" for enemies. Same shapes
+  // resolveObstacleCollisions() uses, but returns a boolean, never moves anything, and allocates
+  // nothing per call (scenery is static, so each entry's box/polygon is cached on first use).
+  function blockedAt(x, y, r) {
+    const r2 = r * r;
+    for (const s of nearbyObstacles(x, y, r + 60)) {
+      if (!s.collide) continue;
+      let box = s._eBox;
+      if (box === undefined) { box = getSpriteWorldBox(s); if (box) s._eBox = box; }
+      if (box) {
+        const dx = x - Math.min(Math.max(x, box.x0), box.x1), dy = y - Math.min(Math.max(y, box.y0), box.y1);
+        if (dx * dx + dy * dy < r2) return true;
+        continue;
+      }
+      if (s.poly) {
+        const poly = s._ePoly || (s._ePoly = getTrunkPolygon(s));
+        // Convex polygon vs circle: center inside (same cross-product sign at every edge) or within r of an edge.
+        let inside = true, sign = 0;
+        for (let i = 0; i < poly.length; i++) {
+          const a = poly[i], b = poly[(i + 1) % poly.length];
+          const ex = b.x - a.x, ey = b.y - a.y;
+          const cross = ex * (y - a.y) - ey * (x - a.x);
+          if (i === 0) sign = Math.sign(cross); else if (cross !== 0 && Math.sign(cross) !== sign) inside = false;
+          const len2 = ex * ex + ey * ey;
+          const t = len2 > 0 ? Math.max(0, Math.min(1, ((x - a.x) * ex + (y - a.y) * ey) / len2)) : 0;
+          const px = x - (a.x + ex * t), py = y - (a.y + ey * t);
+          if (px * px + py * py < r2) return true;
+        }
+        if (inside) return true;
+        continue;
+      }
+      const dx = x - s.x, dy = y - (s.y + (s.cy || 0)), m = r + (s.cr ?? s.r);
+      if (dx * dx + dy * dy < m * m) return true;
+    }
+    return false;
+  }
+
   // ---- Debug: red hitbox outlines (DEBUG_HITBOXES above). Drawn in the same world-transformed
   // context render() already sets up, right after scenery, so outlines line up with the art exactly.
   function drawDebugHitboxes(visibleScenery) {
@@ -1650,6 +1688,8 @@
       diff = Math.atan2(Math.sin(diff), Math.cos(diff));
       turtle.angle += diff * Math.min(1, 10 * dt);
     }
+
+    if (window.Enemies) window.Enemies.update(dt);
   }
 
   // ---- Render ----
@@ -1767,6 +1807,7 @@
     ctx.save();
     ctx.translate(turtle.x, turtle.y + bobY);
     ctx.rotate(turtle.angle + Math.PI / 2); // art faces up, angle 0 = right
+    if (window.Progression.isInvulnerable() && Math.floor(gameTime * 12) % 2 === 0) ctx.globalAlpha = 0.3; // blink after a hit (restored below)
     if (state === 'normal' && moveMode === 'walk' && f === 3) ctx.scale(-1, 1); // mirror the last walk frame so the head swings left (sheet only has right)
     ctx.imageSmoothingQuality = 'high';
     const swimming = moveMode === 'swim';
@@ -1877,11 +1918,13 @@
     visibleBuf.length = 0; // reused buffer: no per-frame array allocations
     for (const s of scenery) if (inView(s, vw, vh, margin)) visibleBuf.push(s);
     for (const s of homeDecorList) if (inView(s, vw, vh, margin)) visibleBuf.push(s);
+    if (window.Enemies) window.Enemies.collectVisible(visibleBuf, ctx, camX, camY, vw, vh, margin);
     const visible = visibleBuf;
     if (perf) perf.visible = visible.length;
     drawSceneryWithTurtle(visible);
     drawNightGlows(); // world space, on top of the decor it's lighting
     if (DEBUG_HITBOXES) drawDebugHitboxes(visible);
+    if (window.Enemies) window.Enemies.drawDebug(ctx, camX, camY, vw, vh);
     ctx.restore();
 
     drawNightSky(); // screen space, under the HUD/joystick so they stay fully readable
@@ -1961,6 +2004,18 @@
     last = performance.now();
     requestAnimationFrame(frame);
   }
+  const viewRect = { x: 0, y: 0, w: 0, h: 0 };
+  const ENEMY_WALK_R2 = (WORLD_SIZE / 2 - EDGE_FOG_WIDTH * 0.4) ** 2; // same fog margin pickups use
+  if (!TEST && window.Enemies) window.Enemies.init({
+    turtle, worldSize: WORLD_SIZE, center: CENTER,
+    basePlayerSpeed: MAX_SPEED * LAND_SPEED_MULT, // enemy speeds are fractions of this (skill bonuses ignored)
+    walkable: (x, y) => { const dx = x - CENTER.x, dy = y - CENTER.y; return dx * dx + dy * dy <= ENEMY_WALK_R2 && !isWater(x, y) && !isHomeIsland(x, y); },
+    isHomeIsland, inSandText: inSandTextZone, blockedAt,
+    biomeAt: (x, y) => dominantBiome(x, y).biome, // allocates; only called when spawning / picking wander targets
+    view: () => { viewRect.x = camX; viewRect.y = camY; viewRect.w = viewW / ZOOM; viewRect.h = viewH / ZOOM; return viewRect; },
+    turtleAlive: () => deathTimer < 0,
+    takeHit: n => window.Progression.takeHit(n),
+  });
   window.TurtleGame = { start, renderCosmeticPreview };
 
   // ---- Test mode (?test=1): no intro, no rAF loop. Math.random is seeded (top of file) and every
