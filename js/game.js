@@ -934,10 +934,10 @@
   buildObstacleGrid();
 
   const nearbyBuf = []; // reused every call; callers only iterate it before the next call
-  function nearbyObstacles(x, y, radius) {
+  function nearbyObstacles(x, y, radius, tight) {
     const out = nearbyBuf; out.length = 0;
     const cx = Math.floor(x / OBSTACLE_CELL), cy = Math.floor(y / OBSTACLE_CELL);
-    const span = Math.ceil(radius / OBSTACLE_CELL) + 1;
+    const span = Math.ceil(radius / OBSTACLE_CELL) + (tight ? 0 : 1); // tight: 3x3 cells instead of 5x5 (enemies call this many times a frame)
     for (let gy = cy - span; gy <= cy + span; gy++) for (let gx = cx - span; gx <= cx + span; gx++) {
       const arr = obstacleGrid.get(gx * 65536 + gy);
       if (arr) for (const idx of arr) out.push(scenery[idx]);
@@ -1020,7 +1020,7 @@
   // nothing per call (scenery is static, so each entry's box/polygon is cached on first use).
   function blockedAt(x, y, r) {
     const r2 = r * r;
-    for (const s of nearbyObstacles(x, y, r + 60)) {
+    for (const s of nearbyObstacles(x, y, r + 60, true)) {
       if (!s.collide) continue;
       let box = s._eBox;
       if (box === undefined) { box = getSpriteWorldBox(s); if (box) s._eBox = box; }
