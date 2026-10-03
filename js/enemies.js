@@ -65,6 +65,7 @@
         bodyRadius: 14,
         straightLine: true,  // chase = straight line at the turtle, no steering; being blocked stuns it
         stunTime: 1,         // seconds
+        dodgeChance: 0.5,    // chance, per obstacle it runs at, that it steers around it instead of getting stunned
         rows: { idle: 0, walk: 1, attack: 2, sleep: 3 }, // walk = slither, attack = strike, sleep = coil_sleep
         debugKey: '7',
       },
@@ -108,7 +109,7 @@
     const e = {
       type, cfg: type ? CONFIG.types[type] : null, active: false, respawnAt, debug: false,
       x: 0, y: 0, sx: 0, sy: 0, biome: '', state: WANDER, t: 0, anim: 0, row: 0, frame: 0,
-      tx: 0, ty: 0, hasTarget: false, pause: 0, flip: 1, angle: 0, cd: 0, giveUp: 0, steer: 0, steerT: 0,
+      tx: 0, ty: 0, hasTarget: false, pause: 0, flip: 1, angle: 0, cd: 0, giveUp: 0, steer: 0, steerT: 0, dodge: 0, dodgeT: 0,
       lose: 0, stuck: 0, unreach: 0, hiddenFor: 0, emergeToChase: false, hitDone: false,
       proxy: null,
     };
@@ -132,7 +133,7 @@
     e.type = type; e.cfg = CONFIG.types[type]; e.active = true;
     e.x = e.sx = x; e.y = e.sy = y; e.biome = biome;
     e.state = WANDER; e.t = 0; e.anim = 0; e.hasTarget = false; e.pause = rnd(0.5, 2);
-    e.cd = 0; e.steer = 0; e.steerT = 0; e.giveUp = 0; e.lose = 0; e.stuck = 0; e.unreach = 0; e.flip = Math.random() < 0.5 ? 1 : -1;
+    e.cd = 0; e.steer = 0; e.steerT = 0; e.dodge = 0; e.dodgeT = 0; e.giveUp = 0; e.lose = 0; e.stuck = 0; e.unreach = 0; e.flip = Math.random() < 0.5 ? 1 : -1;
   }
 
   function trySpawn(e) {
@@ -264,6 +265,7 @@
     if (e.giveUp > 0) e.giveUp -= dt;
     if (e.cd > 0) e.cd -= dt;
     if (e.steerT > 0) e.steerT -= dt;
+    if (e.dodgeT > 0) e.dodgeT -= dt;
     const dx = T.x - e.x, dy = T.y - e.y, d2 = dx * dx + dy * dy;
     // Enemies ignore the turtle on the home island (safe zone), while it's dying, and right after giving up.
     const canSee = alive && !safe && e.giveUp <= 0;
@@ -344,13 +346,19 @@
           return;
         }
         if (c.straightLine) {
-          // No pathfinding, no sliding: if the straight step is blocked (obstacle, water, island, world edge) it stuns.
+          // No pathfinding: if the straight step is blocked (obstacle, water, island, world edge) it stuns.
           const dist = Math.sqrt(d2), step = Math.min(chaseSpeed * dt, dist);
           face(e, dx, dy);
           setAnim(e, R.walk, CONFIG.animFps * 1.5, FRAMES);
           if (dist > 1) {
             const nx = e.x + dx / dist * step, ny = e.y + dy / dist * step;
-            if (open(e, nx, ny)) { e.x = nx; e.y = ny; } else setState(e, STUN);
+            if (open(e, nx, ny)) { e.x = nx; e.y = ny; if (e.dodgeT <= 0) e.dodge = 0; }
+            else {
+              // Blocked: roll once per obstacle. A lucky snake steers around it; otherwise it's stunned.
+              if (e.dodge === 0) e.dodge = Math.random() < c.dodgeChance ? 1 : -1;
+              if (e.dodge === 1 && steerMove(e, dx / dist, dy / dist, step) >= 0.3) e.dodgeT = 0.8;
+              else { e.dodge = 0; setState(e, STUN); } // re-rolls after the stun
+            }
           }
           return;
         }
