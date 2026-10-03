@@ -65,7 +65,36 @@
   function unlockAudio() {
     if (audioCtx) return;
     try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch {}
+    if (audioCtx && audioCtx.resume) audioCtx.resume().catch(() => {});
+    gClips.forEach(connectClip);
     loadBankBuffers();
+  }
+  // iOS Safari ignores <audio>.volume (always 1), so every clip is routed through a WebAudio GainNode
+  // once the context exists, and `.volume` on it is redirected to that gain. Before the context exists
+  // (autoplay is blocked then anyway) it falls back to the native property. All other code keeps
+  // using `clip.volume = x` unchanged.
+  const gClips = [];
+  const nativeVolume = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'volume');
+  function gAudio(src) {
+    const a = new Audio(src);
+    let vol = 1;
+    Object.defineProperty(a, 'volume', {
+      get: () => vol,
+      set: v => { vol = v; if (a._gain) a._gain.gain.value = v; else nativeVolume.set.call(a, v); },
+    });
+    gClips.push(a);
+    if (audioCtx) connectClip(a);
+    return a;
+  }
+  function connectClip(a) {
+    if (a._gain || !audioCtx) return;
+    try {
+      const node = audioCtx.createMediaElementSource(a), gain = audioCtx.createGain();
+      gain.gain.value = a.volume;
+      node.connect(gain); gain.connect(audioCtx.destination);
+      a._gain = gain;
+      nativeVolume.set.call(a, 1); // the gain node owns loudness now
+    } catch {} // leave the element on its native path if it can't be routed
   }
   function beep(freq, duration, type) {
     if (!soundOn || !audioCtx) return;
@@ -79,50 +108,50 @@
   }
   // Real crack SFX (assets/sfx/egg-crack{1,2,3}.mp3): preloaded, one picked at random per tap.
   const crackClips = ['egg-crack2', 'egg-crack3'].map(name => {
-    const a = new Audio(`assets/sfx/${name}.mp3`);
+    const a = gAudio(`assets/sfx/${name}.mp3`);
     a.volume = 0.6;
     return a;
   });
   // Real splash SFX (assets/sfx/splash.mp3): played whenever a save lands on the island (see launchIsland).
-  const splashClip = new Audio('assets/sfx/splash.mp3');
+  const splashClip = gAudio('assets/sfx/splash.mp3');
   splashClip.volume = 0.6;
   // Coconut pickup SFX (assets/sfx/bag.m4a), played from game.js via TT_SOUND.coconut.
-  const coconutClip = new Audio('assets/sfx/bag.m4a');
+  const coconutClip = gAudio('assets/sfx/bag.m4a');
   coconutClip.volume = 0.6;
   // Coin pickup SFX (assets/sfx/coin.mp3), played from game.js via TT_SOUND.coin.
-  const coinClip = new Audio('assets/sfx/coin.mp3');
+  const coinClip = gAudio('assets/sfx/coin.mp3');
   coinClip.volume = 0.6;
   // Bite SFX (assets/sfx/bite.mp3), played from progression.js via TT_SOUND.bite when eating from the HUD.
-  const biteClip = new Audio('assets/sfx/bite.mp3');
+  const biteClip = gAudio('assets/sfx/bite.mp3');
   biteClip.volume = 0.2;
   // Shell pickup SFX (assets/sfx/shell.mp3), played from game.js via TT_SOUND.shell.
-  const shellClip = new Audio('assets/sfx/shell.mp3');
+  const shellClip = gAudio('assets/sfx/shell.mp3');
   shellClip.volume = 0.6;
   // Walking loop (assets/sfx/walking.mp3), driven from game.js via TT_SOUND.walking(active) while moving on ground.
-  const walkClip = new Audio('assets/sfx/walking.mp3');
+  const walkClip = gAudio('assets/sfx/walking.mp3');
   walkClip.loop = true;
   walkClip.volume = 0.6;
   // Swimming loop (assets/sfx/water-walking.mp3), same driver as the walking loop but while in water.
-  const swimClip = new Audio('assets/sfx/water-walking.mp3');
+  const swimClip = gAudio('assets/sfx/water-walking.mp3');
   swimClip.loop = true;
   swimClip.volume = 0.1;
   swimClip.playbackRate = 0.7;
   // Sandcastle knock-down SFX (assets/sfx/sand.mp3), played from game.js via TT_SOUND.sand.
-  const sandClip = new Audio('assets/sfx/sand.mp3');
+  const sandClip = gAudio('assets/sfx/sand.mp3');
   sandClip.volume = 0.6;
   // UI click SFX (assets/sfx/click.mp3): menu canvas buttons call Sound.click directly; every DOM <button>
   // (HUD buttons, shop/upgrade panels, name prompt) is covered by one delegated listener below.
-  const clickClip = new Audio('assets/sfx/click.mp3');
+  const clickClip = gAudio('assets/sfx/click.mp3');
   clickClip.volume = 0.6;
   // Purchase SFX (assets/sfx/purchase.mp3), played from progression.js when an upgrade or closet item is bought.
-  const purchaseClip = new Audio('assets/sfx/purchase.mp3');
+  const purchaseClip = gAudio('assets/sfx/purchase.mp3');
   purchaseClip.volume = 0.6;
   // Bank SFX (assets/sfx/coindrop.mp3 + bookdrop.mp3), played together from progression.js bankCarried() on returning home.
   // Decoded WebAudio buffers + one shared start time so the two clips are sample-aligned (separate
   // <audio> elements drift by load/decode latency). Falls back to <audio> if the context isn't ready.
   const bankBuffers = [];
   let bankBuffersRequested = false;
-  const bankFallback = ['coindrop', 'bookdrop'].map(n => { const a = new Audio(`assets/sfx/${n}.mp3`); a.volume = 0.2; return a; });
+  const bankFallback = ['coindrop', 'bookdrop'].map(n => { const a = gAudio(`assets/sfx/${n}.mp3`); a.volume = 0.2; return a; });
   function leadSilence(buf) {
     const d = buf.getChannelData(0), thresh = 0.01;
     for (let i = 0; i < d.length; i++) if (Math.abs(d[i]) > thresh) return Math.max(0, i / buf.sampleRate - 0.005);
@@ -158,12 +187,12 @@
     } else { clip.currentTime = 0; clip.play().catch(() => {}); }
   }
   // Stomp SFX (assets/sfx/stomp.mp3): the file holds several stomps; only the first (~0.6s) is used.
-  const stompClip = new Audio('assets/sfx/stomp.mp3');
+  const stompClip = gAudio('assets/sfx/stomp.mp3');
   stompClip.volume = 0.6;
   // Beach ambience loop (assets/sfx/beach.mp3): plays on the main menu + save-slot screens only, fades out
   // when the game starts. Browsers block autoplay, so a refused play() retries on the first input.
   const BEACH_VOL = 0.4;
-  const beachClip = new Audio('assets/sfx/beach.mp3');
+  const beachClip = gAudio('assets/sfx/beach.mp3');
   beachClip.loop = true;
   beachClip.volume = BEACH_VOL;
   let beachFade = null;
@@ -188,7 +217,7 @@
   // Has its own on/off (the top-right music button in progression.js) on top of the master sound toggle.
   const MUSIC_VOL = 0.08;
   const musicClips = [1, 2, 3].map(n => {
-    const a = new Audio(`assets/sfx/music${n}.mp3`);
+    const a = gAudio(`assets/sfx/music${n}.mp3`);
     a.volume = MUSIC_VOL;
     a.addEventListener('ended', () => { musicIdx = (musicIdx + 1) % musicClips.length; syncMusic(); });
     return a;
@@ -202,13 +231,13 @@
     else if (!cur.paused) cur.pause();
   }
   // Heart-loss SFX (assets/sfx/umph.mp3), played from progression.js takeHit() (damage and hunger both go through it).
-  const umphClip = new Audio('assets/sfx/umph.mp3');
+  const umphClip = gAudio('assets/sfx/umph.mp3');
   umphClip.volume = 0.6;
   // Game-over SFX (assets/sfx/gameover.mp3), played from game.js via TT_SOUND.gameover when the last heart is lost.
-  const gameoverClip = new Audio('assets/sfx/gameover.mp3');
+  const gameoverClip = gAudio('assets/sfx/gameover.mp3');
   gameoverClip.volume = 0.6;
   // Hull-full SFX (assets/sfx/full.mp3), played from progression.js tryPickup via TT_SOUND.full.
-  const fullClip = new Audio('assets/sfx/full.mp3');
+  const fullClip = gAudio('assets/sfx/full.mp3');
   fullClip.volume = 0.6;
   const Sound = {
     crack: () => {
