@@ -108,7 +108,7 @@
     const e = {
       type, cfg: type ? CONFIG.types[type] : null, active: false, respawnAt, debug: false,
       x: 0, y: 0, sx: 0, sy: 0, biome: '', state: WANDER, t: 0, anim: 0, row: 0, frame: 0,
-      tx: 0, ty: 0, hasTarget: false, pause: 0, flip: 1, angle: 0, cd: 0, giveUp: 0,
+      tx: 0, ty: 0, hasTarget: false, pause: 0, flip: 1, angle: 0, cd: 0, giveUp: 0, steer: 0, steerT: 0,
       lose: 0, stuck: 0, unreach: 0, hiddenFor: 0, emergeToChase: false, hitDone: false,
       proxy: null,
     };
@@ -132,7 +132,7 @@
     e.type = type; e.cfg = CONFIG.types[type]; e.active = true;
     e.x = e.sx = x; e.y = e.sy = y; e.biome = biome;
     e.state = WANDER; e.t = 0; e.anim = 0; e.hasTarget = false; e.pause = rnd(0.5, 2);
-    e.cd = 0; e.giveUp = 0; e.lose = 0; e.stuck = 0; e.unreach = 0; e.flip = Math.random() < 0.5 ? 1 : -1;
+    e.cd = 0; e.steer = 0; e.steerT = 0; e.giveUp = 0; e.lose = 0; e.stuck = 0; e.unreach = 0; e.flip = Math.random() < 0.5 ? 1 : -1;
   }
 
   function trySpawn(e) {
@@ -174,12 +174,42 @@
     if (mx !== 0 && open(e, e.x + mx, e.y, fly)) { e.x += mx; return; }
     if (my !== 0 && open(e, e.x, e.y + my, fly)) { e.y += my; }
   }
+  // Obstacle avoidance for walkers: look a little ahead along the heading; if that's blocked, try
+  // headings rotated further and further to one side (the side it last steered around, so it doesn't
+  // flip-flop at a corner) and then the other. Cheap: a handful of open() checks, no allocation.
+  // A big concave pocket can still trap it; the caller's stuck timer then makes it give up.
+  const STEER_COS = [1, Math.cos(0.5), Math.cos(1.0), Math.cos(1.5), Math.cos(2.0), Math.cos(2.5)];
+  const STEER_SIN = [0, Math.sin(0.5), Math.sin(1.0), Math.sin(1.5), Math.sin(2.0), Math.sin(2.5)];
+  function clearAhead(e, hx, hy, step, look) {
+    return open(e, e.x + hx * step, e.y + hy * step) && open(e, e.x + hx * look, e.y + hy * look);
+  }
+  // Returns the fraction (0..1) of the intended step actually travelled.
+  function steerMove(e, ux, uy, step) {
+    const look = e.cfg.bodyRadius * 1.2 + step;
+    let hx = ux, hy = uy, found = clearAhead(e, ux, uy, step, look);
+    if (!found) {
+      const first = e.steer || (Math.random() < 0.5 ? 1 : -1);
+      for (let i = 1; i < STEER_COS.length && !found; i++) {
+        for (let k = 0; k < 2 && !found; k++) {
+          const sg = k === 0 ? first : -first, c = STEER_COS[i], sn = STEER_SIN[i] * sg;
+          hx = ux * c - uy * sn; hy = ux * sn + uy * c;
+          if (clearAhead(e, hx, hy, step, look)) { found = true; e.steer = sg; e.steerT = 0.8; }
+        }
+      }
+    }
+    if (!found) { const ox = e.x, oy = e.y; tryMove(e, ux * step, uy * step); return step > 0 ? Math.hypot(e.x - ox, e.y - oy) / step : 1; }
+    e.x += hx * step; e.y += hy * step;
+    if (e.cfg.flipsSideways) { if (Math.abs(hx) > 0.2) e.flip = hx > 0 ? 1 : -1; }
+    else e.angle = Math.atan2(hy, hx);
+    return 1;
+  }
   // Steps toward (tx, ty); returns the fraction (0..1) of the intended step that made progress along
   // the heading, so callers can tell "blocked / sliding along a wall" from "moving freely".
   function stepToward(e, tx, ty, speed, dt, fly) {
     const dx = tx - e.x, dy = ty - e.y, dist = Math.sqrt(dx * dx + dy * dy);
     if (dist < 1) return 1;
     const step = Math.min(speed * dt, dist), ux = dx / dist, uy = dy / dist;
+    if (!fly) return steerMove(e, ux, uy, step);
     const ox = e.x, oy = e.y;
     tryMove(e, ux * step, uy * step, fly);
     if (e.cfg.flipsSideways) { if (Math.abs(ux) > 0.2) e.flip = ux > 0 ? 1 : -1; }
@@ -233,6 +263,7 @@
     e.t += dt; e.anim += dt;
     if (e.giveUp > 0) e.giveUp -= dt;
     if (e.cd > 0) e.cd -= dt;
+    if (e.steerT > 0) e.steerT -= dt;
     const dx = T.x - e.x, dy = T.y - e.y, d2 = dx * dx + dy * dy;
     // Enemies ignore the turtle on the home island (safe zone), while it's dying, and right after giving up.
     const canSee = alive && !safe && e.giveUp <= 0;
@@ -451,5 +482,5 @@
     });
   }
 
-  window.Enemies = { init, update, resetAggro, collectVisible, drawDebug, CONFIG };
+  window.Enemies = { init, update, resetAggro, collectVisible, drawDebug, CONFIG, get pool() { return DEBUG ? pool : null; }, get api() { return DEBUG ? api : null; } }; // pool/api only exposed with ?debug=1, for console poking
 })();
