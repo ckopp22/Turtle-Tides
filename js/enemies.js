@@ -42,6 +42,7 @@
         damage: 1, windup: 0.36, attackTime: 0.72, cooldown: 1.2, // seconds; hit lands at `windup`
         bodyRadius: 18,      // world px, for obstacle collision
         flipsSideways: true,
+        swipe: { lunge: 12, arcDist: 38, arcRadius: 32, arcTime: 0.25 }, // pinch lunge (world px) + claw-swipe arc at the hit frame
         burrowChance: 0.5, burrowTime: 0.6, hiddenMin: 3, hiddenMax: 7, // seconds
         rows: { idle: 0, walk: 1, attack: 2, burrow: 3 },
         debugKey: '5',
@@ -111,7 +112,7 @@
     const e = {
       type, cfg: type ? CONFIG.types[type] : null, active: false, respawnAt, debug: false,
       x: 0, y: 0, sx: 0, sy: 0, biome: '', state: WANDER, t: 0, anim: 0, row: 0, frame: 0,
-      tx: 0, ty: 0, hasTarget: false, pause: 0, flip: 1, angle: 0, cd: 0, giveUp: 0, steer: 0, steerT: 0, dodge: 0, dodgeT: 0, flank: 0,
+      tx: 0, ty: 0, hasTarget: false, pause: 0, flip: 1, angle: 0, cd: 0, giveUp: 0, steer: 0, steerT: 0, dodge: 0, dodgeT: 0, flank: 0, atkAngle: 0,
       lose: 0, stuck: 0, unreach: 0, hiddenFor: 0, emergeToChase: false, hitDone: false,
       proxy: null,
     };
@@ -343,7 +344,7 @@
         if (chaseChecks(e, dt, d2, safe, alive)) return;
         if (d2 <= c.attack2) {
           face(e, dx, dy);
-          if (e.cd <= 0) { e.hitDone = false; setState(e, ATTACK); return; }
+          if (e.cd <= 0) { e.hitDone = false; e.atkAngle = Math.atan2(dy, dx); setState(e, ATTACK); return; }
           setAnim(e, c.flies ? R.fly : R.idle, 5, FRAMES); // in range but recovering from the last swing: hold still
           return;
         }
@@ -459,11 +460,28 @@
       g.beginPath(); g.ellipse(e.x, e.y + 20, 17, 7, 0, 0, Math.PI * 2); g.fill();
       g.globalAlpha = 1;
     }
-    g.translate(e.x, air ? e.y - 10 : e.y);
+    const sw = e.cfg.swipe, atk = sw && e.state === ATTACK;
+    let lx = 0, ly = 0;
+    if (atk) { // lunge toward the turtle around the hit frame
+      const u = Math.max(0, Math.min(1, (e.t - (e.cfg.windup - 0.12)) / 0.24));
+      lx = Math.cos(e.atkAngle) * Math.sin(u * Math.PI) * sw.lunge; ly = Math.sin(e.atkAngle) * Math.sin(u * Math.PI) * sw.lunge;
+    }
+    g.translate(e.x + lx, (air ? e.y - 10 : e.y) + ly);
     if (e.cfg.flipsSideways) { if (e.flip < 0) g.scale(-1, 1); }
     else g.rotate(Math.round((e.angle + Math.PI / 2) / (Math.PI / 4)) * (Math.PI / 4)); // art faces up; snap to 8 directions
     g.drawImage(img, e.frame * F, e.row * F, F, F, -D / 2, -D / 2, D, D);
     g.restore();
+    if (atk && e.t >= e.cfg.windup && e.t < e.cfg.windup + sw.arcTime) { // claw-swipe arc, fading out
+      const p = (e.t - e.cfg.windup) / sw.arcTime;
+      g.save();
+      g.translate(e.x + Math.cos(e.atkAngle) * sw.arcDist, e.y + Math.sin(e.atkAngle) * sw.arcDist);
+      g.globalAlpha = 1 - p * 0.7; g.lineCap = 'round';
+      const sweep = (p - 0.5) * 1.6; // the arc's centre sweeps across as it fades
+      g.beginPath(); g.arc(0, 0, sw.arcRadius, e.atkAngle + Math.PI + sweep - 0.6, e.atkAngle + Math.PI + sweep + 0.6);
+      g.strokeStyle = 'rgba(70,30,10,0.6)'; g.lineWidth = 10; g.stroke(); // dark underlay so the white reads on sand
+      g.strokeStyle = '#fff'; g.lineWidth = 5; g.stroke();
+      g.restore();
+    }
   }
 
   // Pushes each on-screen enemy's depth-sort proxy into game.js's visible list (reused buffer, no allocation).
