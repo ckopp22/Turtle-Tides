@@ -18,7 +18,7 @@
   };
 
   // ---- Hut upgrades. The island shop's "Home" track (progression.js TRACKS.home) sells them one at a
-  // time, in this order: Progression.state.homeLevel = how many are unlocked. Walking into the hut
+  // time, in this order (chest second, rug last): Progression.state.homeLevel = how many are unlocked. Walking into the hut
   // shows them (new ones pop in). `layer` is a full 192x192 transparent PNG drawn at (0,0) over the
   // room. `solids` = collision shapes in room coords (only once unlocked): { rect: [x0, y0, x1, y1] }
   // or { circle: [cx, cy, r] }. `unlocks` = feature ids the item enables (Home.hasFeature): the old
@@ -26,14 +26,14 @@
   // collectionBook and closet. `perk` is the short text the shop row shows. Costs climb gently; the
   // cheap early pieces make the first few buys quick wins.
   const UPGRADES = [
-    { id: 'bed',     name: 'Bed',            layer: '01_bed_192.png',              cost: 20,  unlocks: ['sleep'],                  perk: 'Sleep',                      solids: [{ rect: [16, 44, 80, 108] }] },
-    { id: 'rug',     name: 'Rug',            layer: '02_rug_192.png',              cost: 25,  unlocks: ['turtleShop'],             perk: 'Turtle Shop',                solids: [] },
-    { id: 'doormat', name: 'Doormat',        layer: '03_doormat_192.png',          cost: 30,  unlocks: ['moveSpeed1'],             perk: 'Move Speed I',               solids: [] },
-    { id: 'table',   name: 'Table & Stools', layer: '04_table_and_stools_192.png', cost: 45,  unlocks: ['swimSpeed1'],             perk: 'Swim Speed I',               solids: [{ circle: [152, 82, 18] }, { circle: [152, 112, 8] }, { circle: [128, 82, 8] }] },
-    { id: 'shelf',   name: 'Shelf',          layer: '05_shelf_192.png',            cost: 60,  unlocks: ['collectionBook'],         perk: 'Collection Book',            solids: [] },
-    { id: 'plant',   name: 'Plant',          layer: '06_plant_192.png',            cost: 75,  unlocks: ['moveSpeed2'],             perk: 'Move Speed II',              solids: [{ circle: [30, 158, 9] }] },
-    { id: 'lantern', name: 'Lantern',        layer: '07_lantern_192.png',          cost: 95,  unlocks: ['dayNight', 'swimSpeed2'], perk: 'Day/Night + Swim Speed II',  solids: [] },
-    { id: 'chest',   name: 'Chest',          layer: '08_chest_192.png',            cost: 120, unlocks: ['closet', 'hideInShell'],  perk: 'Closet + Hide in Shell',     solids: [{ rect: [137, 141, 177, 169] }] },
+    { id: 'bed',     name: 'Bed',            layer: '01_bed_192.png',              cost: 20, unlocks: ['sleep'],                  perk: 'Sleep',                      solids: [{ rect: [16, 44, 80, 108] }] },
+    { id: 'chest',   name: 'Chest',          layer: '08_chest_192.png',            cost: 25, unlocks: ['closet', 'hideInShell'],  perk: 'Closet + Hide in Shell',     solids: [{ rect: [137, 141, 177, 169] }] },
+    { id: 'doormat', name: 'Doormat',        layer: '03_doormat_192.png',          cost: 30, unlocks: ['moveSpeed1'],             perk: 'Move Speed I',               solids: [] },
+    { id: 'table',   name: 'Table & Stools', layer: '04_table_and_stools_192.png', cost: 45, unlocks: ['swimSpeed1'],             perk: 'Swim Speed I',               solids: [{ circle: [152, 82, 18] }, { circle: [152, 112, 8] }, { circle: [128, 82, 8] }] },
+    { id: 'shelf',   name: 'Shelf',          layer: '05_shelf_192.png',            cost: 60, unlocks: ['collectionBook'],         perk: 'Collection Book',            solids: [] },
+    { id: 'plant',   name: 'Plant',          layer: '06_plant_192.png',            cost: 75, unlocks: ['moveSpeed2'],             perk: 'Move Speed II',              solids: [{ circle: [30, 158, 9] }] },
+    { id: 'lantern', name: 'Lantern',        layer: '07_lantern_192.png',          cost: 95, unlocks: ['dayNight', 'swimSpeed2'], perk: 'Day/Night + Swim Speed II',  solids: [] },
+    { id: 'rug',     name: 'Rug',            layer: '02_rug_192.png',              cost: 120, unlocks: ['turtleShop'],             perk: 'Turtle Shop',                solids: [] },
   ];
   const DRAW_FIRST = 'rug'; // layered under every other item
   const POP = { startDelay: 0.5, stagger: 0.45, duration: 0.45, overshoot: 1.7 }; // newly unlocked items pop in on entering
