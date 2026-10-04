@@ -1703,7 +1703,7 @@
 
   function resize() {
     dpr = window.devicePixelRatio || 1;
-    if (window.innerWidth <= 768) dpr = Math.min(dpr, 1.5); // phones: 3x backing store made every full-screen blend ~9x costlier
+    if (window.innerWidth <= 768 || Math.min(screen.width, screen.height) <= 768) dpr = Math.min(dpr, 1.5); // screen check: Chrome iOS can report a wide innerWidth // phones: 3x backing store made every full-screen blend ~9x costlier
     viewW = window.innerWidth;
     viewH = window.innerHeight;
     updateZoomForViewport();
