@@ -104,6 +104,7 @@
     turtle, center: CENTER, bodyRadius: TURTLE_BODY_RADIUS,
     maxSpeed: MAX_SPEED * LAND_SPEED_MULT, accel: ACCEL, decel: DECEL,
     onEnter: () => { if (window.Enemies) window.Enemies.resetAggro(); }, // chasers give up when the turtle goes inside
+    onEnterInterior: () => window.Progression.setHomeButtonVisible(false), // hide the island's shop buttons indoors (they reappear on the first outdoor frame)
   });
   function spawnTurtle() {
     const p = Home.exitPoint(); // just below the hut's porch
@@ -972,6 +973,7 @@
           // First bump knocks it down: swap to the rubble pile, stop colliding, and give the turtle
           // a little kickback + screen shake so the impact reads before it walks on through.
           s.knocked = true;
+          window.Progression.addStat('castles');
           s.knockedAt = gameTime;
           s.collide = false;
           const nx = dist0 > 0.001 ? dx0 / dist0 : 0, ny = dist0 > 0.001 ? dy0 / dist0 : -1;
@@ -1585,6 +1587,7 @@
   }
   // ---- Update ----
   function update(dt) {
+    window.Progression.addPlayTime(dt);
     // Inside the hut (or mid door-fade) the outside world is paused: no enemies, pickups, timers.
     if (Home.tick(dt, Home.isInterior() ? getDirection() : NO_DIR)) {
       if (Home.isInterior()) updateInteriorAnim(dt);
@@ -2051,6 +2054,7 @@
     if (!grassReady) { started = false; requestAnimationFrame(() => start(slotId, saveData)); return; } // wait for grass textures so nothing draws untextured
     if (!shore) { started = false; requestAnimationFrame(() => start(slotId, saveData)); return; } // wait for Shore.js's sand/water tiles too
     window.Progression.attachSlot(slotId, saveData);
+    Home.syncFromSave();
     spawnTurtle();
     last = performance.now();
     requestAnimationFrame(frame);

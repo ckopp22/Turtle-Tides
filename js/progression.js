@@ -257,6 +257,9 @@
       owned: ['color_default'],
       equipped: { color: 'color_default', hat: null, clothes: null, accessory: null },
     },
+    homeItems: [], // hut upgrade ids bought so far (see home.js UPGRADES)
+    // Lifetime counters for the future collection book's stats page; saved with the slot.
+    stats: { coconuts: 0, coins: 0, castles: 0, deaths: 0, playSeconds: 0 },
     invulnTimer: 0,
     hullFullFlash: 0,
     lastLostMessage: null, // { text, timer } shown briefly after a death
@@ -283,8 +286,22 @@
       return false;
     }
     state.carried[type]++;
+    if (type === 'coins' || type === 'coconuts') state.stats[type]++;
     return true;
   }
+  // ---- Hut upgrades + stats (home.js owns the item list/costs; this just holds saved state) ----
+  function spendCoins(n) {
+    if (state.banked.coins < n) return false;
+    state.banked.coins -= n;
+    persist();
+    return true;
+  }
+  function unlockHomeItem(id) {
+    if (!state.homeItems.includes(id)) state.homeItems.push(id);
+    persist();
+  }
+  function addStat(key, n = 1) { if (key in state.stats) state.stats[key] += n; }
+  function addPlayTime(dt) { state.stats.playSeconds += dt; }
   function bankCarried() {
     if (carriedTotal() === 0) return false;
     state.banked.coins += state.carried.coins;
@@ -365,6 +382,7 @@
     state.invulnTimer = CONFIG.invulnSeconds;
     if (window.TT_SOUND) window.TT_SOUND.umph();
     if (state.hearts <= 0) {
+      state.stats.deaths++;
       if (deathHandler) { dying = true; deathHandler(); } else respawnAtHome();
       return true;
     }
@@ -518,6 +536,11 @@
         accessory: (eq.accessory && owned.includes(eq.accessory)) ? eq.accessory : null,
       },
     };
+    // Hut items/stats: absent on old saves (no homeVersion) -> nothing unlocked, zeroed counters.
+    state.homeItems = Array.isArray(data.homeItems) ? data.homeItems.filter(id => typeof id === 'string') : [];
+    const st = data.stats || {};
+    state.stats = {};
+    for (const k of ['coconuts', 'coins', 'castles', 'deaths', 'playSeconds']) state.stats[k] = Number.isFinite(st[k]) && st[k] > 0 ? st[k] : 0;
     // Never restore carried items from a save — see loseUnbankedOnClose above.
     state.carried = { coins: 0, coconuts: 0, shells: 0 };
     state.hearts = maxHearts();
@@ -542,6 +565,9 @@
       isNight: state.isNight,
       cosmetics: { owned: state.cosmetics.owned.slice(), equipped: { ...state.cosmetics.equipped } },
       turtleMaster: state.turtleMaster,
+      homeVersion: 1, // bump if the hut save shape changes; loadFromSave tolerates it missing
+      homeItems: state.homeItems.slice(),
+      stats: { ...state.stats },
     };
   }
   function attachSlot(slotId, existingData) {
@@ -1050,7 +1076,7 @@
   window.Progression = {
     tryPickup, bankCarried, takeHit, getStarveDim: () => starveDim, isInvulnerable, setRespawnHandler, setDeathHandler, respawnAtHome,
     update, updateSleep, getSleepConfig, swimSpeedMultiplier, moveSpeedMultiplier, toggleDayNight, drawHUD, setHomeButtonVisible, tryEatFromHud,
-    buyUpgrade, canUpgrade,
+    buyUpgrade, canUpgrade, spendCoins, unlockHomeItem, addStat, addPlayTime,
     attachSlot, getSaveData, persist,
     SKILLS, hasSkill, skillAtLevel, getHomeLevels,
     SHOP_CATEGORIES, ownsCosmetic, equippedIn, getEquippedColorTint, drawEquippedCosmetics,

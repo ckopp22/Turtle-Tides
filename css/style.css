@@ -340,3 +340,33 @@ html, body {
 }
 
 button { touch-action: manipulation; }
+
+/* Hut (home.js): "Upgrade home" button inside the hut + its panel's item preview. */
+#tt-home-upgrade-btn {
+  display: none;
+  position: fixed;
+  right: 16px;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  z-index: 9;
+  min-height: 48px;
+  padding: 0 18px;
+  border-radius: 12px;
+  border: 2px solid #7a5a1e;
+  background: #ffb347;
+  color: #3a2a10;
+  font: 700 16px system-ui, sans-serif;
+  cursor: pointer;
+}
+.tt-home-preview {
+  display: block;
+  width: 160px;
+  height: 160px;
+  margin: 0 auto 10px;
+  background: #fdf6e3;
+  border: 2px solid #cbb87c;
+  border-radius: 10px;
+  image-rendering: pixelated;
+}
+.tt-home-info { text-align: center; margin-bottom: 12px; }
+.tt-home-info strong { font-size: 17px; color: #3a2a10; }
+.tt-home-buy { display: block; width: 100%; min-height: 48px; margin-bottom: 12px; }
