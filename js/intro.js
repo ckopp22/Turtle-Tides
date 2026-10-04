@@ -269,12 +269,13 @@
       playPickup('shell.mp3', shellClip);
     },
     walking: (active, rate) => {
-      if (rate) walkClip.playbackRate = rate;
+      if (rate && walkClip.playbackRate !== rate) walkClip.playbackRate = rate; // only on change: setting it every frame is costly on iOS Chrome
       if (active && soundOn) { if (walkClip.paused) walkClip.play().catch(() => {}); }
       else if (!walkClip.paused) walkClip.pause();
     },
     swimming: (active, floating) => {
-      swimClip.playbackRate = floating ? 0.5 : 1; // slower while just floating
+      const sr = floating ? 0.5 : 1; // slower while just floating
+      if (swimClip.playbackRate !== sr) swimClip.playbackRate = sr;
       if (active && soundOn) { if (swimClip.paused) swimClip.play().catch(() => {}); }
       else if (!swimClip.paused) swimClip.pause();
     },
