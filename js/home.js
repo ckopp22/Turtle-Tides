@@ -14,7 +14,7 @@
     exitDropPx: 65,        // world px below the hut's wall base where the turtle reappears
     // Hut position in world px relative to the island center; the anchor is the middle of the wall's
     // bottom edge (art 96,178). Kept well inland: the island is ~260px radius.
-    hutOffset: { x: 0, y: 55 },
+    hutOffset: { x: 0, y: 35 },
     // Outdoor campfire (upgrades 9 and 10): center in world px relative to the island center, drawn
     // size, collision radius, and the lit animation's speed (frames/sec; the sheet has 6 frames).
     campfire: { x: -135, y: 120, size: 72, radius: 18, fps: 8 },
