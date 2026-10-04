@@ -39,7 +39,7 @@
   // cheap early pieces make the first few buys quick wins.
   const INDOOR = [
     { id: 'bed',     name: 'Bed',            layer: '01_bed_192.png',              cost: 20, unlocks: ['sleep'],                  perk: 'Sleep',                      solids: [{ rect: [16, 44, 80, 108] }], hotspot: { rect: [16, 44, 80, 108], action: 'sleep' } },
-    { id: 'chest',   name: 'Chest',          layer: '08_chest_192.png',            cost: 25, unlocks: ['closet', 'turtleShop'],   perk: 'Closet + Turtle Shop',        solids: [{ rect: [137, 141, 177, 169] }] },
+    { id: 'chest',   name: 'Chest',          layer: '08_chest_192.png',            cost: 25, unlocks: ['closet', 'turtleShop'],   perk: 'Closet + Turtle Shop',        solids: [{ rect: [137, 141, 177, 169] }], hotspot: { rect: [137, 141, 177, 169], action: 'closet' } },
     { id: 'doormat', name: 'Doormat',        layer: '03_doormat_192.png',          cost: 30, unlocks: ['moveSpeed1'],             perk: 'Move Speed I',               solids: [] },
     { id: 'table',   name: 'Table & Stools', layer: '04_table_and_stools_192.png', cost: 45, unlocks: ['swimSpeed1'],             perk: 'Swim Speed I',               solids: [{ circle: [152, 82, 18] }, { circle: [152, 112, 8] }, { circle: [128, 82, 8] }] },
     { id: 'shelf',   name: 'Shelf',          layer: '05_shelf_192.png',            cost: 60, unlocks: ['collectionBook'],         perk: 'Collection Book',            solids: [] },
@@ -203,7 +203,7 @@
 
 
   // ---- Clickable furniture + sleeping ----
-  const ACTIONS = { sleep: startSleep }; // TODO: steps 4-5 add 'closet' (chest) and 'book' (shelf)
+  const ACTIONS = { sleep: startSleep, closet: openCloset }; // TODO: step 5 adds 'book' (shelf)
   const sleep = { phase: 0, t: 0, dim: 0, msg: '', full: false }; // phase: 0 none, 1 fading to dark, 2 asleep, 3 waking
   const hint = { text: '', timer: 0 };
   let lastSleepAt = -1;
@@ -248,7 +248,7 @@
     return null;
   }
   function tapAt(cx, cy) {
-    if (scene !== 'interior' || phase !== 0 || sleep.phase) return;
+    if (scene !== 'interior' || phase !== 0 || sleep.phase || modal) return;
     const u = hitSpot((cx - L.x0) / L.s, (cy - L.y0) / L.s);
     if (!u) return;
     const r = u.hotspot.rect, dx = room.x - clamp(room.x, r[0], r[2]), dy = room.y - clamp(room.y, r[1], r[3]);
@@ -363,6 +363,7 @@
     if (hint.timer > 0) hint.timer -= dt;
     if (sleep.phase) { tickSleep(dt); return true; } // asleep: frozen, input ignored
     updatePops(dt);
+    if (modal) { room.vx = room.vy = room.speed = 0; return true; } // a screen is open: the room is paused
     // Interior movement (art px): same feel as outside, scaled by the turtle's size in the room.
     const k = CONFIG.roomTurtleScale, hasInput = dir.x !== 0 || dir.y !== 0;
     const tvx = dir.x * maxSpeed * k, tvy = dir.y * maxSpeed * k, rate = (hasInput ? accel : decel) * k * dt;
@@ -424,7 +425,7 @@
     ctx.drawImage(roomCanvas, lay.x0, lay.y0, ART * lay.s, ART * lay.s);
     drawPops(ctx, lay);
     ctx.imageSmoothingEnabled = true;
-    if (!sleep.phase) drawFurnitureCues(ctx, lay, t);
+    if (!sleep.phase && !modal) drawFurnitureCues(ctx, lay, t);
   }
   // A bobbing "Tap" prompt over a tappable piece while the turtle is within nearbyPx of it, and a pointer
   // cursor while the mouse is over one.
@@ -474,6 +475,66 @@
     ctx.fillStyle = `rgba(0,0,0,${alpha})`;
     ctx.fillRect(0, 0, w, h);
   }
+
+  // ---- Closet (chest): pick an outfit. A DOM overlay built when it opens and redrawn only when an item
+  // is tapped. It reuses progression.js's outfit state (state.cosmetics): one equipped item per slot
+  // (color / hat / clothes / accessory), so equipping into an occupied slot replaces what's there, and
+  // the equipped outfit is what the turtle wears everywhere. Items are bought at the Turtle Shop; the
+  // closet shows owned ones and dark silhouettes for the rest. Opening it pauses the room; Close, the
+  // backdrop, Escape and the browser Back button all close it. ----
+  const CLOSET_SLOTS = [['color', 'Shell color'], ['hat', 'Hats'], ['clothes', 'Clothes'], ['accessory', 'Accessories']];
+  let modal = false, closet = null, closetPushed = false;
+  function closetTile(item) {
+    const P = window.Progression, owned = P.ownsCosmetic(item.id), on = P.equippedIn(item.category) === item.id;
+    let art;
+    if (item.icon) art = `<img src="${item.icon}" alt="">`;
+    else { // shell colors have no icon: a swatch of the tint (natural green for the default)
+      const tint = P.getEquippedColorTint({ color: item.id });
+      art = `<span class="tt-closet-swatch" style="background:${tint || '#4f9a4a'}"></span>`;
+    }
+    return `<button type="button" class="tt-closet-item${owned ? '' : ' locked'}${on ? ' on' : ''}" data-id="${item.id}" ${owned ? '' : 'disabled'} aria-pressed="${on}">
+      <span class="tt-closet-art">${art}</span><span class="tt-closet-name">${owned ? item.label : '???'}</span></button>`;
+  }
+  function renderCloset() {
+    if (!closet) return;
+    const items = window.Progression.getShopItems();
+    closet.querySelector('.tt-closet-grid').innerHTML = CLOSET_SLOTS.map(([cat, label]) =>
+      `<h4>${label}</h4><div class="tt-closet-row">${items.filter(i => i.category === cat).map(closetTile).join('')}</div>`).join('');
+    if (window.TurtleGame && window.TurtleGame.renderCosmeticPreview) window.TurtleGame.renderCosmeticPreview(closet.querySelector('.tt-closet-preview'));
+  }
+  function openCloset() {
+    closeCloset();
+    modal = true;
+    const wrap = document.createElement('div');
+    wrap.className = 'tt-name-prompt';
+    wrap.innerHTML = `<div class="tt-name-box tt-upgrade-box tt-closet-box">
+      <div class="tt-closet-head"><h3>Closet</h3><button type="button" class="tt-closet-x" aria-label="Close">&#x2715;</button></div>
+      <canvas class="tt-closet-preview" width="140" height="140"></canvas>
+      <div class="tt-closet-grid"></div>
+      <div class="tt-name-actions"><button type="button" class="tt-cancel tt-closet-close">Close</button></div>
+    </div>`;
+    document.body.appendChild(wrap);
+    closet = wrap;
+    wrap.addEventListener('click', e => {
+      if (e.target === wrap || e.target.closest('.tt-closet-x, .tt-closet-close')) { closeCloset(); return; }
+      const tile = e.target.closest('.tt-closet-item');
+      if (!tile || tile.disabled) return;
+      const P = window.Progression, item = P.getShopItems().find(i => i.id === tile.dataset.id);
+      if (P.equippedIn(item.category) === item.id) P.unequipCategory(item.category); // tap again = take off (colors can't be removed)
+      else P.equipCosmetic(item.id);
+      renderCloset();
+    });
+    renderCloset();
+    try { history.pushState({ ttCloset: 1 }, ''); closetPushed = true; } catch { closetPushed = false; } // so Back closes it
+  }
+  function closeCloset(fromPop) {
+    if (!closet) return;
+    closet.remove(); closet = null; modal = false;
+    if (closetPushed && !fromPop) { closetPushed = false; try { history.back(); } catch {} }
+    closetPushed = false;
+  }
+  window.addEventListener('popstate', () => closeCloset(true));
+  window.addEventListener('keydown', e => { if (e.key === 'Escape' && closet) closeCloset(); });
 
   window.Home = {
     syncFromSave: syncUnlocked, hasFeature, hutBuilt, UPGRADES,

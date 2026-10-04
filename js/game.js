@@ -1694,6 +1694,7 @@
       tintScratch.width = dw; tintScratch.height = spriteH;
       paintShellTint(0, 0, fw, fh, dw, spriteH, tint);
       pctx.drawImage(tintScratch, -dw / 2, -spriteH / 2);
+      tintKeyTint = ''; // the in-world turtle shares tintScratch: force it to repaint its own frame next draw
     }
     window.Progression.drawEquippedCosmetics(pctx, dw, spriteH);
     pctx.restore();

@@ -1048,7 +1048,7 @@
     buyUpgrade, canUpgrade, addStat, addPlayTime,
     attachSlot, getSaveData, persist,
     hasSkill,
-    SHOP_CATEGORIES, ownsCosmetic, equippedIn, getEquippedColorTint, drawEquippedCosmetics,
+    SHOP_CATEGORIES, getShopItems: () => CONFIG.shop.items, equipCosmetic, unequipCategory, ownsCosmetic, equippedIn, getEquippedColorTint, drawEquippedCosmetics,
     state, // read-only-by-convention access (e.g. debug/future HUD tweaks)
   };
 })();
