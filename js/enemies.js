@@ -115,7 +115,7 @@
       type, cfg: type ? CONFIG.types[type] : null, active: false, respawnAt, debug: false,
       x: 0, y: 0, sx: 0, sy: 0, biome: '', state: WANDER, t: 0, anim: 0, row: 0, frame: 0,
       tx: 0, ty: 0, hasTarget: false, pause: 0, flip: 1, angle: 0, cd: 0, giveUp: 0, steer: 0, steerT: 0, dodge: 0, dodgeT: 0, flank: 0, atkAngle: 0, acc: 0,
-      lose: 0, stuck: 0, unreach: 0, hiddenFor: 0, emergeToChase: false, hitDone: false,
+      lose: 0, stuck: 0, unreach: 0, path: null, pi: 0, pathLen: 0, replans: 0, hiddenFor: 0, emergeToChase: false, hitDone: false,
       proxy: null,
     };
     // Depth-sort entry: game.js's scenery sort wants {x, y (ground contact), type:'custom', draw}.
@@ -223,7 +223,89 @@
     return step > 0 ? ((e.x - ox) * ux + (e.y - oy) * uy) / step : 1;
   }
 
-  function setState(e, s) { e.state = s; e.t = 0; e.anim = 0; }
+  // ---- Return pathing (land enemies): grid A* from the enemy to its spawn, treating water, the home island,
+  // obstacles and the world edge as blocked. Runs once when RETURN starts (and again if it gets stuck), so a
+  // chaser that ended up behind a tree cluster / lake / the home island walks around instead of grinding on it.
+  // Cells are lazily tested (only expanded ones), the grid is capped (~80 cells a side), and a failed search
+  // just falls back to the old straight-line steering.
+  const NB = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, 1.414], [1, -1, 1.414], [-1, 1, 1.414], [-1, -1, 1.414]];
+  function lineClear(e, x0, y0, x1, y1) {
+    const d = Math.hypot(x1 - x0, y1 - y0), n = Math.ceil(d / 12);
+    for (let i = 1; i <= n; i++) { const u = i / n; if (!open(e, x0 + (x1 - x0) * u, y0 + (y1 - y0) * u)) return false; }
+    return true;
+  }
+  function planReturn(e) {
+    e.path = []; e.pi = 0; e.pathLen = 0;
+    const sx = e.sx, sy = e.sy;
+    if (lineClear(e, e.x, e.y, sx, sy)) return; // straight shot: no waypoints needed
+    const M = 700; // search margin around the two points: must clear the home island (radius ~560) so it can detour around it
+    const cs = Math.max(32, Math.ceil((Math.max(Math.abs(sx - e.x), Math.abs(sy - e.y)) + 2 * M) / 80));
+    const ox = Math.min(e.x, sx) - M, oy = Math.min(e.y, sy) - M;
+    const w = Math.ceil((Math.abs(sx - e.x) + 2 * M) / cs) + 1, h = Math.ceil((Math.abs(sy - e.y) + 2 * M) / cs) + 1;
+    const cell = (x, y) => Math.max(0, Math.min(h - 1, Math.floor((y - oy) / cs))) * w + Math.max(0, Math.min(w - 1, Math.floor((x - ox) / cs)));
+    const N = w * h, start = cell(e.x, e.y), goal = cell(sx, sy);
+    const g = new Float32Array(N).fill(Infinity), par = new Int32Array(N).fill(-1), blk = new Uint8Array(N), done = new Uint8Array(N);
+    const isOpen = k => { // 0 unknown, 1 open, 2 blocked
+      if (blk[k] === 0) blk[k] = (k === start || k === goal || open(e, ox + ((k % w) + 0.5) * cs, oy + (Math.floor(k / w) + 0.5) * cs)) ? 1 : 2;
+      return blk[k] === 1;
+    };
+    const gx = goal % w, gy = (goal - gx) / w;
+    const hf = k => { const dx = Math.abs(k % w - gx), dy = Math.abs(Math.floor(k / w) - gy); return Math.max(dx, dy) + 0.414 * Math.min(dx, dy); };
+    const hk = [], hv = []; // binary min-heap of (f, cell); stale entries skipped via `done`
+    const push = (f, k) => {
+      let i = hk.length; hk.push(f); hv.push(k);
+      while (i > 0) { const p = (i - 1) >> 1; if (hk[p] <= f) break; hk[i] = hk[p]; hv[i] = hv[p]; i = p; }
+      hk[i] = f; hv[i] = k;
+    };
+    const pop = () => {
+      const k = hv[0], lf = hk.pop(), lv = hv.pop(), n = hk.length;
+      if (n > 0) {
+        let i = 0;
+        for (;;) {
+          let c = 2 * i + 1; if (c >= n) break;
+          if (c + 1 < n && hk[c + 1] < hk[c]) c++;
+          if (hk[c] >= lf) break;
+          hk[i] = hk[c]; hv[i] = hv[c]; i = c;
+        }
+        hk[i] = lf; hv[i] = lv;
+      }
+      return k;
+    };
+    g[start] = 0; push(hf(start), start);
+    let found = false;
+    while (hk.length) {
+      const k = pop();
+      if (done[k]) continue;
+      done[k] = 1;
+      if (k === goal) { found = true; break; }
+      const ci = k % w, cj = (k - ci) / w;
+      for (const [di, dj, cost] of NB) {
+        const ni = ci + di, nj = cj + dj;
+        if (ni < 0 || nj < 0 || ni >= w || nj >= h) continue;
+        const nk = nj * w + ni;
+        if (done[nk] || !isOpen(nk)) continue;
+        if (di !== 0 && dj !== 0 && (!isOpen(cj * w + ni) || !isOpen(nj * w + ci))) continue; // no corner cutting
+        const ng = g[k] + cost;
+        if (ng < g[nk]) { g[nk] = ng; par[nk] = k; push(ng + hf(nk), nk); }
+      }
+    }
+    if (!found) return; // no route: fall back to plain steering
+    const pts = [];
+    for (let k = goal; k !== -1 && k !== start; k = par[k]) pts.push(ox + ((k % w) + 0.5) * cs, oy + (Math.floor(k / w) + 0.5) * cs);
+    // pts is goal -> start as flat x,y pairs; reverse into start -> goal, dropping collinear points and ending on the exact spawn.
+    const path = [];
+    let dx0 = 0, dy0 = 0, px = e.x, py = e.y;
+    for (let i = pts.length - 2; i >= 0; i -= 2) {
+      const x = pts[i], y = pts[i + 1], dx = Math.sign(x - px), dy = Math.sign(y - py);
+      if (i > 0 && dx === dx0 && dy === dy0 && path.length) path[path.length - 2] = x, path[path.length - 1] = y;
+      else path.push(x, y);
+      dx0 = dx; dy0 = dy; px = x; py = y;
+    }
+    path.push(sx, sy);
+    e.path = path; e.pathLen = g[goal] * cs;
+  }
+
+  function setState(e, s) { e.state = s; e.t = 0; e.anim = 0; if (s === RETURN) { e.path = null; e.replans = 0; } }
 
   function pickWanderTarget(e) {
     const c = e.cfg;
@@ -280,11 +362,22 @@
       case WANDER: case RETURN: {
         if (canSee && d2 < c.detect2) { startChase(e); return; }
         if (e.state === RETURN) {
-          const progress = stepToward(e, e.sx, e.sy, wanderSpeed, dt, c.flies);
+          // Land enemies follow an A* path around obstacles / water / the home island (see planReturn).
+          let tx = e.sx, ty = e.sy;
+          if (!c.flies) {
+            if (!e.path) planReturn(e);
+            if (e.pi < e.path.length) {
+              tx = e.path[e.pi]; ty = e.path[e.pi + 1];
+              if (e.pi < e.path.length - 2 && (tx - e.x) ** 2 + (ty - e.y) ** 2 < 20 * 20) { e.pi += 2; tx = e.path[e.pi]; ty = e.path[e.pi + 1]; }
+            }
+          }
+          const progress = stepToward(e, tx, ty, wanderSpeed, dt, c.flies);
           e.stuck = progress < 0.3 ? e.stuck + dt : 0;
+          if (!c.flies && e.stuck > 0.7 && e.replans < 3) { e.replans++; e.stuck = 0; e.path = null; } // re-plan from here
           const rx = e.sx - e.x, ry = e.sy - e.y;
           setAnim(e, c.flies ? R.fly : R.walk, CONFIG.animFps, FRAMES);
-          if (rx * rx + ry * ry < 16 * 16 || e.stuck > 1.5 || e.t > 20) {
+          const timeout = e.pathLen ? e.pathLen / wanderSpeed * 2 + 5 : 20;
+          if (rx * rx + ry * ry < 16 * 16 || e.stuck > 1.5 || e.t > timeout) {
             if (c.burrowTime) setState(e, BURROW); else { setState(e, WANDER); e.pause = rnd(CONFIG.pauseMin, CONFIG.pauseMax); }
           }
           return;
