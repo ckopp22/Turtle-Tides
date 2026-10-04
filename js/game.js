@@ -137,14 +137,12 @@
   const DEBUG_STATES = { 1: 'normal', 2: 'stunned', 3: 'sleeping', 4: 'shell' };
   const joy = { active: false, id: null, ox: 0, oy: 0, x: 0, y: 0 };
 
-  // Any input wakes the (debug-key) sleeping state. TODO: step 3 replaces sleeping with the hut bed.
-  let sleepIdleTimer = 0;
+  // Any input wakes the (debug-key) sleeping state. Real sleeping is the hut bed (home.js).
   let hideIdleTimer = 0, shellFromToggle = false; // Hide in Shell: idle time so far / whether the current 'shell' state came from the toggle
   function wakeUp() {
     if (state !== 'sleeping') return;
     state = 'normal';
     stateTime = 0;
-    sleepIdleTimer = 0;
   }
 
   // Walk vs swim animation, picked from isWater() each frame rather than a key. Debounced so
@@ -1371,7 +1369,10 @@
   const NO_DIR = { x: 0, y: 0 };
   // Walk cycle + footsteps while inside the hut, driven by the room speed converted back to world px/s.
   function updateInteriorAnim(dt) {
-    state = 'normal'; moveMode = 'walk'; floating = false;
+    // The hut's sleep sequence borrows the 'sleeping' sprite row; otherwise the turtle is up and walking.
+    state = Home.isAsleep() ? 'sleeping' : 'normal'; moveMode = 'walk'; floating = false;
+    if (state === 'sleeping') stateTime += dt;
+    else stateTime = 0;
     const speed = Home.room.speed / Home.TURTLE_SCALE;
     if (speed > 5) walkFrame += speed * dt * FRAMES_PER_SPEED; else walkFrame = 0;
     if (window.TT_SOUND) {
@@ -1433,8 +1434,6 @@
     } else if (state !== 'shell') {
       hideIdleTimer = 0;
     }
-    // TODO: step 3 — sleeping now happens by tapping the hut's bed (home.js); this only runs the debug-key sleep state.
-    if (state === 'sleeping') window.Progression.updateSleep(dt);
 
     // Move velocity toward target by at most `rate` (smooth accel/decel, any angle).
     const dvx = tvx - turtle.vx, dvy = tvy - turtle.vy;
@@ -1721,19 +1720,22 @@
   const skip = {};
   for (const k of (new URLSearchParams(location.search).get('skip') || '').split(',')) if (k) skip[k] = true;
   // Hut interior: fixed screen-space scene, no camera. Room art is drawn from home.js's cached canvas.
-  function renderInterior() {
+  function renderInterior(t) {
     ctx.fillStyle = '#1b120a';
     ctx.fillRect(0, 0, viewW, viewH);
     const lay = Home.layout(viewW, viewH), R = Home.room;
-    Home.drawRoom(ctx, lay);
-    drawTurtle(lay.x0 + R.x * lay.s, lay.y0 + R.y * lay.s, R.angle, lay.s * lay.tk);
+    Home.drawRoom(ctx, lay, t);
+    Home.drawSleepDim(ctx, viewW, viewH);
+    if (Home.isAsleep()) { const b = Home.bedSpot; drawTurtle(lay.x0 + b.x * lay.s, lay.y0 + b.y * lay.s, -Math.PI / 2, lay.s * lay.tk * Home.SLEEP_SCALE); }
+    else drawTurtle(lay.x0 + R.x * lay.s, lay.y0 + R.y * lay.s, R.angle, lay.s * lay.tk);
+    Home.drawMessages(ctx, lay);
     drawJoystick();
     if (!skip.hud) window.Progression.drawHUD(ctx);
     Home.drawFade(ctx, viewW, viewH);
   }
   function render(t) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // 1 ctx unit = 1 CSS px; backing store already has the dpr scale-up
-    if (Home.isInterior()) { renderInterior(); return; }
+    if (Home.isInterior()) { renderInterior(t); return; }
     ctx.fillStyle = '#0b3d4f';
     ctx.fillRect(0, 0, viewW, viewH);
 

@@ -18,6 +18,15 @@
     // Outdoor campfire (upgrades 9 and 10): center in world px relative to the island center, drawn
     // size, collision radius, and the lit animation's speed (frames/sec; the sheet has 6 frames).
     campfire: { x: -135, y: 120, size: 72, radius: 18, fps: 8 },
+    // Clickable furniture (tap/click). hitPad = art px added around each hit area for fingers.
+    // requireNearby: if true the turtle must be within nearbyPx (art px) of the item first, else a
+    // "Come closer" hint shows. A press only counts as a tap if it moves < tapMaxMovePx and ends
+    // within tapMaxMs, so dragging the joystick never triggers furniture.
+    hitPad: 5, requireNearby: false, nearbyPx: 36, tapMaxMovePx: 12, tapMaxMs: 600, hintSeconds: 1.6,
+    // Bed -> sleep. Fade to dark, show the turtle asleep on the bed for asleepSeconds, fade back in.
+    // Restores all hearts and saves. Limits are off by default: cooldownSeconds (0 = none; skipped at
+    // full health) and onlyAtNight (uses the Day/Night toggle).
+    sleep: { fadeSeconds: 0.5, revealSeconds: 0.4, asleepSeconds: 2.5, dim: 0.8, scale: 1.3, cooldownSeconds: 0, onlyAtNight: false },
   };
 
   // ---- Hut upgrades. The island shop's "Home" track (progression.js TRACKS.home) sells them one at a
@@ -29,7 +38,7 @@
   // collectionBook and closet. `perk` is the short text the shop row shows. Costs climb gently; the
   // cheap early pieces make the first few buys quick wins.
   const INDOOR = [
-    { id: 'bed',     name: 'Bed',            layer: '01_bed_192.png',              cost: 20, unlocks: ['sleep'],                  perk: 'Sleep',                      solids: [{ rect: [16, 44, 80, 108] }] },
+    { id: 'bed',     name: 'Bed',            layer: '01_bed_192.png',              cost: 20, unlocks: ['sleep'],                  perk: 'Sleep',                      solids: [{ rect: [16, 44, 80, 108] }], hotspot: { rect: [16, 44, 80, 108], label: 'Sleep', action: 'sleep' } },
     { id: 'chest',   name: 'Chest',          layer: '08_chest_192.png',            cost: 25, unlocks: ['closet', 'turtleShop'],   perk: 'Closet + Turtle Shop',        solids: [{ rect: [137, 141, 177, 169] }] },
     { id: 'doormat', name: 'Doormat',        layer: '03_doormat_192.png',          cost: 30, unlocks: ['moveSpeed1'],             perk: 'Move Speed I',               solids: [] },
     { id: 'table',   name: 'Table & Stools', layer: '04_table_and_stools_192.png', cost: 45, unlocks: ['swimSpeed1'],             perk: 'Swim Speed I',               solids: [{ circle: [152, 82, 18] }, { circle: [152, 112, 8] }, { circle: [128, 82, 8] }] },
@@ -60,6 +69,8 @@
   const ROOM_EXIT_Y = 184;   // turtle center past this (inside the gap) leaves the hut
   const ROOM_MAX_Y = 196;
   const ROOM_SPAWN = { x: 96, y: 160 };
+  const BED_SPOT = { x: 48, y: 76 }; // where the turtle lies while sleeping (bed center)
+  const WAKE_SPOT = { x: 96, y: 76 }; // where it stands up again, just right of the bed
 
   function load(src) { const i = new Image(); i.onload = rebuildRoom; i.src = src; return i; }
   const hutImg = load('assets/home/hut_exterior_192.png');
@@ -187,6 +198,78 @@
   }
 
 
+  // ---- Clickable furniture + sleeping ----
+  const ACTIONS = { sleep: startSleep }; // TODO: steps 4-5 add 'closet' (chest) and 'book' (shelf)
+  const sleep = { phase: 0, t: 0, dim: 0, msg: '', full: false }; // phase: 0 none, 1 fading to dark, 2 asleep, 3 waking
+  const hint = { text: '', timer: 0 };
+  let lastSleepAt = -1;
+  function showHint(text) { hint.text = text; hint.timer = CONFIG.hintSeconds; }
+  function startSleep() {
+    const P = window.Progression, c = CONFIG.sleep;
+    if (c.onlyAtNight && !P.state.isNight) { showHint('You can only sleep at night'); return; }
+    const full = P.state.hearts >= P.maxHearts(), now = P.state.stats.playSeconds;
+    if (!full && c.cooldownSeconds > 0 && lastSleepAt >= 0 && now - lastSleepAt < c.cooldownSeconds) {
+      showHint(`Not sleepy yet (${Math.ceil(c.cooldownSeconds - (now - lastSleepAt))}s)`); return;
+    }
+    sleep.phase = 1; sleep.t = 0; sleep.full = full;
+    room.vx = room.vy = room.speed = 0;
+  }
+  function tickSleep(dt) {
+    const c = CONFIG.sleep;
+    sleep.t += dt;
+    if (sleep.phase === 1) {
+      sleep.dim = Math.min(1, sleep.t / c.fadeSeconds);
+      if (sleep.t >= c.fadeSeconds) { // fully dark: tuck in, heal, save
+        sleep.phase = 2; sleep.t = 0;
+        window.Progression.restoreHearts();
+        lastSleepAt = window.Progression.state.stats.playSeconds;
+        sleep.msg = sleep.full ? 'Fully rested' : 'Hearts restored!';
+      }
+    } else if (sleep.phase === 2) {
+      sleep.dim = 1 - (1 - c.dim) * Math.min(1, sleep.t / c.revealSeconds);
+      if (sleep.t >= c.asleepSeconds) { sleep.phase = 3; sleep.t = 0; room.x = WAKE_SPOT.x; room.y = WAKE_SPOT.y; room.angle = 0; }
+    } else {
+      sleep.dim = c.dim * (1 - Math.min(1, sleep.t / c.fadeSeconds));
+      if (sleep.t >= c.fadeSeconds) { sleep.phase = 0; sleep.dim = 0; }
+    }
+  }
+  // Furniture with a hotspot that is unlocked and has an action wired up.
+  function spotActive(i) { const u = INDOOR[i]; return !!u.hotspot && !!ACTIONS[u.hotspot.action] && i < level(); }
+  function hitSpot(rx, ry) {
+    const pad = CONFIG.hitPad;
+    for (let i = 0; i < INDOOR.length; i++) {
+      if (!spotActive(i)) continue;
+      const r = INDOOR[i].hotspot.rect;
+      if (rx >= r[0] - pad && rx <= r[2] + pad && ry >= r[1] - pad && ry <= r[3] + pad) return INDOOR[i];
+    }
+    return null;
+  }
+  function tapAt(cx, cy) {
+    if (scene !== 'interior' || phase !== 0 || sleep.phase) return;
+    const u = hitSpot((cx - L.x0) / L.s, (cy - L.y0) / L.s);
+    if (!u) return;
+    if (CONFIG.requireNearby) {
+      const r = u.hotspot.rect, dx = room.x - clamp(room.x, r[0], r[2]), dy = room.y - clamp(room.y, r[1], r[3]);
+      if (Math.hypot(dx, dy) > CONFIG.nearbyPx) { showHint('Come closer'); return; }
+    }
+    ACTIONS[u.hotspot.action](u);
+  }
+  // Pointer events (mouse + touch + pen). A tap = short press with little movement.
+  const tap = { id: -1, x: 0, y: 0, t: 0 }, mouse = { x: -1, y: -1, over: false };
+  function bindPointer() {
+    const canvas = document.getElementById('game');
+    canvas.addEventListener('pointerdown', e => { tap.id = e.pointerId; tap.x = e.clientX; tap.y = e.clientY; tap.t = e.timeStamp; });
+    canvas.addEventListener('pointerup', e => {
+      if (e.pointerId !== tap.id) return;
+      tap.id = -1;
+      if (Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > CONFIG.tapMaxMovePx || e.timeStamp - tap.t > CONFIG.tapMaxMs) return;
+      tapAt(e.clientX, e.clientY);
+    });
+    canvas.addEventListener('pointermove', e => { if (e.pointerType === 'mouse') { mouse.x = e.clientX; mouse.y = e.clientY; mouse.over = true; } });
+    canvas.addEventListener('pointerleave', () => { mouse.over = false; });
+    canvas.addEventListener('pointercancel', () => { tap.id = -1; });
+  }
+
   // ---- State ----
   let onEnterInterior = null;
   let turtle = null, hutX = 0, hutY = 0, bodyR = 22, maxSpeed = 0, accel = 0, decel = 0, onEnter = null;
@@ -209,6 +292,7 @@
     for (const b of HUT_SOLIDS) solids.push([wx(b[0]), wy(b[1]), wx(b[2]), wy(b[3])]);
     trigger[0] = wx(DOOR_TRIGGER[0]); trigger[1] = wy(DOOR_TRIGGER[1]);
     trigger[2] = wx(DOOR_TRIGGER[2]); trigger[3] = wy(DOOR_TRIGGER[3]);
+    bindPointer();
     fireX = o.center.x + CONFIG.campfire.x; fireY = o.center.y + CONFIG.campfire.y;
   }
 
@@ -275,6 +359,8 @@
     }
     if (scene !== 'interior') return false;
 
+    if (hint.timer > 0) hint.timer -= dt;
+    if (sleep.phase) { tickSleep(dt); return true; } // asleep: frozen, input ignored
     updatePops(dt);
     // Interior movement (art px): same feel as outside, scaled by the turtle's size in the room.
     const k = CONFIG.roomTurtleScale, hasInput = dir.x !== 0 || dir.y !== 0;
@@ -332,11 +418,56 @@
     L.x0 = Math.floor((w - ART * L.s) / 2); L.y0 = Math.floor((h - ART * L.s) / 2);
     return L;
   }
-  function drawRoom(ctx, lay) {
+  function drawRoom(ctx, lay, t) {
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(roomCanvas, lay.x0, lay.y0, ART * lay.s, ART * lay.s);
     drawPops(ctx, lay);
     ctx.imageSmoothingEnabled = true;
+    if (!sleep.phase) drawFurnitureCues(ctx, lay, t);
+  }
+  // Pulsing outline + small label on every tappable piece; brighter while the mouse is over it.
+  let cursorOn = false;
+  function drawFurnitureCues(ctx, lay, t) {
+    const s = lay.s, pad = CONFIG.hitPad, mx = (mouse.x - lay.x0) / s, my = (mouse.y - lay.y0) / s;
+    let hovering = false;
+    ctx.save();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.font = `700 ${Math.max(11, Math.round(4.5 * s))}px system-ui, sans-serif`;
+    ctx.lineJoin = 'round';
+    for (let i = 0; i < INDOOR.length; i++) {
+      if (!spotActive(i)) continue;
+      const h = INDOOR[i].hotspot, r = h.rect;
+      const hov = mouse.over && mx >= r[0] - pad && mx <= r[2] + pad && my >= r[1] - pad && my <= r[3] + pad;
+      if (hov) hovering = true;
+      const x = lay.x0 + (r[0] - pad) * s, y = lay.y0 + (r[1] - pad) * s, w = (r[2] - r[0] + pad * 2) * s, hh = (r[3] - r[1] + pad * 2) * s;
+      const pulse = 0.5 + 0.5 * Math.sin(t * 3);
+      ctx.fillStyle = `rgba(255,255,255,${hov ? 0.18 : 0.04 + 0.05 * pulse})`;
+      ctx.fillRect(x, y, w, hh);
+      ctx.strokeStyle = `rgba(255,255,255,${hov ? 0.9 : 0.25 + 0.3 * pulse})`;
+      ctx.lineWidth = Math.max(2, s);
+      ctx.strokeRect(x, y, w, hh);
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(40,24,8,0.85)'; ctx.fillStyle = '#fff';
+      ctx.strokeText(h.label, x + w / 2, y + hh * 0.5 + 6); ctx.fillText(h.label, x + w / 2, y + hh * 0.5 + 6);
+    }
+    ctx.restore();
+    if (hovering !== cursorOn) { cursorOn = hovering; document.getElementById('game').style.cursor = hovering ? 'pointer' : ''; }
+  }
+  function drawSleepDim(ctx, w, h) {
+    if (sleep.dim <= 0) return;
+    ctx.fillStyle = `rgba(0,0,0,${sleep.dim})`;
+    ctx.fillRect(0, 0, w, h);
+  }
+  // Sleep result text ("Hearts restored!" / "Fully rested") and the "Come closer"/limit hints.
+  function drawMessages(ctx, lay) {
+    const text = sleep.phase >= 2 ? sleep.msg : hint.timer > 0 ? hint.text : '';
+    if (!text) return;
+    ctx.save();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `700 ${Math.max(15, Math.round(7 * lay.s))}px system-ui, sans-serif`;
+    ctx.lineJoin = 'round'; ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(40,24,8,0.9)'; ctx.fillStyle = '#fff';
+    const x = lay.x0 + ART * lay.s / 2, y = lay.y0 + (sleep.phase >= 2 ? 132 : 24) * lay.s;
+    ctx.strokeText(text, x, y); ctx.fillText(text, x, y);
+    ctx.restore();
   }
   function drawFade(ctx, w, h) {
     if (alpha <= 0) return;
@@ -346,8 +477,9 @@
 
   window.Home = {
     syncFromSave: syncUnlocked, hasFeature, UPGRADES,
-    init, tick, collideWorld, checkDoor, layout, drawRoom, drawFade, drawGround, hutEntry, room,
-    TURTLE_SCALE: CONFIG.roomTurtleScale,
+    init, tick, collideWorld, checkDoor, layout, drawRoom, drawFade, drawGround, drawSleepDim, drawMessages, hutEntry, room,
+    TURTLE_SCALE: CONFIG.roomTurtleScale, SLEEP_SCALE: CONFIG.sleep.scale, bedSpot: BED_SPOT,
+    isAsleep: () => sleep.phase === 2,
     isInterior: () => scene === 'interior',
     // Safe zone flag for enemies/other systems: true whenever the player is inside the hut.
     insideHut: () => scene === 'interior',

@@ -64,13 +64,6 @@
       swimSpeedTiers: [1.2, 1.4],  // [Swim Speed I, Swim Speed II]
       moveSpeedTiers: [1.2, 1.4],  // [Move Speed I, Move Speed II]
     },
-    sleep: {
-      idleSecondsToTrigger: 1.5, // stand still near the bed this long before the turtle lies down
-      triggerRadius: 55,         // world px from the bed decor that counts as "near" it
-      heartsPerSecond: 0.12,     // fractional heart recovery/sec while asleep (accumulates, see state.heartRecoverAccum)
-      // No hunger recovery — sleeping only heals hearts, hunger still just sits flat (no drain,
-      // same as anywhere else on the home island).
-    },
     hideInShell: {
       idleSeconds: 0.5, // standing still this long (toggle on) pulls the turtle into its shell
     },
@@ -207,7 +200,6 @@
     shellCollection: [], // banked shell trophies; TODO: shell variety/color once that system exists
     hungerZeroTimer: 0,  // seconds spent at 0 hunger (grace + repeat heart-loss ticking)
     hungerHeartTicks: 0,
-    heartRecoverAccum: 0, // fractional heart progress while sleeping (see updateSleep)
     hideOn: false,  // Hide in Shell toggle (hut upgrade perk): shell up whenever the turtle stops moving
     isNight: false, // Day/Night toggle (L7 skill) — game.js eases its sky render toward this target
     cosmetics: {
@@ -378,19 +370,11 @@
     return speedMult;
   }
 
-  // Called by game.js every frame while state === 'sleeping'. Recovers hearts only (fractionally);
-  // hunger is untouched — it already doesn't drain on the home island (see update() above), and
-  // sleep doesn't add active hunger regen on top of that.
-  function updateSleep(dt) {
-    if (state.hearts < maxHearts()) {
-      state.heartRecoverAccum += CONFIG.sleep.heartsPerSecond * dt;
-      while (state.heartRecoverAccum >= 1 && state.hearts < maxHearts()) {
-        state.hearts++;
-        state.heartRecoverAccum -= 1;
-      }
-    }
+  // Sleeping in the hut bed (home.js): restores every heart and saves. Hunger is untouched.
+  function restoreHearts() {
+    state.hearts = maxHearts();
+    persist();
   }
-  function getSleepConfig() { return CONFIG.sleep; }
 
   // ---- Day/Night toggle (L7 skill) — game.js owns the actual fade/render, this just holds and
   // persists the player's last chosen setting per save slot. ----
@@ -510,7 +494,6 @@
     state.invulnTimer = 0;
     state.hullFullFlash = 0;
     state.lastLostMessage = null;
-    state.heartRecoverAccum = 0;
     // Old saves have no `turtleMaster` field — fall back to re-deriving it from upgrade levels
     // (loadFromSave above already set heartsLevel/hullLevel/homeLevel) so it isn't lost.
     state.turtleMaster = typeof data.turtleMaster === 'boolean' ? data.turtleMaster : allUpgradesMaxed();
@@ -1059,7 +1042,7 @@
 
   window.Progression = {
     tryPickup, bankCarried, takeHit, getStarveDim: () => starveDim, isInvulnerable, setRespawnHandler, setDeathHandler, respawnAtHome,
-    update, updateSleep, getSleepConfig, getHideConfig, swimSpeedMultiplier, moveSpeedMultiplier, toggleDayNight, drawHUD, setHomeButtonVisible, tryEatFromHud,
+    update, restoreHearts, maxHearts, getHideConfig, swimSpeedMultiplier, moveSpeedMultiplier, toggleDayNight, drawHUD, setHomeButtonVisible, tryEatFromHud,
     buyUpgrade, canUpgrade, addStat, addPlayTime,
     attachSlot, getSaveData, persist,
     hasSkill,
