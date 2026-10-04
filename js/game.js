@@ -98,9 +98,17 @@
   // not here at script-parse time, so a slow/first load can never leave the turtle at 0,0.
   const turtle = { x: 0, y: 0, vx: 0, vy: 0, angle: 0 };
   let spawned = false;
+  // The player's hut (home.js): solid walls + door trigger on the island, and the interior scene.
+  // Interior movement reuses the world's speed/accel numbers, scaled down inside home.js.
+  Home.init({
+    turtle, center: CENTER, bodyRadius: TURTLE_BODY_RADIUS,
+    maxSpeed: MAX_SPEED * LAND_SPEED_MULT, accel: ACCEL, decel: DECEL,
+    onEnter: () => { if (window.Enemies) window.Enemies.resetAggro(); }, // chasers give up when the turtle goes inside
+  });
   function spawnTurtle() {
-    turtle.x = HOME.x;
-    turtle.y = HOME.y - 90;
+    const p = Home.exitPoint(); // just below the hut's porch
+    turtle.x = p.x;
+    turtle.y = p.y;
     turtle.vx = 0; turtle.vy = 0;
     spawned = true;
     if (window.Enemies) window.Enemies.resetAggro(); // chasers give up when the turtle is back home
@@ -1306,7 +1314,11 @@
   // Rebuilt only when homeLevel changes (cheap array build, cached the rest of the time).
   let homeDecorList = [];
   let homeDecorAtLevel = -1;
+  // The hut (home.js) replaces this old homeLevel decor + auto-sleep. Left in place but switched off
+  // until the hut upgrades take over progression. TODO: delete once steps 2-3 land.
+  const LEGACY_HOME_DECOR = false;
   function rebuildHomeDecorIfNeeded() {
+    if (!LEGACY_HOME_DECOR) return;
     const lvl = window.Progression.state.homeLevel;
     if (lvl === homeDecorAtLevel) return;
     homeDecorAtLevel = lvl;
@@ -1561,8 +1573,24 @@
   }
 
   const NO_DIR = { x: 0, y: 0 };
+  // Walk cycle + footsteps while inside the hut, driven by the room speed converted back to world px/s.
+  function updateInteriorAnim(dt) {
+    state = 'normal'; moveMode = 'walk'; floating = false;
+    const speed = Home.room.speed / Home.TURTLE_SCALE;
+    if (speed > 5) walkFrame += speed * dt * FRAMES_PER_SPEED; else walkFrame = 0;
+    if (window.TT_SOUND) {
+      window.TT_SOUND.walking(speed > 5, Math.min(4, Math.max(1, WALK_SOUND_BASE_RATE * speed / (MAX_SPEED * LAND_SPEED_MULT))));
+      window.TT_SOUND.swimming(false, true);
+    }
+  }
   // ---- Update ----
   function update(dt) {
+    // Inside the hut (or mid door-fade) the outside world is paused: no enemies, pickups, timers.
+    if (Home.tick(dt, Home.isInterior() ? getDirection() : NO_DIR)) {
+      if (Home.isInterior()) updateInteriorAnim(dt);
+      else if (window.TT_SOUND) { window.TT_SOUND.walking(false, 1); window.TT_SOUND.swimming(false, true); }
+      return;
+    }
     stateTime += dt;
     gameTime += dt;
     if (deathTimer >= 0) {
@@ -1597,7 +1625,7 @@
     // (wakeUp() above handles the reverse — any input). Heals hearts only, not hunger. Safe by
     // construction since it only ever triggers on the home island, same as the hunger drain/bird
     // exemption there.
-    if (state === 'normal' && atHome && window.Progression.hasSkill('sleep')) {
+    if (LEGACY_HOME_DECOR && state === 'normal' && atHome && window.Progression.hasSkill('sleep')) {
       const sleepCfg = window.Progression.getSleepConfig();
       const bed = DECOR_LAYOUT.bed;
       const bedX = HOME.x + bed.dx, bedY = HOME.y + bed.dy;
@@ -1669,6 +1697,7 @@
     turtle.x += turtle.vx * dt;
     turtle.y += turtle.vy * dt;
     resolveObstacleCollisions();
+    Home.collideWorld(turtle, TURTLE_BODY_RADIUS);
 
     const r = TURTLE_RADIUS;
     if (turtle.x < r) { turtle.x = r; turtle.vx = 0; }
@@ -1689,6 +1718,7 @@
       turtle.angle += diff * Math.min(1, 10 * dt);
     }
 
+    Home.checkDoor();
     if (window.Enemies) window.Enemies.update(dt);
   }
 
@@ -1794,7 +1824,8 @@
   const FLOAT_BOB_SPEED = 2.2;   // radians/sec
   const FLOAT_BOB_AMPLITUDE = 4; // world px of vertical drift
 
-  function drawTurtle() {
+  // px/py/ang/sc default to the world turtle; the hut interior passes screen-space values and a scale.
+  function drawTurtle(px = turtle.x, py = turtle.y, ang = turtle.angle, sc = 1) {
     if (!sprite.complete || !sprite.naturalWidth) return;
     const fw = sprite.naturalWidth / SHEET_COLS, fh = sprite.naturalHeight / SHEET_ROWS;
     const dw = SPRITE_H * fw / fh;
@@ -1805,8 +1836,9 @@
     else if (moveMode === 'swim') { row = 1; } // swim cycle; idle float is frame 0, same as walk's idle
     const bobY = floating ? Math.sin(floatClock * FLOAT_BOB_SPEED) * FLOAT_BOB_AMPLITUDE : 0;
     ctx.save();
-    ctx.translate(turtle.x, turtle.y + bobY);
-    ctx.rotate(turtle.angle + Math.PI / 2); // art faces up, angle 0 = right
+    ctx.translate(px, py + bobY * sc);
+    ctx.rotate(ang + Math.PI / 2); // art faces up, angle 0 = right
+    if (sc !== 1) ctx.scale(sc, sc);
     if (window.Progression.isInvulnerable() && Math.floor(gameTime * 12) % 2 === 0) ctx.globalAlpha = 0.3; // blink after a hit (restored below)
     if (state === 'normal' && moveMode === 'walk' && f === 3) ctx.scale(-1, 1); // mirror the last walk frame so the head swings left (sheet only has right)
     ctx.imageSmoothingQuality = 'high';
@@ -1896,8 +1928,20 @@
   // Debug bisecting on a phone: ?debug=1&skip=terrain,grass,shore turns those layers off (also: scenery, ripples, pickups, enemies, hud, night).
   const skip = {};
   for (const k of (new URLSearchParams(location.search).get('skip') || '').split(',')) if (k) skip[k] = true;
+  // Hut interior: fixed screen-space scene, no camera. Room art is drawn from home.js's cached canvas.
+  function renderInterior() {
+    ctx.fillStyle = '#1b120a';
+    ctx.fillRect(0, 0, viewW, viewH);
+    const lay = Home.layout(viewW, viewH), R = Home.room;
+    Home.drawRoom(ctx, lay);
+    drawTurtle(lay.x0 + R.x * lay.s, lay.y0 + R.y * lay.s, R.angle, lay.s * lay.tk);
+    drawJoystick();
+    if (!skip.hud) window.Progression.drawHUD(ctx);
+    Home.drawFade(ctx, viewW, viewH);
+  }
   function render(t) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // 1 ctx unit = 1 CSS px; backing store already has the dpr scale-up
+    if (Home.isInterior()) { renderInterior(); return; }
     ctx.fillStyle = '#0b3d4f';
     ctx.fillRect(0, 0, viewW, viewH);
 
@@ -1922,6 +1966,7 @@
     visibleBuf.length = 0; // reused buffer: no per-frame array allocations
     if (!skip.scenery) for (const s of scenery) if (inView(s, vw, vh, margin)) visibleBuf.push(s);
     for (const s of homeDecorList) if (inView(s, vw, vh, margin)) visibleBuf.push(s);
+    if (inView(Home.hutEntry, vw, vh, 220)) visibleBuf.push(Home.hutEntry); // big sprite: wider cull margin
     if (window.Enemies && !skip.enemies) window.Enemies.collectVisible(visibleBuf, ctx, camX, camY, vw, vh, margin);
     const visible = visibleBuf;
     if (perf) perf.visible = visible.length;
@@ -1942,6 +1987,7 @@
       ctx.fillStyle = `rgba(0,0,0,${dimA})`;
       ctx.fillRect(0, 0, viewW, viewH);
     }
+    Home.drawFade(ctx, viewW, viewH); // door fade (entering the hut)
   }
 
   // ---- Perf overlay: only exists with ?debug=1 in the URL; zero cost otherwise.
