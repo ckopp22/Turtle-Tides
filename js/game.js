@@ -1817,6 +1817,22 @@
     ctx.restore();                                                      // space as the sprite draw above so it stays attached in every state
   }
 
+  // Recolors the shell with the 'color' blend (tint's hue/saturation, sprite's own lightness) so the
+  // shell's shading and highlights survive instead of being flattened by a translucent fill; the
+  // destination-in pass clips the blend back to the shell mask (blend would otherwise fill outside it).
+  function paintShellTint(sx, sy, sw, sh, dw, dh, tint) {
+    const c = tintScratchCtx;
+    c.clearRect(0, 0, dw, dh);
+    c.globalCompositeOperation = 'source-over';
+    c.drawImage(shellMaskSheet, sx, sy, sw, sh, 0, 0, dw, dh);
+    c.globalCompositeOperation = 'color';
+    c.fillStyle = tint;
+    c.fillRect(0, 0, dw, dh);
+    c.globalCompositeOperation = 'destination-in';
+    c.drawImage(shellMaskSheet, sx, sy, sw, sh, 0, 0, dw, dh);
+    c.globalCompositeOperation = 'source-over';
+  }
+
   // Turtle Shop rendering: color tint composites onto just the shell's pixels (via shellMaskSheet),
   // then hat/clothes/accessory are drawn as extra shapes on top — both driven by progression.js's
   // owned item data (this is only the "how to draw it" half; see progression.js COSMETIC_DRAW/
@@ -1829,12 +1845,7 @@
       if (tint !== tintKeyTint || sx !== tintKeySx || sy !== tintKeySy || dw !== tintKeyDw || dh !== tintKeyDh) {
         tintKeyTint = tint; tintKeySx = sx; tintKeySy = sy; tintKeyDw = dw; tintKeyDh = dh;
         if (tintScratch.width !== dw || tintScratch.height !== dh) { tintScratch.width = dw; tintScratch.height = dh; }
-        tintScratchCtx.clearRect(0, 0, dw, dh);
-        tintScratchCtx.drawImage(shellMaskSheet, sx, sy, sw, sh, 0, 0, dw, dh);
-        tintScratchCtx.globalCompositeOperation = 'source-atop';
-        tintScratchCtx.fillStyle = tint;
-        tintScratchCtx.fillRect(0, 0, dw, dh);
-        tintScratchCtx.globalCompositeOperation = 'source-over';
+        paintShellTint(sx, sy, sw, sh, dw, dh, tint);
       }
       ctx.drawImage(tintScratch, -dw / 2, -dh / 2);
     }
@@ -1858,12 +1869,7 @@
     const tint = window.Progression.getEquippedColorTint();
     if (tint && shellMaskSheet) {
       tintScratch.width = dw; tintScratch.height = spriteH;
-      tintScratchCtx.clearRect(0, 0, dw, spriteH);
-      tintScratchCtx.drawImage(shellMaskSheet, 0, 0, fw, fh, 0, 0, dw, spriteH);
-      tintScratchCtx.globalCompositeOperation = 'source-atop';
-      tintScratchCtx.fillStyle = tint;
-      tintScratchCtx.fillRect(0, 0, dw, spriteH);
-      tintScratchCtx.globalCompositeOperation = 'source-over';
+      paintShellTint(0, 0, fw, fh, dw, spriteH, tint);
       pctx.drawImage(tintScratch, -dw / 2, -spriteH / 2);
     }
     window.Progression.drawEquippedCosmetics(pctx, dw, spriteH);

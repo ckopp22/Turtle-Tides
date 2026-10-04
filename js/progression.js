@@ -167,9 +167,9 @@
   // draw and any mirror flip, so cosmetics automatically stay attached through every state/frame —
   // sleeping, shell, walking, swimming — without each one needing its own positioning logic).
   const COLOR_TINTS = {
-    color_coral: 'rgba(224, 102, 74, 0.7)',
-    color_indigo: 'rgba(90, 78, 203, 0.7)',
-    color_gold: 'rgba(232, 194, 63, 0.7)',
+    color_coral: '#ff5a3c',
+    color_indigo: '#5a3cff',
+    color_gold: '#ffc21a',
   };
   function getEquippedColorTint(overrideEquipped) {
     const id = (overrideEquipped || state.cosmetics.equipped).color;
