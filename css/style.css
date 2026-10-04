@@ -143,6 +143,7 @@ html, body {
   font-size: 20px;
   line-height: 1;
   cursor: pointer;
+  touch-action: manipulation; /* no double-tap-zoom wait on iOS */
 }
 /* Fixed left-to-right order regardless of unlock/insertion order: Upgrades (shop sign), then Turtle
    Shop (cosmetics), then Day/Night. */
@@ -337,3 +338,5 @@ html, body {
   max-height: 40vh;
   overflow-y: auto;
 }
+
+button { touch-action: manipulation; }
