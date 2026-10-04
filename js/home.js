@@ -22,7 +22,7 @@
     // The turtle must be within nearbyPx (art px) of an item to use it, else a "Come closer" hint
     // shows (the same distance shows the "Tap" prompt). A press only counts as a tap if it moves < tapMaxMovePx and ends
     // within tapMaxMs, so dragging the joystick never triggers furniture.
-    hitPad: 5, nearbyPx: 36, tapMaxMovePx: 12, tapMaxMs: 600, hintSeconds: 1.6,
+    hitPad: 5, nearbyPx: 20, tapMaxMovePx: 12, tapMaxMs: 600, hintSeconds: 1.6,
     // Bed -> sleep. Fade to dark, show the turtle asleep on the bed for asleepSeconds, fade back in.
     // Restores all hearts and saves. cooldownSeconds is off by default (0 = none; skipped at full health).
     sleep: { fadeSeconds: 0.5, revealSeconds: 0.4, asleepSeconds: 2.5, dim: 0.8, scale: 1.3, cooldownSeconds: 0 },
@@ -421,8 +421,8 @@
     ctx.imageSmoothingEnabled = true;
     if (!sleep.phase) drawFurnitureCues(ctx, lay, t);
   }
-  // Pulsing outline on every tappable piece (brighter under the mouse), plus a bobbing "Tap" prompt
-  // while the turtle is within nearbyPx of it.
+  // A bobbing "Tap" prompt over a tappable piece while the turtle is within nearbyPx of it, and a pointer
+  // cursor while the mouse is over one.
   let cursorOn = false;
   function drawFurnitureCues(ctx, lay, t) {
     const s = lay.s, pad = CONFIG.hitPad, mx = (mouse.x - lay.x0) / s, my = (mouse.y - lay.y0) / s;
@@ -437,12 +437,6 @@
       const hov = mouse.over && mx >= r[0] - pad && mx <= r[2] + pad && my >= r[1] - pad && my <= r[3] + pad;
       if (hov) hovering = true;
       const x = lay.x0 + (r[0] - pad) * s, y = lay.y0 + (r[1] - pad) * s, w = (r[2] - r[0] + pad * 2) * s, hh = (r[3] - r[1] + pad * 2) * s;
-      const pulse = 0.5 + 0.5 * Math.sin(t * 3);
-      ctx.fillStyle = `rgba(255,255,255,${hov ? 0.18 : 0.04 + 0.05 * pulse})`;
-      ctx.fillRect(x, y, w, hh);
-      ctx.strokeStyle = `rgba(255,255,255,${hov ? 0.9 : 0.25 + 0.3 * pulse})`;
-      ctx.lineWidth = Math.max(2, s);
-      ctx.strokeRect(x, y, w, hh);
       const ndx = room.x - clamp(room.x, r[0], r[2]), ndy = room.y - clamp(room.y, r[1], r[3]);
       if (ndx * ndx + ndy * ndy <= CONFIG.nearbyPx * CONFIG.nearbyPx) {
         const ty = y + hh / 2 + Math.sin(t * 5) * s;
