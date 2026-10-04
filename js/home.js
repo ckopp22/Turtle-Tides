@@ -17,22 +17,26 @@
     hutOffset: { x: 0, y: 55 },
   };
 
-  // ---- Hut upgrades, bought in this order (one at a time) with banked coins. `layer` is a full
-  // 192x192 transparent PNG drawn at (0,0) over the room. `solids` = collision shapes in room coords
-  // (only active once bought): { rect: [x0, y0, x1, y1] } or { circle: [cx, cy, r] }. `unlocks` names
-  // the feature this item enables (Home.hasFeature) for the sleep / book / closet steps.
-  // Costs climb gently; the cheap early pieces make the first few buys quick wins.
+  // ---- Hut upgrades. The island shop's "Home" track (progression.js TRACKS.home) sells them one at a
+  // time, in this order: Progression.state.homeLevel = how many are unlocked. Walking into the hut
+  // shows them (new ones pop in). `layer` is a full 192x192 transparent PNG drawn at (0,0) over the
+  // room. `solids` = collision shapes in room coords (only once unlocked): { rect: [x0, y0, x1, y1] }
+  // or { circle: [cx, cy, r] }. `unlocks` = feature ids the item enables (Home.hasFeature): the old
+  // home-level perks (sleep, turtleShop, moveSpeed1/2, swimSpeed1/2, dayNight, hideInShell) plus the
+  // collectionBook and closet. `perk` is the short text the shop row shows. Costs climb gently; the
+  // cheap early pieces make the first few buys quick wins.
   const UPGRADES = [
-    { id: 'bed',     name: 'Bed',            layer: '01_bed_192.png',            cost: 20,  unlocks: 'sleep',          blurb: 'Tap it to sleep and restore all your hearts.', solids: [{ rect: [16, 44, 80, 108] }] },
-    { id: 'rug',     name: 'Rug',            layer: '02_rug_192.png',            cost: 25,  unlocks: null,             blurb: 'A cozy woven rug for the middle of the room.', solids: [] },
-    { id: 'doormat', name: 'Doormat',        layer: '03_doormat_192.png',        cost: 30,  unlocks: null,             blurb: 'Wipe your flippers on the way in.', solids: [] },
-    { id: 'table',   name: 'Table & Stools', layer: '04_table_and_stools_192.png', cost: 45, unlocks: null,            blurb: 'A round table with two little stools.', solids: [{ circle: [152, 82, 18] }, { circle: [152, 112, 8] }, { circle: [128, 82, 8] }] },
-    { id: 'shelf',   name: 'Shelf',          layer: '05_shelf_192.png',          cost: 60,  unlocks: 'collectionBook', blurb: 'Tap it to open your collection book.', solids: [] },
-    { id: 'plant',   name: 'Plant',          layer: '06_plant_192.png',          cost: 75,  unlocks: null,             blurb: 'A little green friend for the corner.', solids: [{ circle: [30, 158, 9] }] },
-    { id: 'lantern', name: 'Lantern',        layer: '07_lantern_192.png',        cost: 95,  unlocks: null,             blurb: 'A warm glow on the back wall.', solids: [] },
-    { id: 'chest',   name: 'Chest',          layer: '08_chest_192.png',          cost: 120, unlocks: 'closet',         blurb: 'Tap it to open your closet and change outfits.', solids: [{ rect: [137, 141, 177, 169] }] },
+    { id: 'bed',     name: 'Bed',            layer: '01_bed_192.png',              cost: 20,  unlocks: ['sleep'],                  perk: 'Sleep',                      solids: [{ rect: [16, 44, 80, 108] }] },
+    { id: 'rug',     name: 'Rug',            layer: '02_rug_192.png',              cost: 25,  unlocks: ['turtleShop'],             perk: 'Turtle Shop',                solids: [] },
+    { id: 'doormat', name: 'Doormat',        layer: '03_doormat_192.png',          cost: 30,  unlocks: ['moveSpeed1'],             perk: 'Move Speed I',               solids: [] },
+    { id: 'table',   name: 'Table & Stools', layer: '04_table_and_stools_192.png', cost: 45,  unlocks: ['swimSpeed1'],             perk: 'Swim Speed I',               solids: [{ circle: [152, 82, 18] }, { circle: [152, 112, 8] }, { circle: [128, 82, 8] }] },
+    { id: 'shelf',   name: 'Shelf',          layer: '05_shelf_192.png',            cost: 60,  unlocks: ['collectionBook'],         perk: 'Collection Book',            solids: [] },
+    { id: 'plant',   name: 'Plant',          layer: '06_plant_192.png',            cost: 75,  unlocks: ['moveSpeed2'],             perk: 'Move Speed II',              solids: [{ circle: [30, 158, 9] }] },
+    { id: 'lantern', name: 'Lantern',        layer: '07_lantern_192.png',          cost: 95,  unlocks: ['dayNight', 'swimSpeed2'], perk: 'Day/Night + Swim Speed II',  solids: [] },
+    { id: 'chest',   name: 'Chest',          layer: '08_chest_192.png',            cost: 120, unlocks: ['closet', 'hideInShell'],  perk: 'Closet + Hide in Shell',     solids: [{ rect: [137, 141, 177, 169] }] },
   ];
   const DRAW_FIRST = 'rug'; // layered under every other item
+  const POP = { startDelay: 0.5, stagger: 0.45, duration: 0.45, overshoot: 1.7 }; // newly unlocked items pop in on entering
 
   // ---- Art-space geometry (px inside the 192x192 PNGs) ----
   const ART = 192, ANCHOR_X = 96, ANCHOR_Y = 178;
@@ -67,32 +71,106 @@
   }
   function drawLayer(id) {
     const img = layerImgs[id];
-    if (unlocked[id] && img.complete && img.naturalWidth) roomCtx.drawImage(img, 0, 0);
+    if (shown[id] && img.complete && img.naturalWidth) roomCtx.drawImage(img, 0, 0);
   }
 
-  // ---- Unlocked set (saved in Progression.state.homeItems) + the collision shapes it implies ----
-  const unlocked = {};
-  const roomSolids = []; // rebuilt only when the set changes: [0, x0, y0, x1, y1] rects, [1, cx, cy, r] circles
+  // ---- What the saved home level (Progression.state.homeLevel) means for the room ----
+  // `shown` = layers baked into the cached canvas (an item that is mid pop-in is left out until its
+  // animation ends); roomSolids = collision shapes for every unlocked item.
+  const shown = {};
+  const roomSolids = []; // [0, x0, y0, x1, y1] rects, [1, cx, cy, r] circles; rebuilt only when the level changes
+  let builtLevel = -1;
+  const level = () => Math.min(window.Progression.state.homeLevel, UPGRADES.length);
   function syncUnlocked() {
-    for (const u of UPGRADES) unlocked[u.id] = window.Progression.state.homeItems.includes(u.id);
+    const lv = level();
     roomSolids.length = 0;
-    for (const u of UPGRADES) {
-      if (!unlocked[u.id]) continue;
-      for (const sh of u.solids) roomSolids.push(sh.rect ? [0, ...sh.rect] : [1, ...sh.circle]);
-    }
+    UPGRADES.forEach((u, i) => {
+      shown[u.id] = i < lv;
+      if (i < lv) for (const sh of u.solids) roomSolids.push(sh.rect ? [0, ...sh.rect] : [1, ...sh.circle]);
+    });
+    builtLevel = lv;
     rebuildRoom();
   }
-  function nextUpgrade() { return UPGRADES.find(u => !unlocked[u.id]) || null; }
-  function buyNext() {
-    const u = nextUpgrade(), P = window.Progression;
-    if (!u || !P.spendCoins(u.cost)) return false;
-    P.unlockHomeItem(u.id);
-    syncUnlocked();
-    if (window.TT_SOUND) window.TT_SOUND.purchase();
-    // TODO: step 6 — "pop in" scale/flash on the newly bought item.
-    return true;
+  // True if a feature id (e.g. 'sleep', 'closet') is unlocked. Called every frame by progression.js's
+  // hasSkill, so it's a plain loop with no allocation.
+  function hasFeature(name) {
+    const lv = level();
+    for (let i = 0; i < lv; i++) if (UPGRADES[i].unlocks.includes(name)) return true;
+    return false;
   }
-  function hasFeature(name) { return UPGRADES.some(u => unlocked[u.id] && u.unlocks === name); }
+
+  // ---- Pop-in: items unlocked since the player last stood in the hut scale in one after another ----
+  const pops = []; // { id, delay, cx, cy } in art px
+  let popClock = 0, toast = null, toastTimer = 0;
+  function startPops() {
+    const P = window.Progression, lv = level(), seen = Math.min(P.state.homeSeenLevel, lv);
+    pops.length = 0;
+    syncUnlocked(); // clean slate (e.g. an animation cut short by leaving last time)
+    if (lv > seen) {
+      const names = [];
+      for (let i = seen; i < lv; i++) {
+        const u = UPGRADES[i], b = layerBBox(u.id);
+        shown[u.id] = false; // keep it out of the cached canvas until its animation is done
+        pops.push({ id: u.id, delay: POP.startDelay + (i - seen) * POP.stagger, cx: b.x + b.w / 2, cy: b.y + b.h / 2, played: false });
+        names.push(`${u.name} (${u.perk})`);
+      }
+      rebuildRoom();
+      popClock = 0;
+      showToast('New in your home: ' + names.join(', '));
+      P.state.homeSeenLevel = lv;
+      P.persist();
+    }
+  }
+  function updatePops(dt) {
+    if (!pops.length) return;
+    popClock += dt;
+    let done = true;
+    for (const p of pops) {
+      if (!p.played && popClock >= p.delay) { p.played = true; if (window.TT_SOUND) window.TT_SOUND.coin(); }
+      if (popClock < p.delay + POP.duration) done = false;
+    }
+    if (done) { pops.length = 0; syncUnlocked(); }
+  }
+  function drawPops(ctx, lay) {
+    for (const p of pops) {
+      const t = (popClock - p.delay) / POP.duration;
+      if (t < 0) continue;
+      const u = Math.min(1, t) - 1, sc = 1 + (POP.overshoot + 1) * u * u * u + POP.overshoot * u * u; // ease-out-back, 0 -> 1
+      const img = layerImgs[p.id];
+      if (!img.complete || !img.naturalWidth) continue;
+      ctx.save();
+      ctx.translate(lay.x0 + p.cx * lay.s, lay.y0 + p.cy * lay.s);
+      ctx.scale(sc, sc);
+      ctx.drawImage(img, -p.cx * lay.s, -p.cy * lay.s, ART * lay.s, ART * lay.s);
+      ctx.restore();
+    }
+  }
+  // One small DOM toast, reused. Only touched when something new was unlocked.
+  function showToast(text) {
+    if (!toast) { toast = document.createElement('div'); toast.id = 'tt-home-toast'; document.body.appendChild(toast); }
+    toast.textContent = text;
+    toast.style.display = 'block';
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(hideToast, 4500);
+  }
+  function hideToast() { if (toast) toast.style.display = 'none'; }
+
+  // Tight alpha bounding box of a layer (art px), measured once per layer (used to center the pop-in).
+  const bboxCache = {};
+  function layerBBox(id) {
+    if (bboxCache[id]) return bboxCache[id];
+    const img = layerImgs[id];
+    if (!img.complete || !img.naturalWidth) return { x: 0, y: 0, w: ART, h: ART };
+    const c = document.createElement('canvas'); c.width = c.height = ART;
+    const g = c.getContext('2d', { willReadFrequently: true });
+    g.drawImage(img, 0, 0);
+    const d = g.getImageData(0, 0, ART, ART).data;
+    let x0 = ART, y0 = ART, x1 = -1, y1 = -1;
+    for (let y = 0; y < ART; y++) for (let x = 0; x < ART; x++) {
+      if (d[(y * ART + x) * 4 + 3] > 10) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    }
+    return (bboxCache[id] = x1 < 0 ? { x: 0, y: 0, w: ART, h: ART } : { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 });
+  }
 
 
   // ---- State ----
@@ -150,10 +228,11 @@
     scene = 'interior';
     room.x = ROOM_SPAWN.x; room.y = ROOM_SPAWN.y; room.vx = room.vy = room.speed = 0; room.angle = -Math.PI / 2;
     if (onEnterInterior) onEnterInterior();
-    setUiVisible(true);
+    startPops();
   }
   function exitSwap() {
     scene = 'world';
+    if (pops.length) { pops.length = 0; syncUnlocked(); } // left mid pop-in: bake the items in
     turtle.x = hutX; turtle.y = hutY + CONFIG.exitDropPx; turtle.vx = turtle.vy = 0; turtle.angle = Math.PI / 2;
   }
   // Called by game.js after the turtle has moved this frame.
@@ -179,7 +258,7 @@
     }
     if (scene !== 'interior') return false;
 
-    if (modal) { room.vx = room.vy = room.speed = 0; return true; } // a panel is open: the room is paused
+    updatePops(dt);
     // Interior movement (art px): same feel as outside, scaled by the turtle's size in the room.
     const k = CONFIG.roomTurtleScale, hasInput = dir.x !== 0 || dir.y !== 0;
     const tvx = dir.x * maxSpeed * k, tvy = dir.y * maxSpeed * k, rate = (hasInput ? accel : decel) * k * dt;
@@ -205,7 +284,7 @@
       diff = Math.atan2(Math.sin(diff), Math.cos(diff));
       room.angle += diff * Math.min(1, 10 * dt);
     }
-    if (room.y >= ROOM_EXIT_Y) { setUiVisible(false); startFade(exitSwap); }
+    if (room.y >= ROOM_EXIT_Y) { hideToast(); startFade(exitSwap); }
     return true;
   }
 
@@ -227,6 +306,7 @@
   function drawRoom(ctx, lay) {
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(roomCanvas, lay.x0, lay.y0, ART * lay.s, ART * lay.s);
+    drawPops(ctx, lay);
     ctx.imageSmoothingEnabled = true;
   }
   function drawFade(ctx, w, h) {
@@ -234,79 +314,6 @@
     ctx.fillStyle = `rgba(0,0,0,${alpha})`;
     ctx.fillRect(0, 0, w, h);
   }
-
-  // ---- UI: "Upgrade home" button (only inside the hut) + the upgrade panel. DOM, built on demand and
-  // only redrawn when it opens or something is bought — nothing here runs per frame. ----
-  let modal = false, upgradeBtn = null, panel = null;
-  function setUiVisible(v) {
-    if (!upgradeBtn) {
-      upgradeBtn = document.createElement('button');
-      upgradeBtn.id = 'tt-home-upgrade-btn';
-      upgradeBtn.type = 'button';
-      upgradeBtn.textContent = 'Upgrade home';
-      upgradeBtn.addEventListener('click', openPanel);
-      document.body.appendChild(upgradeBtn);
-    }
-    upgradeBtn.style.display = v ? 'block' : 'none';
-    if (!v) closePanel();
-  }
-  // Tight alpha bounding box of a layer (art px), measured once per layer, so the preview can crop to
-  // just the item instead of showing a mostly empty 192x192.
-  const bboxCache = {};
-  function layerBBox(id) {
-    if (bboxCache[id]) return bboxCache[id];
-    const img = layerImgs[id];
-    if (!img.complete || !img.naturalWidth) return { x: 0, y: 0, w: ART, h: ART };
-    const c = document.createElement('canvas'); c.width = c.height = ART;
-    const g = c.getContext('2d', { willReadFrequently: true });
-    g.drawImage(img, 0, 0);
-    const d = g.getImageData(0, 0, ART, ART).data;
-    let x0 = ART, y0 = ART, x1 = -1, y1 = -1;
-    for (let y = 0; y < ART; y++) for (let x = 0; x < ART; x++) {
-      if (d[(y * ART + x) * 4 + 3] > 10) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
-    }
-    return (bboxCache[id] = x1 < 0 ? { x: 0, y: 0, w: ART, h: ART } : { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 });
-  }
-  function drawPreview(canvas, u) {
-    const g = canvas.getContext('2d'), b = layerBBox(u.id), W = canvas.width;
-    g.clearRect(0, 0, W, W);
-    g.imageSmoothingEnabled = false;
-    const sc = Math.max(1, Math.floor((W - 8) / Math.max(b.w, b.h))); // whole-number scale
-    g.drawImage(layerImgs[u.id], b.x, b.y, b.w, b.h, Math.round((W - b.w * sc) / 2), Math.round((W - b.h * sc) / 2), b.w * sc, b.h * sc);
-  }
-  function openPanel() {
-    closePanel();
-    modal = true;
-    const u = nextUpgrade(), coins = window.Progression.state.banked.coins, n = UPGRADES.filter(x => unlocked[x.id]).length;
-    const wrap = document.createElement('div');
-    wrap.className = 'tt-name-prompt';
-    wrap.innerHTML = `<div class="tt-name-box tt-upgrade-box tt-home-box">
-      <div class="tt-shop-header">
-        <h3>Upgrade home</h3>
-        <div class="tt-shop-coins"><img src="assets/items/coin.png" alt="">${coins}</div>
-      </div>
-      ${u ? `<canvas class="tt-home-preview" width="160" height="160"></canvas>
-        <div class="tt-home-info"><strong>${u.name}</strong>
-          <div class="tt-upgrade-detail">${u.blurb}</div>
-          <div class="tt-upgrade-detail">Upgrade ${n + 1} of ${UPGRADES.length} · ${u.cost} coins</div></div>
-        <button type="button" class="tt-upgrade-buy tt-home-buy" ${coins < u.cost ? 'disabled' : ''}>Buy — ${u.cost}</button>`
-      : `<div class="tt-home-info"><strong>All done!</strong><div class="tt-upgrade-detail">Your home is fully upgraded.</div></div>`}
-      <div class="tt-name-actions"><button type="button" class="tt-cancel tt-home-close">Close</button></div>
-    </div>`;
-    document.body.appendChild(wrap);
-    panel = wrap;
-    if (u) {
-      drawPreview(wrap.querySelector('.tt-home-preview'), u);
-      wrap.querySelector('.tt-home-buy').addEventListener('click', () => { if (buyNext()) openPanel(); });
-    }
-    wrap.querySelector('.tt-home-close').addEventListener('click', closePanel);
-    wrap.addEventListener('click', e => { if (e.target === wrap) closePanel(); }); // tap the dim backdrop to close
-  }
-  function closePanel() {
-    if (panel) { panel.remove(); panel = null; }
-    modal = false;
-  }
-  window.addEventListener('keydown', e => { if (e.key === 'Escape' && panel) closePanel(); });
 
   window.Home = {
     syncFromSave: syncUnlocked, hasFeature, UPGRADES,

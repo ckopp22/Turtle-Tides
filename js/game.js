@@ -137,9 +137,7 @@
   const DEBUG_STATES = { 1: 'normal', 2: 'stunned', 3: 'sleeping', 4: 'shell' };
   const joy = { active: false, id: null, ox: 0, oy: 0, x: 0, y: 0 };
 
-  // ---- Sleep skill (home level 2+, see progression.js SKILLS): standing still near the bed decor
-  // on the home island for a bit lies the turtle down; any input wakes it back up. See update()'s
-  // sleep block for the trigger, and progression.js CONFIG.sleep for the recovery-rate tunables.
+  // Any input wakes the (debug-key) sleeping state. TODO: step 3 replaces sleeping with the hut bed.
   let sleepIdleTimer = 0;
   function wakeUp() {
     if (state !== 'sleeping') return;
@@ -1169,177 +1167,6 @@
       }
   }
 
-  // ---- Home island decor: one canvas-drawn (or, for the 9 ids below, real-sprite) piece per
-  // CONFIG.home.levels entry (see progression.js), positioned at a fixed spot near HOME so the
-  // camp fills in as homeLevel rises. Decor accumulates (earlier pieces stay) except the hut's own
-  // structural stages, which visibly replace each other (frame -> completed -> cabin is one
-  // building, not three) per the MDD desc text ("a proper cabin replaces the hut").
-  // TODO: everything except the 9 ids in DECOR_SPRITE_FILES below is still a placeholder shape —
-  // real art needed for rocks/nest/bed/swimFins/rug/hammock/garden/flags/path/lights/fullCamp/cabin.
-  const HUT_STAGE_IDS = ['hutFrame', 'hutComplete', 'cabin'];
-
-  // Real sprites cropped from the reference asset sheet (see assets/scenery/decor_*.png). hutFrame/
-  // hutComplete/porch keep a visible rectangular card edge — their source cells sit on a painted
-  // scenic background rather than flat color, so a clean cutout wasn't possible; the rest cut out
-  // cleanly. drawH = each sprite's drawn height in world px (width follows its own aspect ratio),
-  // picked to roughly match the placeholder scale it replaces.
-  const DECOR_SPRITE_FILES = {
-    campfire:    { file: 'decor_campfire.png',    drawH: 50 },
-    hutFrame:    { file: 'decor_hutFrame.png',    drawH: 95 },
-    hutComplete: { file: 'decor_hutComplete.png', drawH: 105 },
-    torches:     { file: 'decor_torches.png',     drawH: 48 },
-    books:       { file: 'decor_books.png',       drawH: 38 },
-    porch:       { file: 'decor_porch.png',       drawH: 90 },
-    lanterns:    { file: 'decor_lanterns.png',    drawH: 40 },
-    table:       { file: 'decor_table.png',       drawH: 42 },
-    firepitRing: { file: 'decor_firepitRing.png', drawH: 46 },
-  };
-  const DECOR_IMAGES = {};
-  for (const id in DECOR_SPRITE_FILES) {
-    const img = new Image();
-    img.src = `assets/scenery/${DECOR_SPRITE_FILES[id].file}`;
-    DECOR_IMAGES[id] = img;
-  }
-  // Anchors bottom-center at (x, y), matching how the shape-drawn placeholders sit on the ground.
-  function drawDecorSprite(id, x, y) {
-    const img = DECOR_IMAGES[id];
-    if (!img.complete || !img.naturalWidth) return;
-    const drawH = DECOR_SPRITE_FILES[id].drawH;
-    const dw = drawH * img.naturalWidth / img.naturalHeight;
-    ctx.drawImage(img, x - dw / 2, y - drawH, dw, drawH);
-  }
-  const DECOR_LAYOUT = {
-    rocks:       { dx: -90,  dy: 80 },
-    nest:        { dx: 80,   dy: 90 },
-    bed:         { dx: -150, dy: 10 },
-    campfire:    { dx: 0,    dy: 130 },
-    hutFrame:    { dx: 130,  dy: -10 },
-    hutComplete: { dx: 130,  dy: -10 },
-    cabin:       { dx: 130,  dy: -10 },
-    swimFins:    { dx: -40,  dy: 155 },
-    torches:     { dx: -180, dy: 90 },  // drawn as a pair (left + right, see draw fn)
-    books:       { dx: -110, dy: 155 },
-    porch:       { dx: 150,  dy: 55 },
-    lanterns:    { dx: -190, dy: 140 },
-    rug:         { dx: 10,   dy: 175 },
-    table:       { dx: 70,   dy: 165 },
-    hammock:     { dx: -150, dy: 175 },
-    garden:      { dx: 130,  dy: 175 },
-    flags:       { dx: 30,   dy: -60 },
-    firepitRing: { dx: 0,    dy: 130 }, // same spot as campfire: a ring built around the existing fire
-    path:        { dx: 0,    dy: 60 },
-    lights:      { dx: 130,  dy: -55 },
-    fullCamp:    { dx: 0,    dy: -100 },
-  };
-  const DECOR_DRAW = {
-    rocks(ctx, x, y) {
-      ctx.fillStyle = '#8a8a8f';
-      for (const [ox, oy, r] of [[-10, 0, 14], [8, -4, 11], [0, 8, 9]]) {
-        ctx.beginPath(); ctx.arc(x + ox, y + oy, r, 0, Math.PI * 2); ctx.fill();
-      }
-    },
-    nest(ctx, x, y) {
-      ctx.strokeStyle = '#a9793f'; ctx.lineWidth = 4; ctx.lineCap = 'round';
-      for (let i = 0; i < 5; i++) {
-        const a = (i / 5) * Math.PI * 2;
-        ctx.beginPath(); ctx.moveTo(x - Math.cos(a) * 16, y - Math.sin(a) * 8);
-        ctx.lineTo(x + Math.cos(a) * 16, y + Math.sin(a) * 8); ctx.stroke();
-      }
-    },
-    bed(ctx, x, y) {
-      ctx.fillStyle = '#8a6a3f'; ctx.fillRect(x - 26, y - 14, 52, 16); // driftwood frame
-      ctx.fillStyle = '#e8ded0'; ctx.fillRect(x - 22, y - 20, 44, 10); // blanket
-    },
-    campfire(ctx, x, y) { drawDecorSprite('campfire', x, y); },
-    hutFrame(ctx, x, y) { drawDecorSprite('hutFrame', x, y); },
-    hutComplete(ctx, x, y) { drawDecorSprite('hutComplete', x, y); },
-    cabin(ctx, x, y) {
-      ctx.fillStyle = '#9a7a4a'; ctx.beginPath(); ctx.moveTo(x - 38, y); ctx.lineTo(x, y - 56); ctx.lineTo(x + 38, y); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = '#6b4e2f'; ctx.fillRect(x - 32, y - 34, 64, 34);
-      ctx.fillStyle = '#4a3624'; ctx.fillRect(x - 8, y - 20, 16, 20); // doorway
-      ctx.fillStyle = '#cfe6f0'; ctx.fillRect(x - 24, y - 24, 10, 10); ctx.fillRect(x + 14, y - 24, 10, 10); // windows
-    },
-    swimFins(ctx, x, y) {
-      ctx.strokeStyle = '#7a5a34'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x - 20, y); ctx.lineTo(x + 20, y); ctx.stroke();
-      ctx.fillStyle = '#3a8fb0';
-      for (const ox of [-14, -2, 10]) { ctx.beginPath(); ctx.ellipse(x + ox, y - 12, 6, 12, 0, 0, Math.PI * 2); ctx.fill(); }
-    },
-    torches(ctx, x, y) { drawDecorSprite('torches', x, y); }, // sprite is already a lit pair
-    books(ctx, x, y) { drawDecorSprite('books', x, y); },
-    porch(ctx, x, y) { drawDecorSprite('porch', x, y); },
-    lanterns(ctx, x, y) { drawDecorSprite('lanterns', x, y); },
-    rug(ctx, x, y) {
-      ctx.fillStyle = '#c0524a';
-      ctx.beginPath(); ctx.ellipse(x, y, 34, 14, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = '#e8ded0'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.ellipse(x, y, 24, 9, 0, 0, Math.PI * 2); ctx.stroke();
-    },
-    table(ctx, x, y) { drawDecorSprite('table', x, y); },
-    hammock(ctx, x, y) {
-      ctx.fillStyle = '#7a5a34'; ctx.fillRect(x - 28, y - 34, 4, 34); ctx.fillRect(x + 24, y - 34, 4, 34);
-      ctx.strokeStyle = '#e0a83f'; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.moveTo(x - 26, y - 24); ctx.quadraticCurveTo(x, y - 4, x + 26, y - 24); ctx.stroke();
-    },
-    garden(ctx, x, y) {
-      const colors = ['#c0524a', '#e0a83f', '#e06a9a'];
-      ctx.fillStyle = '#3f7a3f'; ctx.beginPath(); ctx.ellipse(x, y, 28, 12, 0, 0, Math.PI * 2); ctx.fill();
-      for (let i = 0; i < 6; i++) {
-        ctx.fillStyle = colors[i % colors.length];
-        ctx.beginPath(); ctx.arc(x - 20 + i * 8, y - 4 + (i % 2) * 6, 3.5, 0, Math.PI * 2); ctx.fill();
-      }
-    },
-    flags(ctx, x, y) {
-      ctx.strokeStyle = '#8a6a3f'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x - 60, y); ctx.lineTo(x + 60, y); ctx.stroke();
-      const colors = ['#c0524a', '#4a7a9a', '#e0a83f', '#5a9a6a', '#e06a9a'];
-      colors.forEach((c, i) => {
-        const fx = x - 50 + i * 25;
-        ctx.fillStyle = c;
-        ctx.beginPath(); ctx.moveTo(fx, y); ctx.lineTo(fx + 10, y + 10); ctx.lineTo(fx - 10, y + 10); ctx.closePath(); ctx.fill();
-      });
-    },
-    firepitRing(ctx, x, y) { drawDecorSprite('firepitRing', x, y); }, // drawn over the campfire sprite at the same spot
-    path(ctx, x, y) {
-      ctx.fillStyle = '#c9bfa8';
-      for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.ellipse(x + i * 20, y + (i % 2) * 6, 9, 6, 0, 0, Math.PI * 2); ctx.fill(); }
-    },
-    lights(ctx, x, y) {
-      ctx.strokeStyle = '#5a4632'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x - 40, y); ctx.lineTo(x + 40, y); ctx.stroke();
-      ctx.fillStyle = '#ffe89a';
-      for (let i = -1; i <= 1; i++) { ctx.beginPath(); ctx.arc(x + i * 26, y + 4, 4, 0, Math.PI * 2); ctx.fill(); }
-    },
-    fullCamp(ctx, x, y) {
-      ctx.strokeStyle = '#7a5a34'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y - 40); ctx.stroke();
-      ctx.fillStyle = '#e0a83f';
-      ctx.beginPath(); ctx.moveTo(x, y - 40); ctx.lineTo(x + 24, y - 32); ctx.lineTo(x, y - 24); ctx.closePath(); ctx.fill();
-    },
-  };
-  // Rebuilt only when homeLevel changes (cheap array build, cached the rest of the time).
-  let homeDecorList = [];
-  let homeDecorAtLevel = -1;
-  // The hut (home.js) replaces this old homeLevel decor + auto-sleep. Left in place but switched off
-  // until the hut upgrades take over progression. TODO: delete once steps 2-3 land.
-  const LEGACY_HOME_DECOR = false;
-  function rebuildHomeDecorIfNeeded() {
-    if (!LEGACY_HOME_DECOR) return;
-    const lvl = window.Progression.state.homeLevel;
-    if (lvl === homeDecorAtLevel) return;
-    homeDecorAtLevel = lvl;
-    const levels = window.Progression.getHomeLevels();
-    const ids = [];
-    let hutStage = null;
-    for (let i = 0; i <= lvl && i < levels.length; i++) {
-      const id = levels[i].decor;
-      if (!id) continue;
-      if (HUT_STAGE_IDS.includes(id)) hutStage = id; // latest hut stage wins, replaces earlier ones
-      else if (!ids.includes(id)) ids.push(id);
-    }
-    if (hutStage) ids.push(hutStage);
-    homeDecorList = ids.filter(id => DECOR_LAYOUT[id] && DECOR_DRAW[id]).map(id => {
-      const { dx, dy } = DECOR_LAYOUT[id];
-      return { id, x: HOME.x + dx, y: HOME.y + dy, type: 'custom', draw: DECOR_DRAW[id], collide: false };
-    });
-  }
-
   // ---- Day/Night toggle (L7 skill, see progression.js CONFIG/state.isNight) ----
   // nightAmount eases toward the target over NIGHT_FADE_SPEED (full fade takes ~1/NIGHT_FADE_SPEED
   // seconds) so flipping the toggle fades the sky/glow rather than cutting hard, per the spec.
@@ -1356,40 +1183,6 @@
     ctx.save();
     ctx.fillStyle = `rgba(6, 14, 30, ${0.55 * nightAmount})`;
     ctx.fillRect(0, 0, viewW, viewH);
-    ctx.restore();
-  }
-
-  // Warm glow halos on the home island's fire/light decor once it's dark — drawn in world space so
-  // they sit with the decor itself. Offsets mirror each DECOR_DRAW fn's own internal ox/oy so the
-  // glow lands on the actual flame/bulb, not the decor's base anchor point.
-  const NIGHT_GLOW_SPOTS = {
-    campfire:    [{ dx: 0, dy: -28, r: 55 }],
-    hutFrame:    [], hutComplete: [], cabin: [], // no light source of their own yet
-    torches:     [{ dx: -10, dy: -38, r: 40 }, { dx: 10, dy: -38, r: 40 }], // sprite is one pair, close together
-    lanterns:    [{ dx: 0, dy: -30, r: 30 }], // sprite is a single lantern now
-    firepitRing: [{ dx: 0, dy: -25, r: 55 }],
-    lights:      [{ dx: -26, dy: 4, r: 24 }, { dx: 0, dy: 4, r: 24 }, { dx: 26, dy: 4, r: 24 }],
-  };
-  // One pre-rendered glow, scaled per light and faded with globalAlpha — no per-frame gradients.
-  const glowSprite = (() => {
-    const c = document.createElement('canvas'); c.width = c.height = 128;
-    const g = c.getContext('2d');
-    const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
-    grad.addColorStop(0, 'rgba(255, 190, 110, 0.55)');
-    grad.addColorStop(1, 'rgba(255, 190, 110, 0)');
-    g.fillStyle = grad; g.fillRect(0, 0, 128, 128);
-    return c;
-  })();
-  function drawNightGlows() {
-    if (nightAmount <= 0.001) return;
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = nightAmount;
-    for (const d of homeDecorList) {
-      const spots = NIGHT_GLOW_SPOTS[d.id];
-      if (!spots) continue;
-      for (const sp of spots) ctx.drawImage(glowSprite, d.x + sp.dx - sp.r, d.y + sp.dy - sp.r, sp.r * 2, sp.r * 2);
-    }
     ctx.restore();
   }
 
@@ -1624,27 +1417,7 @@
     const hasInput = dir.x !== 0 || dir.y !== 0;
     const rate = (hasInput ? ACCEL : DECEL) * dt;
 
-    // Sleep skill: stand still near the bed on the home island and the turtle lies down on its own
-    // (wakeUp() above handles the reverse — any input). Heals hearts only, not hunger. Safe by
-    // construction since it only ever triggers on the home island, same as the hunger drain/bird
-    // exemption there.
-    if (LEGACY_HOME_DECOR && state === 'normal' && atHome && window.Progression.hasSkill('sleep')) {
-      const sleepCfg = window.Progression.getSleepConfig();
-      const bed = DECOR_LAYOUT.bed;
-      const bedX = HOME.x + bed.dx, bedY = HOME.y + bed.dy;
-      const nearBed = Math.hypot(turtle.x - bedX, turtle.y - bedY) < sleepCfg.triggerRadius;
-      if (nearBed && !hasInput) {
-        sleepIdleTimer += dt;
-        if (sleepIdleTimer >= sleepCfg.idleSecondsToTrigger) {
-          turtle.x = bedX; turtle.y = bedY; turtle.vx = 0; turtle.vy = 0;
-          state = 'sleeping'; stateTime = 0; sleepIdleTimer = 0;
-        }
-      } else {
-        sleepIdleTimer = 0;
-      }
-    } else if (state !== 'sleeping') {
-      sleepIdleTimer = 0;
-    }
+    // TODO: step 3 — sleeping now happens by tapping the hut's bed (home.js); this only runs the debug-key sleep state.
     if (state === 'sleeping') window.Progression.updateSleep(dt);
 
     // Move velocity toward target by at most `rate` (smooth accel/decel, any angle).
@@ -1964,17 +1737,14 @@
 
     // Cull scenery to the visible world rect (plus a small margin) so a big world with lots of
     // trees still draws only a couple dozen-to-hundred objects per frame.
-    rebuildHomeDecorIfNeeded();
     const vw = viewW / ZOOM, vh = viewH / ZOOM, margin = 80;
     visibleBuf.length = 0; // reused buffer: no per-frame array allocations
     if (!skip.scenery) for (const s of scenery) if (inView(s, vw, vh, margin)) visibleBuf.push(s);
-    for (const s of homeDecorList) if (inView(s, vw, vh, margin)) visibleBuf.push(s);
     if (inView(Home.hutEntry, vw, vh, 220)) visibleBuf.push(Home.hutEntry); // big sprite: wider cull margin
     if (window.Enemies && !skip.enemies) window.Enemies.collectVisible(visibleBuf, ctx, camX, camY, vw, vh, margin);
     const visible = visibleBuf;
     if (perf) perf.visible = visible.length;
     drawSceneryWithTurtle(visible);
-    drawNightGlows(); // world space, on top of the decor it's lighting
     if (DEBUG_HITBOXES) drawDebugHitboxes(visible);
     if (window.Enemies) window.Enemies.drawDebug(ctx, camX, camY, vw, vh);
     ctx.restore();

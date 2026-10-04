@@ -28,40 +28,8 @@
       capTiers: [3, 5, 10, 15, 20, 25], // index 0 = starting capacity
       upgradeCosts: [10, 50, 95, 175, 280],
     },
-    home: {
-      // Full 20-level curve, tuned so each step to level 10 is a small, quick win (cost climbs by
-      // a steady +5-15 coins/level), then levels 11-20 climb faster (+65-160/level) for a real but
-      // still reachable long-term goal — not a wall. cost[i] = coins to go from level i-1 to i.
-      // `decor` = the one new placeholder piece game.js adds to the home island at this level
-      // (cumulative — game.js draws every decor id from level 0 up to the current homeLevel, never
-      // replacing earlier ones). `skill` = an id into SKILLS below, or null.
-      // level 10 keeps its existing "Hide in Shell" unlock (cabin/shape) exactly where it already
-      // was — everything else slots around it.
-      // TODO: the desc/shape fields are still placeholders — real per-level art still needed.
-      levels: [
-        { cost: 0,    desc: 'a pile of rocks',                          decor: 'rocks',        skill: null },
-        { cost: 10,   desc: 'a woven nest tucked in the rocks',         decor: 'nest',          skill: null },
-        { cost: 30,   desc: 'a driftwood bed to sleep in',              decor: 'bed',           skill: 'sleep' },
-        { cost: 45,   desc: 'a crackling campfire',                     decor: 'campfire',      skill: null },
-        { cost: 65,   desc: 'the frame of a hut going up',              decor: 'hutFrame',      skill: 'turtleShop' },
-        { cost: 90,   desc: 'swim fins drying by the hut',              decor: 'swimFins',      skill: 'swimSpeed1' },
-        { cost: 115,  desc: 'torches lit along the path',               decor: 'torches',       skill: 'dayNight' },
-        { cost: 150,  desc: 'a small reading nook with books',          decor: 'books',         skill: 'moveSpeed1' },
-        { cost: 185,  desc: 'the hut, finally finished',                decor: 'hutComplete',   skill: null },
-        { cost: 225,  desc: 'a covered porch added to the hut',         decor: 'porch',         skill: null },
-        { cost: 270,  desc: 'a proper cabin replaces the hut',          decor: 'cabin',         skill: 'hideInShell' },
-        { cost: 320,  desc: 'lanterns hung by the door',                decor: 'lanterns',      skill: null },
-        { cost: 375,  desc: 'a woven rug laid out front',               decor: 'rug',           skill: null },
-        { cost: 440,  desc: 'a driftwood table',                        decor: 'table',         skill: 'swimSpeed2' },
-        { cost: 510,  desc: 'a hammock strung between posts',           decor: 'hammock',       skill: null },
-        { cost: 590,  desc: 'a small garden patch',                     decor: 'garden',        skill: null },
-        { cost: 680,  desc: 'string flags fluttering overhead',         decor: 'flags',         skill: 'moveSpeed2' },
-        { cost: 775,  desc: 'a stone-lined firepit ring',                decor: 'firepitRing',   skill: null },
-        { cost: 880,  desc: 'a stone path connects the camp',           decor: 'path',          skill: null },
-        { cost: 990,  desc: 'string lights strung between posts',       decor: 'lights',        skill: null },
-        { cost: 1120, desc: 'the full camp, home at last',              decor: 'fullCamp',      skill: null },
-      ],
-    },
+    // Home levels = hut upgrades: costs, names and perks live in home.js UPGRADES (TRACKS.home below
+    // reads them), and homeLevel = how many are unlocked.
     // Turtle Shop (L5 skill): buy with banked coins, equip freely once owned. One equipped item
     // per category ('color' | 'hat' | 'clothes' | 'accessory'); 'color_default' is always owned
     // and is the baseline equipped color (no "none" state for that category — every turtle has
@@ -111,25 +79,10 @@
     loseUnbankedOnClose: true,
   };
 
-  // ---- Skills: gated purely by home level. Each has an id (used by game.js to branch behavior),
-  // a label (for the Home Perks panel/celebration toast), and the homeLevel at which it unlocks.
-  // Keep this modular — a new skill is just one more row here plus its own enable/disable logic
-  // wherever it lives (game.js for movement/animation skills, progression.js for anything stat-y).
-  const SKILLS = [
-    { id: 'sleep',       label: 'Sleep',            unlockLevel: 2 },
-    { id: 'turtleShop',  label: 'Turtle Shop',      unlockLevel: 4 },
-    { id: 'swimSpeed1',  label: 'Swim Speed I',     unlockLevel: 5 },
-    { id: 'dayNight',    label: 'Day/Night Toggle', unlockLevel: 6 },
-    { id: 'moveSpeed1',  label: 'Move Speed I',     unlockLevel: 7 },
-    { id: 'hideInShell', label: 'Hide in Shell',    unlockLevel: 10 },
-    { id: 'swimSpeed2',  label: 'Swim Speed II',    unlockLevel: 13 },
-    { id: 'moveSpeed2',  label: 'Move Speed II',    unlockLevel: 16 },
-  ];
-  function hasSkill(id) {
-    const s = SKILLS.find(s => s.id === id);
-    return !!s && state.homeLevel >= s.unlockLevel;
-  }
-  function skillAtLevel(level) { return SKILLS.find(s => s.unlockLevel === level) || null; }
+  // ---- Skills: each is a feature id unlocked by a hut upgrade (home.js UPGRADES[].unlocks). game.js and
+  // this file branch on hasSkill(id): 'sleep', 'turtleShop', 'moveSpeed1/2', 'swimSpeed1/2', 'dayNight',
+  // 'hideInShell', plus 'collectionBook' and 'closet'. ----
+  function hasSkill(id) { return !!window.Home && window.Home.hasFeature(id); }
 
   // ---- Turtle Shop (L5 skill) ----
   const SHOP_CATEGORIES = ['color', 'hat', 'clothes', 'accessory'];
@@ -257,7 +210,7 @@
       owned: ['color_default'],
       equipped: { color: 'color_default', hat: null, clothes: null, accessory: null },
     },
-    homeItems: [], // hut upgrade ids bought so far (see home.js UPGRADES)
+    homeSeenLevel: 0, // home level the player last saw inside the hut (higher = new items to pop in)
     // Lifetime counters for the future collection book's stats page; saved with the slot.
     stats: { coconuts: 0, coins: 0, castles: 0, deaths: 0, playSeconds: 0 },
     invulnTimer: 0,
@@ -272,8 +225,6 @@
   function hungerDrainRate() { return CONFIG.hunger.baseDrainPerSecond; }
   function hullCap() { return CONFIG.hull.capTiers[state.hullLevel]; }
   function carriedTotal() { return state.carried.coins + state.carried.coconuts + state.carried.shells; }
-  function homeLevelDef() { return CONFIG.home.levels[Math.min(state.homeLevel, CONFIG.home.levels.length - 1)]; }
-  function getHomeLevels() { return CONFIG.home.levels; } // read-only by convention, same as `state`
 
   // ---- Pickup / bank / loss ----
   // Returns false (and flashes the hull-full cue) if the hull has no room; caller should leave the
@@ -289,17 +240,7 @@
     if (type === 'coins' || type === 'coconuts') state.stats[type]++;
     return true;
   }
-  // ---- Hut upgrades + stats (home.js owns the item list/costs; this just holds saved state) ----
-  function spendCoins(n) {
-    if (state.banked.coins < n) return false;
-    state.banked.coins -= n;
-    persist();
-    return true;
-  }
-  function unlockHomeItem(id) {
-    if (!state.homeItems.includes(id)) state.homeItems.push(id);
-    persist();
-  }
+  // ---- Stats (lifetime counters for the future collection book) ----
   function addStat(key, n = 1) { if (key in state.stats) state.stats[key] += n; }
   function addPlayTime(dt) { state.stats.playSeconds += dt; }
   function bankCarried() {
@@ -481,9 +422,10 @@
       apply: () => { state.hullLevel++; },
     },
     home: {
-      label: 'Home', icon: 'assets/items/home_icon.png', level: () => state.homeLevel, maxLevel: () => CONFIG.home.levels.length - 1,
-      cost: () => CONFIG.home.levels[state.homeLevel + 1].cost,
-      next: () => `level ${state.homeLevel + 1}`,
+      label: 'Home', icon: 'assets/items/home_icon.png', level: () => state.homeLevel, maxLevel: () => window.Home.UPGRADES.length,
+      cost: () => window.Home.UPGRADES[state.homeLevel].cost,
+      next: () => window.Home.UPGRADES[state.homeLevel].name,
+      note: () => window.Home.UPGRADES[state.homeLevel].perk, // shown under the name in the shop row
       apply: () => { state.homeLevel++; },
     },
   };
@@ -513,7 +455,10 @@
     data = data || {};
     state.heartsLevel = clampLevel(data.heartsLevel, CONFIG.hearts.upgradeCosts.length);
     state.hullLevel = clampLevel(data.hullLevel, CONFIG.hull.capTiers.length - 1);
-    state.homeLevel = clampLevel(data.homeLevel, CONFIG.home.levels.length - 1);
+    // homeLevel = number of hut upgrades unlocked (max Home.UPGRADES.length). Older saves had a 0-20
+    // level track (clamped here) or, briefly, a homeItems list (its length is used if higher).
+    state.homeLevel = clampLevel(Math.max(data.homeLevel || 0, Array.isArray(data.homeItems) ? data.homeItems.length : 0), window.Home.UPGRADES.length);
+    state.homeSeenLevel = Number.isFinite(data.homeSeenLevel) ? clampLevel(data.homeSeenLevel, state.homeLevel) : state.homeLevel;
     state.banked = {
       coins: data.banked?.coins || 0,
       coconuts: data.banked?.coconuts || 0,
@@ -536,8 +481,7 @@
         accessory: (eq.accessory && owned.includes(eq.accessory)) ? eq.accessory : null,
       },
     };
-    // Hut items/stats: absent on old saves (no homeVersion) -> nothing unlocked, zeroed counters.
-    state.homeItems = Array.isArray(data.homeItems) ? data.homeItems.filter(id => typeof id === 'string') : [];
+    // Stats: absent on old saves -> zeroed counters.
     const st = data.stats || {};
     state.stats = {};
     for (const k of ['coconuts', 'coins', 'castles', 'deaths', 'playSeconds']) state.stats[k] = Number.isFinite(st[k]) && st[k] > 0 ? st[k] : 0;
@@ -565,8 +509,8 @@
       isNight: state.isNight,
       cosmetics: { owned: state.cosmetics.owned.slice(), equipped: { ...state.cosmetics.equipped } },
       turtleMaster: state.turtleMaster,
-      homeVersion: 1, // bump if the hut save shape changes; loadFromSave tolerates it missing
-      homeItems: state.homeItems.slice(),
+      homeVersion: 2, // 2 = homeLevel counts hut upgrades; bump if the hut save shape changes (loads tolerate it missing)
+      homeSeenLevel: state.homeSeenLevel,
       stats: { ...state.stats },
     };
   }
@@ -1046,8 +990,8 @@
       return `<div class="tt-upgrade-row tt-shelf-row">
         <img class="tt-upgrade-icon" src="${t.icon}" alt="">
         <div class="tt-upgrade-info">
-          <strong>${t.label}${maxed ? '' : `- ${t.next()}`}</strong>
-          <div class="tt-upgrade-detail">${maxed ? 'Maxed out' : `${t.cost()} coins`}</div>
+          <strong>${t.label}${maxed ? '' : ` - ${t.next()}`}</strong>
+          <div class="tt-upgrade-detail">${maxed ? 'Maxed out' : `${t.cost()} coins${t.note ? ` · ${t.note()}` : ''}`}</div>
         </div>
         <button type="button" class="tt-upgrade-buy" data-track="${key}" ${maxed || !afford ? 'disabled' : ''}>${maxed ? 'Max' : 'Buy'}</button>
       </div>`;
@@ -1076,9 +1020,9 @@
   window.Progression = {
     tryPickup, bankCarried, takeHit, getStarveDim: () => starveDim, isInvulnerable, setRespawnHandler, setDeathHandler, respawnAtHome,
     update, updateSleep, getSleepConfig, swimSpeedMultiplier, moveSpeedMultiplier, toggleDayNight, drawHUD, setHomeButtonVisible, tryEatFromHud,
-    buyUpgrade, canUpgrade, spendCoins, unlockHomeItem, addStat, addPlayTime,
+    buyUpgrade, canUpgrade, addStat, addPlayTime,
     attachSlot, getSaveData, persist,
-    SKILLS, hasSkill, skillAtLevel, getHomeLevels,
+    hasSkill,
     SHOP_CATEGORIES, ownsCosmetic, equippedIn, getEquippedColorTint, drawEquippedCosmetics,
     state, // read-only-by-convention access (e.g. debug/future HUD tweaks)
   };
