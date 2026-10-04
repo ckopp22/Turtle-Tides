@@ -30,7 +30,7 @@
     },
     // Home levels = hut upgrades: costs, names and perks live in home.js UPGRADES (TRACKS.home below
     // reads them), and homeLevel = how many are unlocked.
-    // Turtle Shop (L5 skill): buy with banked coins, equip freely once owned. One equipped item
+    // Clothes: bought and worn in the hut's closet (home.js) with banked coins, equip freely once owned. One equipped item
     // per category ('color' | 'hat' | 'clothes' | 'accessory'); 'color_default' is always owned
     // and is the baseline equipped color (no "none" state for that category — every turtle has
     // *some* color). Add a new item by adding a row here plus a matching entry in COSMETIC_DRAW/
@@ -76,11 +76,11 @@
   };
 
   // ---- Skills: each is a feature id unlocked by a hut upgrade (home.js UPGRADES[].unlocks). game.js and
-  // this file branch on hasSkill(id): 'sleep', 'turtleShop', 'moveSpeed1/2', 'swimSpeed1/2', 'dayNight',
+  // this file branch on hasSkill(id): 'sleep', 'moveSpeed1/2', 'swimSpeed1/2', 'dayNight',
   // 'hideInShell', plus 'collectionBook' and 'closet'. ----
   function hasSkill(id) { return !!window.Home && window.Home.hasFeature(id); }
 
-  // ---- Turtle Shop (L5 skill) ----
+  // ---- Clothes / shell colors (the hut closet sells and equips them) ----
   const SHOP_CATEGORIES = ['color', 'hat', 'clothes', 'accessory'];
   function shopItem(id) { return CONFIG.shop.items.find(i => i.id === id) || null; }
   function shopItemsByCategory(category) { return CONFIG.shop.items.filter(i => i.category === category); }
@@ -832,11 +832,6 @@
     ensureUpgradeButton();
     upgradeBtn.style.display = visible ? 'flex' : 'none';
     if (!visible) closeUpgradePanel();
-    ensureShopButton();
-    if (shopBtn) {
-      shopBtn.style.display = visible ? 'flex' : 'none';
-      if (!visible) closeShopPanel();
-    }
   }
   // Day/Night toggle button — same icon-button pattern as Upgrades above, but shown everywhere (not
   // just at home) once unlocked, since it's a global setting. Ensured (created once, icon kept in
@@ -924,88 +919,6 @@
     updateMusicButtonLabel();
   }
 
-  // ---- Turtle Shop menu (L5 skill) — same DOM-overlay pattern as the upgrade panel, shown only
-  // while on the home island (see setHomeButtonVisible above). ----
-  const CATEGORY_LABELS = { color: 'Colors', hat: 'Hats', clothes: 'Clothes', accessory: 'Accessories' };
-  let shopBtn = null, shopPanel = null, shopActiveCategory = 'color';
-  function ensureShopButton() {
-    if (shopBtn || !hasSkill('turtleShop')) return;
-    shopBtn = document.createElement('button');
-    shopBtn.id = 'tt-shop-btn';
-    shopBtn.className = 'tt-icon-btn';
-    shopBtn.type = 'button';
-    shopBtn.title = 'Turtle Shop';
-    shopBtn.innerHTML = '<img src="assets/items/clothes_icon.png?v=1" alt="" width="28" height="28">';
-    shopBtn.addEventListener('click', openShopPanel);
-    ensureIconRow().appendChild(shopBtn);
-  }
-  function openShopPanel() {
-    closeShopPanel();
-    const wrap = document.createElement('div');
-    wrap.className = 'tt-name-prompt';
-    wrap.innerHTML = `<div class="tt-name-box tt-upgrade-box tt-shop-box">
-      <div class="tt-shop-header">
-        <h3>The Closet</h3>
-        <div class="tt-shop-coins"><img src="assets/items/coin.png" alt="">${state.banked.coins}</div>
-      </div>
-      <canvas class="tt-shop-preview" width="140" height="140"></canvas>
-      <div class="tt-shop-tabs">
-        ${SHOP_CATEGORIES.map(c => `<button type="button" class="tt-shop-tab" data-cat="${c}">${CATEGORY_LABELS[c]}</button>`).join('')}
-      </div>
-      <div class="tt-shop-items"></div>
-      <div class="tt-name-actions"><button type="button" class="tt-cancel tt-shop-close">Close</button></div>
-    </div>`;
-    document.body.appendChild(wrap);
-    shopPanel = wrap;
-    wrap.querySelectorAll('.tt-shop-tab').forEach(btn => {
-      btn.addEventListener('click', () => { shopActiveCategory = btn.dataset.cat; renderShopItems(); });
-    });
-    wrap.querySelector('.tt-shop-close').addEventListener('click', closeShopPanel);
-    renderShopItems();
-    refreshShopPreview();
-  }
-  function renderShopItems() {
-    if (!shopPanel) return;
-    shopPanel.querySelectorAll('.tt-shop-tab').forEach(btn => btn.classList.toggle('active', btn.dataset.cat === shopActiveCategory));
-    const container = shopPanel.querySelector('.tt-shop-items');
-    container.innerHTML = shopItemsByCategory(shopActiveCategory).map(item => {
-      const owned = ownsCosmetic(item.id);
-      const equipped = equippedIn(item.category) === item.id;
-      const isColor = item.category === 'color';
-      let label = `Buy — ${item.cost}`, disabled = state.banked.coins < item.cost;
-      if (owned) { label = equipped ? (isColor ? 'Equipped' : 'Unequip') : 'Equip'; disabled = isColor && equipped; }
-      return `<div class="tt-upgrade-row">
-        ${item.icon ? `<img class="tt-shop-item-icon" src="${item.icon}" alt="">` : ''}
-        <div class="tt-upgrade-info">
-          <strong>${item.label}</strong>
-          <div class="tt-upgrade-detail">${owned ? (equipped ? 'Equipped' : 'Owned') : `${item.cost} coins`}</div>
-        </div>
-        <button type="button" class="tt-upgrade-buy" data-id="${item.id}" ${disabled ? 'disabled' : ''}>${label}</button>
-      </div>`;
-    }).join('');
-    container.querySelectorAll('.tt-upgrade-buy').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const item = shopItem(btn.dataset.id);
-        if (!ownsCosmetic(item.id)) buyCosmetic(item.id);
-        else if (equippedIn(item.category) !== item.id) equipCosmetic(item.id);
-        else if (item.category !== 'color') unequipCategory(item.category); // click again to unequip
-        const coinEl = shopPanel.querySelector('.tt-shop-coins');
-        if (coinEl) coinEl.innerHTML = `<img src="assets/items/coin.png" alt="">${state.banked.coins}`;
-        renderShopItems();
-        refreshShopPreview();
-      });
-    });
-  }
-  // The turtle sprite/draw code lives in game.js — it exposes this one hook so the shop's preview
-  // canvas can show the actual equipped combo without duplicating any sprite-rendering logic here.
-  function refreshShopPreview() {
-    const canvas = shopPanel && shopPanel.querySelector('.tt-shop-preview');
-    if (canvas && window.TurtleGame && window.TurtleGame.renderCosmeticPreview) window.TurtleGame.renderCosmeticPreview(canvas);
-  }
-  function closeShopPanel() {
-    if (shopPanel) { shopPanel.remove(); shopPanel = null; }
-  }
-
   function openUpgradePanel() {
     closeUpgradePanel();
     const rows = Object.keys(TRACKS).map(key => {
@@ -1048,7 +961,7 @@
     buyUpgrade, canUpgrade, addStat, addPlayTime,
     attachSlot, getSaveData, persist,
     hasSkill,
-    SHOP_CATEGORIES, getShopItems: () => CONFIG.shop.items, equipCosmetic, unequipCategory, ownsCosmetic, equippedIn, getEquippedColorTint, drawEquippedCosmetics,
+    SHOP_CATEGORIES, getShopItems: () => CONFIG.shop.items, buyCosmetic, equipCosmetic, unequipCategory, ownsCosmetic, equippedIn, getEquippedColorTint, drawEquippedCosmetics,
     state, // read-only-by-convention access (e.g. debug/future HUD tweaks)
   };
 })();

@@ -34,12 +34,12 @@
   // stages. Walking into the hut shows what's unlocked (new items pop in). `layer` is a full 192x192 transparent PNG drawn at (0,0) over the
   // room. `solids` = collision shapes in room coords (only once unlocked): { rect: [x0, y0, x1, y1] }
   // or { circle: [cx, cy, r] }. `unlocks` = feature ids the item enables (Home.hasFeature): the old
-  // home-level perks (sleep, turtleShop, moveSpeed1/2, swimSpeed1/2, dayNight, hideInShell) plus the
+  // home-level perks (sleep, moveSpeed1/2, swimSpeed1/2, dayNight, hideInShell) plus the
   // collectionBook and closet. `perk` is the short text the shop row shows. Costs climb gently; the
   // cheap early pieces make the first few buys quick wins.
   const INDOOR = [
     { id: 'bed',     name: 'Bed',            layer: '01_bed_192.png',              cost: 20, unlocks: ['sleep'],                  perk: 'Sleep',                      solids: [{ rect: [16, 44, 80, 108] }], hotspot: { rect: [16, 44, 80, 108], action: 'sleep' } },
-    { id: 'chest',   name: 'Chest',          layer: '08_chest_192.png',            cost: 25, unlocks: ['closet', 'turtleShop'],   perk: 'Closet + Turtle Shop',        solids: [{ rect: [137, 141, 177, 169] }], hotspot: { rect: [137, 141, 177, 169], action: 'closet' } },
+    { id: 'chest',   name: 'Chest',          layer: '08_chest_192.png',            cost: 25, unlocks: ['closet'],                perk: 'Closet',                     solids: [{ rect: [137, 141, 177, 169] }], hotspot: { rect: [137, 141, 177, 169], action: 'closet' } },
     { id: 'doormat', name: 'Doormat',        layer: '03_doormat_192.png',          cost: 30, unlocks: ['moveSpeed1'],             perk: 'Move Speed I',               solids: [] },
     { id: 'table',   name: 'Table & Stools', layer: '04_table_and_stools_192.png', cost: 45, unlocks: ['swimSpeed1'],             perk: 'Swim Speed I',               solids: [{ circle: [152, 82, 18] }, { circle: [152, 112, 8] }, { circle: [128, 82, 8] }] },
     { id: 'shelf',   name: 'Shelf',          layer: '05_shelf_192.png',            cost: 60, unlocks: ['collectionBook'],         perk: 'Collection Book',            solids: [] },
@@ -476,15 +476,16 @@
     ctx.fillRect(0, 0, w, h);
   }
 
-  // ---- Closet (chest): pick an outfit. A DOM overlay built when it opens and redrawn only when an item
-  // is tapped. It reuses progression.js's outfit state (state.cosmetics): one equipped item per slot
-  // (color / hat / clothes / accessory), so equipping into an occupied slot replaces what's there, and
-  // the equipped outfit is what the turtle wears everywhere. Items are bought at the Turtle Shop; the
-  // closet shows owned ones and dark silhouettes for the rest. Opening it pauses the room; Close, the
-  // backdrop, Escape and the browser Back button all close it. ----
+  // ---- Closet (chest): buy and wear clothes in one place. A DOM overlay built when it opens and
+  // redrawn only when something is tapped. It reuses progression.js's outfit state (state.cosmetics):
+  // one equipped item per slot (color / hat / clothes / accessory), so equipping into an occupied slot
+  // replaces what's there, and the equipped outfit is what the turtle wears everywhere. Owned items
+  // equip / unequip on tap; items you don't own yet are dark silhouettes with a price: tap one, then
+  // "Buy & wear" spends banked coins. Opening it pauses the room; Close, the backdrop, Escape and the
+  // browser Back button all close it. ----
   const CLOSET_SLOTS = [['color', 'Shell color'], ['hat', 'Hats'], ['clothes', 'Clothes'], ['accessory', 'Accessories']];
-  let modal = false, closet = null, closetPushed = false;
-  function closetTile(item) {
+  let modal = false, closet = null, closetPushed = false, pick = null;
+  function closetTile(item, coins) {
     const P = window.Progression, owned = P.ownsCosmetic(item.id), on = P.equippedIn(item.category) === item.id;
     let art;
     if (item.icon) art = `<img src="${item.icon}" alt="">`;
@@ -492,35 +493,51 @@
       const tint = P.getEquippedColorTint({ color: item.id });
       art = `<span class="tt-closet-swatch" style="background:${tint || '#4f9a4a'}"></span>`;
     }
-    return `<button type="button" class="tt-closet-item${owned ? '' : ' locked'}${on ? ' on' : ''}" data-id="${item.id}" ${owned ? '' : 'disabled'} aria-pressed="${on}">
-      <span class="tt-closet-art">${art}</span><span class="tt-closet-name">${owned ? item.label : '???'}</span></button>`;
+    const label = owned ? `<span class="tt-closet-name">${item.label}</span>`
+      : `<span class="tt-closet-price"><img src="assets/items/coin.png" alt="">${item.cost}</span>`;
+    const cls = owned ? (on ? ' on' : '') : ` locked${pick === item.id ? ' picked' : ''}${coins < item.cost ? ' poor' : ''}`;
+    return `<button type="button" class="tt-closet-item${cls}" data-id="${item.id}" aria-pressed="${on}" aria-label="${owned ? item.label : 'Locked item, ' + item.cost + ' coins'}">
+      <span class="tt-closet-art">${art}</span>${label}</button>`;
   }
   function renderCloset() {
     if (!closet) return;
-    const items = window.Progression.getShopItems();
+    const P = window.Progression, items = P.getShopItems(), coins = P.state.banked.coins;
+    closet.querySelector('.tt-closet-coinnum').textContent = coins;
     closet.querySelector('.tt-closet-grid').innerHTML = CLOSET_SLOTS.map(([cat, label]) =>
-      `<h4>${label}</h4><div class="tt-closet-row">${items.filter(i => i.category === cat).map(closetTile).join('')}</div>`).join('');
+      `<h4>${label}</h4><div class="tt-closet-row">${items.filter(i => i.category === cat).map(i => closetTile(i, coins)).join('')}</div>`).join('');
+    const bar = closet.querySelector('.tt-closet-buybar'), it = pick && items.find(i => i.id === pick);
+    bar.innerHTML = it
+      ? `<strong>${it.label}</strong> · ${it.cost} coins<button type="button" class="tt-upgrade-buy tt-closet-buy" ${coins < it.cost ? 'disabled' : ''}>${coins < it.cost ? `Need ${it.cost - coins} more coins` : 'Buy &amp; wear'}</button>`
+      : 'Tap a silhouette to buy it.';
     if (window.TurtleGame && window.TurtleGame.renderCosmeticPreview) window.TurtleGame.renderCosmeticPreview(closet.querySelector('.tt-closet-preview'));
   }
   function openCloset() {
     closeCloset();
-    modal = true;
+    modal = true; pick = null;
     const wrap = document.createElement('div');
     wrap.className = 'tt-name-prompt';
     wrap.innerHTML = `<div class="tt-name-box tt-upgrade-box tt-closet-box">
-      <div class="tt-closet-head"><h3>Closet</h3><button type="button" class="tt-closet-x" aria-label="Close">&#x2715;</button></div>
+      <div class="tt-closet-head"><div class="tt-closet-coins"><img src="assets/items/coin.png" alt=""><span class="tt-closet-coinnum"></span></div><h3>Closet</h3><button type="button" class="tt-closet-x" aria-label="Close">&#x2715;</button></div>
       <canvas class="tt-closet-preview" width="140" height="140"></canvas>
       <div class="tt-closet-grid"></div>
+      <div class="tt-closet-buybar"></div>
       <div class="tt-name-actions"><button type="button" class="tt-cancel tt-closet-close">Close</button></div>
     </div>`;
     document.body.appendChild(wrap);
     closet = wrap;
     wrap.addEventListener('click', e => {
       if (e.target === wrap || e.target.closest('.tt-closet-x, .tt-closet-close')) { closeCloset(); return; }
+      const P = window.Progression;
+      if (e.target.closest('.tt-closet-buy')) { // buy the picked silhouette, then put it on
+        const it = P.getShopItems().find(i => i.id === pick);
+        if (it && P.buyCosmetic(it.id)) { P.equipCosmetic(it.id); pick = null; renderCloset(); }
+        return;
+      }
       const tile = e.target.closest('.tt-closet-item');
-      if (!tile || tile.disabled) return;
-      const P = window.Progression, item = P.getShopItems().find(i => i.id === tile.dataset.id);
-      if (P.equippedIn(item.category) === item.id) P.unequipCategory(item.category); // tap again = take off (colors can't be removed)
+      if (!tile) return;
+      const item = P.getShopItems().find(i => i.id === tile.dataset.id);
+      if (!P.ownsCosmetic(item.id)) pick = pick === item.id ? null : item.id; // select/deselect a silhouette
+      else if (P.equippedIn(item.category) === item.id) P.unequipCategory(item.category); // tap again = take off (colors can't be removed)
       else P.equipCosmetic(item.id);
       renderCloset();
     });

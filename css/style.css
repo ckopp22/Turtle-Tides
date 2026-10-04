@@ -119,7 +119,7 @@ html, body {
   opacity: 0;
 }
 
-/* Icon button row (progression.js: Upgrades / Turtle Shop / Day-Night) — sits below the canvas HUD
+/* Icon button row (progression.js: Upgrades / Day-Night / Hide in Shell) — sits below the canvas HUD
    panel, left-aligned to match it. Each button is appended into this row when unlocked/visible;
    `display` on the individual button (flex/none) controls whether it shows. */
 #tt-icon-row {
@@ -148,7 +148,6 @@ html, body {
 /* Fixed left-to-right order regardless of unlock/insertion order: Upgrades (shop sign), then Turtle
    Shop (cosmetics), then Day/Night. */
 #tt-upgrade-btn { order: 1; }
-#tt-shop-btn { order: 2; }
 #tt-daynight-btn { order: 3; }
 #tt-hide-btn { order: 4; }
 /* Hide in Shell toggle: green while on. */
@@ -309,39 +308,6 @@ html, body {
   cursor: default;
 }
 
-/* Turtle Shop panel (progression.js) */
-.tt-shop-preview {
-  display: block;
-  margin: 0 auto 10px;
-  background: #cfe9f5;
-  border-radius: 10px;
-  border: 2px solid #cbb87c;
-}
-.tt-shop-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 8px;
-}
-.tt-shop-tab {
-  flex: 1 1 auto;
-  font-size: 12px;
-  font-weight: 700;
-  padding: 8px 6px;
-  border-radius: 8px;
-  border: 2px solid #cbb87c;
-  background: #fdf6e3;
-  cursor: pointer;
-}
-.tt-shop-tab.active {
-  background: #ffb347;
-  border-color: #7a5a1e;
-}
-.tt-shop-items {
-  max-height: 40vh;
-  overflow-y: auto;
-}
-
 button { touch-action: manipulation; }
 
 /* Hut (home.js): toast shown on entering when new upgrades were unlocked. pointer-events: none so it
@@ -433,8 +399,19 @@ button { touch-action: manipulation; }
   font-weight: 700;
 }
 .tt-closet-item.locked { background: #ece5d0; border-style: dashed; color: #8a8064; cursor: default; }
-.tt-closet-item.locked img { filter: brightness(0); opacity: 0.35; }
+.tt-closet-item.locked .tt-closet-art img { filter: brightness(0); opacity: 0.35; }
 .tt-closet-item.locked .tt-closet-swatch { background: #000 !important; opacity: 0.35; }
 .tt-closet-art { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; }
 .tt-closet-art img { max-width: 44px; max-height: 44px; image-rendering: pixelated; }
 .tt-closet-swatch { display: block; width: 34px; height: 34px; border-radius: 50%; border: 2px solid #3a2a10; }
+
+/* Closet shop bits (home.js): coin count, price chips, and the buy bar under the grid. */
+.tt-closet-coins { position: absolute; left: 0; display: flex; align-items: center; gap: 4px; font: 700 14px system-ui, sans-serif; color: #3a2a10; }
+.tt-closet-coins img, .tt-closet-price img { width: 16px; height: 16px; image-rendering: pixelated; }
+.tt-closet-price { display: flex; align-items: center; gap: 3px; font-weight: 700; }
+.tt-closet-item.locked { cursor: pointer; }
+.tt-closet-item.locked.picked { border-style: solid; border-color: #c98a1e; background: #fff1d0; }
+.tt-closet-item.locked.poor .tt-closet-price { color: #a33; }
+.tt-closet-buybar { flex: none; margin-bottom: 10px; text-align: center; font: 600 13px system-ui, sans-serif; color: #6b5b3a; }
+.tt-closet-buybar strong { color: #3a2a10; }
+.tt-closet-buy { display: block; width: 100%; min-height: 48px; margin-top: 6px; }
