@@ -1939,6 +1939,7 @@
   }
 
   // ---- Perf overlay: only exists with ?debug=1 in the URL; zero cost otherwise.
+  const loadedVer = (document.querySelector('script[src*="game.js"]') || {}).src?.split('?')[1] || '?'; // confirms the phone isn't running a cached build
   const perf = new URLSearchParams(location.search).get('debug') === '1' ? (() => {
     const el = document.createElement('pre');
     el.style.cssText = 'position:fixed;left:4px;top:4px;margin:0;padding:4px 6px;background:rgba(0,0,0,.65);color:#7f7;font:11px/1.3 monospace;z-index:99;pointer-events:none';
@@ -1953,7 +1954,7 @@
       take() { const c = calls; calls = 0; return c; },
       show(fps, avg, worst, c) {
         const mem = performance.memory ? `${(performance.memory.usedJSHeapSize / 1048576).toFixed(1)} MB` : 'n/a';
-        el.textContent = `fps ${fps.toFixed(0)}\nframe ${avg.toFixed(1)}ms (worst ${worst.toFixed(1)})\nwork ${p.ms.toFixed(1)}ms\nvisible ${p.visible} / ${scenery.length}\ndraws/frame ${c.toFixed(0)}\nheap ${mem}\ndpr ${dpr}`;
+        el.textContent = `fps ${fps.toFixed(0)}\nframe ${avg.toFixed(1)}ms (worst ${worst.toFixed(1)})\nwork ${p.ms.toFixed(1)}ms\nvisible ${p.visible} / ${scenery.length}\ndraws/frame ${c.toFixed(0)}\nheap ${mem}\ndpr ${dpr}\n${loadedVer} skip:${Object.keys(skip).join(',') || '-'}`;
       } };
     return p;
   })() : null;
@@ -2004,7 +2005,7 @@
   }
   const viewRect = { x: 0, y: 0, w: 0, h: 0 };
   const ENEMY_WALK_R2 = (WORLD_SIZE / 2 - EDGE_FOG_WIDTH * 0.4) ** 2; // same fog margin pickups use
-  if (!TEST && window.Enemies) window.Enemies.init({
+  if (!TEST && window.Enemies && !skip.noenemies) window.Enemies.init({
     turtle, worldSize: WORLD_SIZE, center: CENTER,
     basePlayerSpeed: MAX_SPEED * LAND_SPEED_MULT, // enemy speeds are fractions of this (skill bonuses ignored)
     walkable: (x, y) => { const dx = x - CENTER.x, dy = y - CENTER.y; return dx * dx + dy * dy <= ENEMY_WALK_R2 && !isWater(x, y) && !isHomeIsland(x, y); },
