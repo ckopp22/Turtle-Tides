@@ -445,6 +445,7 @@
   // ---- Sizing (mirrors game.js's own resize() so both agree on the same viewport). ----
   let dpr = 1, viewW = 0, viewH = 0;
   function resize() {
+    if (currentScene === SCENES.GAME_HANDOFF) return; // game.js owns the canvas size now (different dpr cap)
     dpr = window.devicePixelRatio || 1;
     viewW = window.innerWidth; viewH = window.innerHeight;
     canvas.width = Math.round(viewW * dpr);
