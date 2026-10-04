@@ -564,6 +564,15 @@
     // Old saves have no `turtleMaster` field — fall back to re-deriving it from upgrade levels
     // (loadFromSave above already set heartsLevel/hullLevel/homeLevel) so it isn't lost.
     state.turtleMaster = typeof data.turtleMaster === 'boolean' ? data.turtleMaster : allUpgradesMaxed();
+    // Test shortcut: ?master=1 maxes every upgrade (saved with the slot on the next persist).
+    if (new URLSearchParams(location.search).get('master') === '1') {
+      state.heartsLevel = CONFIG.hearts.upgradeCosts.length;
+      state.hullLevel = CONFIG.hull.capTiers.length - 1;
+      state.homeLevel = window.Home.UPGRADES.length;
+      state.homeSeenLevel = state.homeLevel;
+      state.hearts = maxHearts();
+      state.turtleMaster = true;
+    }
   }
   function getSaveData() {
     return {
