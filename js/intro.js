@@ -191,7 +191,7 @@
   }
   const pickupBuffers = {};
   // Per-file WebAudio gain (default 0.6); the clip.volume values only apply to the <audio> fallback.
-  const PICKUP_GAIN = { 'bag.m4a': 1.4, 'coin.mp3': 0.2 };
+  const PICKUP_GAIN = { 'bag.m4a': 1.4, 'coin.mp3': 0.2, 'sand.mp3': 1.2, 'stomp.mp3': 1.2 };
   // maxLen (seconds, optional) plays only that much of the clip from its first audible sample, with a short fade-out.
   function playPickup(file, clip, maxLen, when) {
     const buf = pickupBuffers[file];
