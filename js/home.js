@@ -42,7 +42,7 @@
     { id: 'chest',   name: 'Chest',          layer: '08_chest_192.png',            cost: 25, unlocks: ['closet'],                perk: 'Closet',                     solids: [{ rect: [137, 141, 177, 169] }], hotspot: { rect: [137, 141, 177, 169], action: 'closet' } },
     { id: 'doormat', name: 'Doormat',        layer: '03_doormat_192.png',          cost: 30, unlocks: ['moveSpeed1'],             perk: 'Move Speed I',               solids: [] },
     { id: 'table',   name: 'Table & Stools', layer: '04_table_and_stools_192.png', cost: 45, unlocks: ['swimSpeed1'],             perk: 'Swim Speed I',               solids: [{ circle: [152, 82, 18] }, { circle: [152, 112, 8] }, { circle: [128, 82, 8] }] },
-    { id: 'shelf',   name: 'Shelf',          layer: '05_shelf_192.png',            cost: 60, unlocks: ['collectionBook'],         perk: 'Collection Book',            solids: [] },
+    { id: 'shelf',   name: 'Shelf',          layer: '05_shelf_192.png',            cost: 60, unlocks: ['collectionBook'],         perk: 'Collection Book',            solids: [], hotspot: { rect: [130, 17, 178, 36], action: 'book' } },
     { id: 'plant',   name: 'Plant',          layer: '06_plant_192.png',            cost: 75, unlocks: ['moveSpeed2'],             perk: 'Move Speed II',              solids: [{ circle: [30, 158, 9] }] },
     { id: 'lantern', name: 'Lantern',        layer: '07_lantern_192.png',          cost: 95, unlocks: ['dayNight', 'swimSpeed2'], perk: 'Day/Night + Swim Speed II',  solids: [] },
     { id: 'rug',     name: 'Rug',            layer: '02_rug_192.png',              cost: 120, unlocks: [],                       perk: 'Decor',                      solids: [] },
@@ -203,7 +203,7 @@
 
 
   // ---- Clickable furniture + sleeping ----
-  const ACTIONS = { sleep: startSleep, closet: openCloset }; // TODO: step 5 adds 'book' (shelf)
+  const ACTIONS = { sleep: startSleep, closet: openCloset, book: openBook };
   const sleep = { phase: 0, t: 0, dim: 0, msg: '', full: false }; // phase: 0 none, 1 fading to dark, 2 asleep, 3 waking
   const hint = { text: '', timer: 0 };
   let lastSleepAt = -1;
@@ -484,7 +484,7 @@
   // "Buy & wear" spends banked coins. Opening it pauses the room; Close, the backdrop, Escape and the
   // browser Back button all close it. ----
   const CLOSET_SLOTS = [['color', 'Shell color'], ['hat', 'Hats'], ['clothes', 'Clothes'], ['accessory', 'Accessories']];
-  let modal = false, closet = null, closetPushed = false, pick = null;
+  let modal = false, closet = null, book = null, screenPushed = false, pick = null, bookPage = 0;
   function closetTile(item, coins) {
     const P = window.Progression, owned = P.ownsCosmetic(item.id), on = P.equippedIn(item.category) === item.id;
     let art;
@@ -512,7 +512,7 @@
     if (window.TurtleGame && window.TurtleGame.renderCosmeticPreview) window.TurtleGame.renderCosmeticPreview(closet.querySelector('.tt-closet-preview'));
   }
   function openCloset() {
-    closeCloset();
+    closeScreen();
     modal = true; pick = null;
     const wrap = document.createElement('div');
     wrap.className = 'tt-name-prompt';
@@ -526,7 +526,7 @@
     document.body.appendChild(wrap);
     closet = wrap;
     wrap.addEventListener('click', e => {
-      if (e.target === wrap || e.target.closest('.tt-closet-x, .tt-closet-close')) { closeCloset(); return; }
+      if (e.target === wrap || e.target.closest('.tt-closet-x, .tt-closet-close')) { closeScreen(); return; }
       const P = window.Progression;
       if (e.target.closest('.tt-closet-buy')) { // buy the picked silhouette, then put it on
         const it = P.getShopItems().find(i => i.id === pick);
@@ -542,16 +542,111 @@
       renderCloset();
     });
     renderCloset();
-    try { history.pushState({ ttCloset: 1 }, ''); closetPushed = true; } catch { closetPushed = false; } // so Back closes it
+    try { history.pushState({ ttCloset: 1 }, ''); screenPushed = true; } catch { screenPushed = false; } // so Back closes it
   }
-  function closeCloset(fromPop) {
-    if (!closet) return;
-    closet.remove(); closet = null; modal = false;
-    if (closetPushed && !fromPop) { closetPushed = false; try { history.back(); } catch {} }
-    closetPushed = false;
+  function closeScreen(fromPop) { // closes whichever full-screen panel (closet / collection book) is open
+    if (!closet && !book) return;
+    if (closet) { closet.remove(); closet = null; }
+    if (book) { book.remove(); book = null; }
+    modal = false;
+    if (screenPushed && !fromPop) { screenPushed = false; try { history.back(); } catch {} }
+    screenPushed = false;
   }
-  window.addEventListener('popstate', () => closeCloset(true));
-  window.addEventListener('keydown', e => { if (e.key === 'Escape' && closet) closeCloset(); });
+  window.addEventListener('popstate', () => closeScreen(true));
+  window.addEventListener('keydown', e => { if (e.key === 'Escape' && (closet || book)) closeScreen(); });
+
+  // ---- Collection book (shelf): the 25 finds as pages (Common / Rare / Very Rare) plus a stats page.
+  // Found items show their picture, name and how many have been banked; the rest are dark silhouettes
+  // with "???". Page through with the arrow buttons, the arrow keys, or a swipe. Built when it opens
+  // and redrawn only when the page changes. Shares the closet's modal/Back/Escape handling. ----
+  const BOOK_PAGES = [
+    { id: 'common', title: 'Common', tier: 'common' },
+    { id: 'rare', title: 'Rare', tier: 'rare' },
+    { id: 'veryRare', title: 'Very Rare', tier: 'veryRare' },
+    { id: 'stats', title: 'Stats', stats: true },
+  ];
+  const BOOK_SPRITE = 56; // px each find is drawn at (the sheet is 64px cells, scaled whole-number-ish)
+  const SWIPE_MIN_PX = 50;
+  // TODO: page-completion rewards. Called when a finds page is drawn with every item found; no reward
+  // is built yet, so this is only the hook (page = a BOOK_PAGES entry).
+  function onPageComplete(page) {}
+  function fmtPlayTime(sec) {
+    const m = Math.floor(sec / 60), h = Math.floor(m / 60);
+    return h > 0 ? `${h}h ${m % 60}m` : `${m}m`;
+  }
+  function bookPageHtml(page, P) {
+    const F = P.FINDS, col = P.state.collection;
+    if (page.stats) {
+      const st = P.state.stats;
+      const rows = [['Coins found', st.coins], ['Coconuts found', st.coconuts], ['Sandcastles knocked over', st.castles], ['Times caught', st.deaths], ['Time played', fmtPlayTime(st.playSeconds)]];
+      return `<h4>Stats</h4><div class="tt-book-stats">${rows.map(([k, v]) => `<div><span>${k}</span><strong>${v}</strong></div>`).join('')}</div>`;
+    }
+    let found = 0, total = 0, cells = '';
+    F.items.forEach((it, i) => {
+      if (it.tier !== page.tier) return;
+      total++;
+      const n = col[it.id] || 0;
+      if (n > 0) found++;
+      const sx = -(i % F.cols) * BOOK_SPRITE, sy = -Math.floor(i / F.cols) * BOOK_SPRITE;
+      cells += `<div class="tt-book-cell tier-${it.tier}${n ? '' : ' locked'}">
+        <span class="tt-book-sprite" style="background-image:url(${F.sheet});background-position:${sx}px ${sy}px"></span>
+        <span class="tt-book-name">${n ? it.name : '???'}</span>${n ? `<span class="tt-book-count">x${n}</span>` : ''}</div>`;
+    });
+    if (found === total) onPageComplete(page);
+    return `<h4>${page.title}<span class="tt-book-prog${found === total ? ' done' : ''}">${found} / ${total}</span></h4><div class="tt-book-grid">${cells}</div>`;
+  }
+  function renderBook() {
+    if (!book) return;
+    const P = window.Progression, F = P.FINDS;
+    const foundAll = F.items.filter(it => P.state.collection[it.id] > 0).length;
+    book.querySelector('.tt-book-total').textContent = `${foundAll} / ${F.items.length} found`;
+    book.querySelector('.tt-book-page').innerHTML = bookPageHtml(BOOK_PAGES[bookPage], P);
+    book.querySelector('.tt-book-pos').textContent = `${bookPage + 1} / ${BOOK_PAGES.length}`;
+    book.querySelector('.tt-book-prev').disabled = bookPage === 0;
+    book.querySelector('.tt-book-next').disabled = bookPage === BOOK_PAGES.length - 1;
+  }
+  function turnPage(d) {
+    const n = Math.max(0, Math.min(BOOK_PAGES.length - 1, bookPage + d));
+    if (n === bookPage) return;
+    bookPage = n;
+    renderBook();
+  }
+  function openBook() {
+    closeScreen();
+    modal = true; bookPage = 0;
+    const wrap = document.createElement('div');
+    wrap.className = 'tt-name-prompt';
+    wrap.innerHTML = `<div class="tt-name-box tt-upgrade-box tt-closet-box tt-book-box">
+      <div class="tt-closet-head"><div class="tt-book-total"></div><h3>Collection</h3><button type="button" class="tt-closet-x" aria-label="Close">&#x2715;</button></div>
+      <div class="tt-book-page"></div>
+      <div class="tt-book-nav"><button type="button" class="tt-book-prev" aria-label="Previous page">&#x25C0;</button><span class="tt-book-pos"></span><button type="button" class="tt-book-next" aria-label="Next page">&#x25B6;</button></div>
+      <div class="tt-name-actions"><button type="button" class="tt-cancel tt-closet-close">Close</button></div>
+    </div>`;
+    document.body.appendChild(wrap);
+    book = wrap;
+    wrap.addEventListener('click', e => {
+      if (e.target === wrap || e.target.closest('.tt-closet-x, .tt-closet-close')) { closeScreen(); return; }
+      if (e.target.closest('.tt-book-prev')) turnPage(-1);
+      else if (e.target.closest('.tt-book-next')) turnPage(1);
+    });
+    // swipe left/right on the page to turn it (vertical drags still scroll)
+    const pageEl = wrap.querySelector('.tt-book-page');
+    let sx = 0, sy = 0, sid = -1;
+    pageEl.addEventListener('pointerdown', e => { sid = e.pointerId; sx = e.clientX; sy = e.clientY; });
+    pageEl.addEventListener('pointerup', e => {
+      if (e.pointerId !== sid) return;
+      sid = -1;
+      const dx = e.clientX - sx, dy = e.clientY - sy;
+      if (Math.abs(dx) >= SWIPE_MIN_PX && Math.abs(dx) > Math.abs(dy) * 1.5) turnPage(dx < 0 ? 1 : -1);
+    });
+    pageEl.addEventListener('pointercancel', () => { sid = -1; });
+    renderBook();
+    try { history.pushState({ ttBook: 1 }, ''); screenPushed = true; } catch { screenPushed = false; }
+  }
+  window.addEventListener('keydown', e => {
+    if (!book) return;
+    if (e.key === 'ArrowLeft') turnPage(-1); else if (e.key === 'ArrowRight') turnPage(1);
+  });
 
   window.Home = {
     syncFromSave: syncUnlocked, hasFeature, hutBuilt, UPGRADES,
