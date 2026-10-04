@@ -195,7 +195,7 @@
   // Per-file WebAudio gain (default 0.6); the clip.volume values only apply to the <audio> fallback.
   const PICKUP_GAIN = { 'bag.m4a': 1.4, 'coin.mp3': 0.2, 'sand.mp3': 1.2, 'stomp.mp3': 1.2,
     'door.mp3': 0.8, 'creak.mp3': 0.5, 'snore.mp3': 0.7, 'book-open.mp3': 0.6, 'book-page.mp3': 0.6, 'book-close.mp3': 0.6,
-    'eagle.mp3': 0.7, 'snake.mp3': 0.7, 'bear.mp3': 0.8 };
+    'eagle.mp3': 0.7, 'snake.mp3': 0.7, 'bear.mp3': 0.8, 'stick-snap.mp3': 0.7 };
   // maxLen (seconds, optional) plays only that much of the clip from its first audible sample, with a short fade-out.
   // gainMul (optional) scales the file's gain, e.g. for distance falloff on enemy cries.
   function playPickup(file, clip, maxLen, when, gainMul) {
@@ -265,19 +265,25 @@
   // Hull-full SFX (assets/sfx/full.mp3), played from progression.js tryPickup via TT_SOUND.full.
   const fullClip = gAudio('assets/sfx/full.mp3');
   fullClip.volume = 0.6;
-  // Hut + creature SFX (assets/sfx): door (hut door closing), creak (floorboards while walking inside), snore
-  // (sleeping in the bed), book-open/page/close (collection book), fire (campfire loop, volume by distance),
-  // eagle/snake/bear (a seagull/snake/bear starts chasing). Played as decoded buffers via playPickup.
-  const HUT_SFX = { door: 'door', creak: 'creak', snore: 'snore', bookOpen: 'book-open', bookPage: 'book-page', bookClose: 'book-close', eagle: 'eagle', snake: 'snake', bear: 'bear' };
+  // Hut + creature SFX (assets/sfx): creak (the chest opening), door (the chest closing), snore (sleeping in
+  // the bed), book-open/page/close (collection book), fire (campfire loop, volume by distance), eagle/snake/
+  // bear (a seagull/snake/bear starts chasing), stick-snap (a crab attacks). Played as decoded buffers via playPickup.
+  const HUT_SFX = { door: 'door', creak: 'creak', snore: 'snore', bookOpen: 'book-open', bookPage: 'book-page', bookClose: 'book-close', eagle: 'eagle', snake: 'snake', bear: 'bear', stick: 'stick-snap' };
   const hutClips = {}; // <audio> fallbacks for before the decoded buffers are ready
   for (const k in HUT_SFX) { const a = gAudio(`assets/sfx/${HUT_SFX[k]}.mp3`); a.volume = 0.6; hutClips[k] = a; }
-  const ENEMY_SFX = { seagull: 'eagle', snake: 'snake', bear: 'bear' }; // enemy type -> sound (crabs are silent)
-  const enemyLast = {};  // enemy type -> last cry time (ms), so a pack doesn't cry at once
+  const ENEMY_SFX = { seagull: 'eagle', snake: 'snake', bear: 'bear' }; // enemy type -> sound when it starts chasing
+  const ENEMY_ATTACK_SFX = { crab: 'stick' };                              // enemy type -> sound when it attacks
+  const enemyLast = {};  // enemy type -> last cry/attack sound time (ms), so a pack doesn't sound off at once
   const ENEMY_CRY_GAP_MS = 1500;
-  let lastCreak = 0;
-  const CREAK_GAP_MS = 550; // footstep spacing inside the hut
   const fireLoop = { buf: null, src: null, gain: null };
   const FIRE_GAIN = 0.5;    // loudest the campfire gets (right next to it)
+  function enemySound(name, key, distance, gapMs) {
+    const n = performance.now();
+    if (!name || n - (enemyLast[key] || 0) < gapMs) return;
+    const mul = Math.max(0, Math.min(1, 1.3 - distance / 600));
+    if (mul <= 0.05) return;
+    enemyLast[key] = n; playHut(name, mul);
+  }
   function playHut(name, mul) { if (soundOn) playPickup(HUT_SFX[name] + '.mp3', hutClips[name], 0, 0, mul); }
   // Campfire crackle: vol 0..1 (distance falloff computed by the caller); 0 stops it.
   function setFire(vol) {
@@ -424,16 +430,11 @@
     bookOpen: () => playHut('bookOpen'),
     bookPage: () => playHut('bookPage'),
     bookClose: () => playHut('bookClose'),
-    creak: () => { const n = performance.now(); if (n - lastCreak >= CREAK_GAP_MS) { lastCreak = n; playHut('creak'); } },
+    creak: () => playHut('creak'),
     fire: vol => setFire(vol),
     // distance: world px from the turtle; louder when close, gone past ~700px
-    enemy: (type, distance) => {
-      const name = ENEMY_SFX[type], n = performance.now();
-      if (!name || n - (enemyLast[type] || 0) < ENEMY_CRY_GAP_MS) return;
-      const mul = Math.max(0, Math.min(1, 1.3 - distance / 600));
-      if (mul <= 0.05) return;
-      enemyLast[type] = n; playHut(name, mul);
-    },
+    enemy: (type, distance) => enemySound(ENEMY_SFX[type], type, distance, ENEMY_CRY_GAP_MS),
+    enemyAttack: (type, distance) => enemySound(ENEMY_ATTACK_SFX[type], type + '-atk', distance, 400), // a crab swings every ~1.2s, so every swing sounds
     walking: (active, rate) => Sound.walking(active, rate),
     swimming: (active, floating) => Sound.swimming(active, floating),
     toggle: () => { soundOn = !soundOn; writeSound(soundOn); syncMusic(); return soundOn; },

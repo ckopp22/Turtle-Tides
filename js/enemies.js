@@ -441,7 +441,9 @@
         if (chaseChecks(e, dt, d2, safe, alive)) return;
         if (d2 <= c.attack2) {
           face(e, dx, dy);
-          if (e.cd <= 0) { e.hitDone = false; e.atkAngle = Math.atan2(dy, dx); setState(e, ATTACK); return; }
+          if (e.cd <= 0) { e.hitDone = false; e.atkAngle = Math.atan2(dy, dx); setState(e, ATTACK);
+            if (window.TT_SOUND && window.TT_SOUND.enemyAttack) window.TT_SOUND.enemyAttack(e.type, Math.hypot(dx, dy)); // crab: stick snap
+            return; }
           setAnim(e, c.flies ? R.fly : R.idle, 5, FRAMES); // in range but recovering from the last swing: hold still
           return;
         }

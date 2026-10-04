@@ -329,14 +329,13 @@
   function startFade(swap) { phase = 1; alpha = 0; pending = swap; }
   function enterSwap() {
     scene = 'interior';
-    if (window.TT_SOUND) { window.TT_SOUND.door(); window.TT_SOUND.fire(0); }
+    if (window.TT_SOUND) window.TT_SOUND.fire(0); // the campfire isn't heard indoors
     room.x = ROOM_SPAWN.x; room.y = ROOM_SPAWN.y; room.vx = room.vy = room.speed = 0; room.angle = -Math.PI / 2;
     if (onEnterInterior) onEnterInterior();
     startPops();
   }
   function exitSwap() {
     scene = 'world';
-    if (window.TT_SOUND) window.TT_SOUND.door();
     if (pops.length) { pops.length = 0; syncUnlocked(); } // left mid pop-in: bake the items in
     turtle.x = hutX; turtle.y = hutY + CONFIG.exitDropPx; turtle.vx = turtle.vy = 0; turtle.angle = Math.PI / 2;
   }
@@ -526,6 +525,7 @@
   function openCloset() {
     closeScreen();
     modal = true; pick = null;
+    if (window.TT_SOUND) window.TT_SOUND.creak(); // the chest lid creaks open
     const wrap = document.createElement('div');
     wrap.className = 'tt-name-prompt';
     wrap.innerHTML = `<div class="tt-name-box tt-upgrade-box tt-closet-box">
@@ -558,7 +558,7 @@
   }
   function closeScreen(fromPop) { // closes whichever full-screen panel (closet / collection book) is open
     if (!closet && !book) return;
-    if (closet) { closet.remove(); closet = null; }
+    if (closet) { closet.remove(); closet = null; if (window.TT_SOUND) window.TT_SOUND.door(); } // lid shuts
     if (book) { book.remove(); book = null; if (window.TT_SOUND) window.TT_SOUND.bookClose(); }
     modal = false;
     if (screenPushed && !fromPop) { screenPushed = false; try { history.back(); } catch {} }
