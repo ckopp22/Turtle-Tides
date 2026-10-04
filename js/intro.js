@@ -120,7 +120,7 @@
   coconutClip.volume = 1.0;
   // Coin pickup SFX (assets/sfx/coin.mp3), played from game.js via TT_SOUND.coin.
   const coinClip = gAudio('assets/sfx/coin.mp3');
-  coinClip.volume = 0.3;
+  coinClip.volume = 0.2;
   // Bite SFX (assets/sfx/bite.mp3), played from progression.js via TT_SOUND.bite when eating from the HUD.
   const biteClip = gAudio('assets/sfx/bite.mp3');
   biteClip.volume = 0.2;
@@ -190,16 +190,18 @@
     }
   }
   const pickupBuffers = {};
+  // Per-file WebAudio gain (default 0.6); the clip.volume values only apply to the <audio> fallback.
+  const PICKUP_GAIN = { 'bag.m4a': 1.4, 'coin.mp3': 0.2 };
   // maxLen (seconds, optional) plays only that much of the clip from its first audible sample, with a short fade-out.
   function playPickup(file, clip, maxLen, when) {
     const buf = pickupBuffers[file];
     if (audioCtx && buf) {
       const src = audioCtx.createBufferSource(), gain = audioCtx.createGain();
-      const t = when || audioCtx.currentTime;
-      src.buffer = buf; gain.gain.value = 0.6;
+      const t = when || audioCtx.currentTime, g = PICKUP_GAIN[file] || 0.6;
+      src.buffer = buf; gain.gain.value = g;
       src.connect(gain); gain.connect(audioCtx.destination);
       if (maxLen) {
-        gain.gain.setValueAtTime(0.6, t + maxLen - 0.04);
+        gain.gain.setValueAtTime(g, t + maxLen - 0.04);
         gain.gain.linearRampToValueAtTime(0, t + maxLen);
         src.start(t, leadSilence(buf), maxLen);
       } else src.start(t, leadSilence(buf));
