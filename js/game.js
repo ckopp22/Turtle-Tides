@@ -139,6 +139,7 @@
 
   // Any input wakes the (debug-key) sleeping state. TODO: step 3 replaces sleeping with the hut bed.
   let sleepIdleTimer = 0;
+  let hideIdleTimer = 0, shellFromToggle = false; // Hide in Shell: idle time so far / whether the current 'shell' state came from the toggle
   function wakeUp() {
     if (state !== 'sleeping') return;
     state = 'normal';
@@ -1407,7 +1408,14 @@
     const hungerSpeedMult = window.Progression.update(dt, !atHome);
     if (atHome) window.Progression.bankCarried();
 
-    const dir = state === 'normal' ? getDirection() : NO_DIR;
+    // Hide in Shell (hut perk): with the toggle on, standing still for a moment tucks the turtle into its
+    // shell (state 'shell', which Enemies' takeHit wrapper treats as invulnerable); any input pops it out.
+    const hideOn = window.Progression.state.hideOn && window.Progression.hasSkill('hideInShell');
+    const wantsMove = state === 'normal' || (state === 'shell' && shellFromToggle) ? getDirection() : NO_DIR;
+    if (state === 'shell' && shellFromToggle && (wantsMove.x !== 0 || wantsMove.y !== 0 || !hideOn)) {
+      state = 'normal'; stateTime = 0; shellFromToggle = false; hideIdleTimer = 0;
+    }
+    const dir = state === 'normal' ? wantsMove : NO_DIR;
     const inWater = isWater(turtle.x, turtle.y);
     // Swim Speed only boosts water movement, Move Speed only boosts land movement (see
     // progression.js CONFIG.speed) — domains never overlap, so nothing to stack.
@@ -1417,6 +1425,14 @@
     const hasInput = dir.x !== 0 || dir.y !== 0;
     const rate = (hasInput ? ACCEL : DECEL) * dt;
 
+    if (hideOn && state === 'normal' && dir.x === 0 && dir.y === 0 && Math.hypot(turtle.vx, turtle.vy) < 5) {
+      hideIdleTimer += dt;
+      if (hideIdleTimer >= window.Progression.getHideConfig().idleSeconds) {
+        state = 'shell'; stateTime = 0; shellFromToggle = true; hideIdleTimer = 0;
+      }
+    } else if (state !== 'shell') {
+      hideIdleTimer = 0;
+    }
     // TODO: step 3 — sleeping now happens by tapping the hut's bed (home.js); this only runs the debug-key sleep state.
     if (state === 'sleeping') window.Progression.updateSleep(dt);
 
@@ -1841,7 +1857,7 @@
     biomeAt: (x, y) => dominantBiome(x, y).biome, // allocates; only called when spawning / picking wander targets
     view: () => { viewRect.x = camX; viewRect.y = camY; viewRect.w = viewW / ZOOM; viewRect.h = viewH / ZOOM; return viewRect; },
     turtleAlive: () => deathTimer < 0,
-    takeHit: n => window.Progression.takeHit(n),
+    takeHit: n => state === 'shell' ? false : window.Progression.takeHit(n), // a turtle tucked into its shell takes no enemy damage
   });
   window.TurtleGame = { start, renderCosmeticPreview };
 

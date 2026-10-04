@@ -71,6 +71,9 @@
       // No hunger recovery — sleeping only heals hearts, hunger still just sits flat (no drain,
       // same as anywhere else on the home island).
     },
+    hideInShell: {
+      idleSeconds: 0.5, // standing still this long (toggle on) pulls the turtle into its shell
+    },
     invulnSeconds: 1.2,           // blink window after a heart is lost
     hullFullFlashSeconds: 1.4,
     // Carried (unbanked) items are never written to the save (see getSaveData()), so closing the
@@ -205,6 +208,7 @@
     hungerZeroTimer: 0,  // seconds spent at 0 hunger (grace + repeat heart-loss ticking)
     hungerHeartTicks: 0,
     heartRecoverAccum: 0, // fractional heart progress while sleeping (see updateSleep)
+    hideOn: false,  // Hide in Shell toggle (hut upgrade perk): shell up whenever the turtle stops moving
     isNight: false, // Day/Night toggle (L7 skill) — game.js eases its sky render toward this target
     cosmetics: {
       owned: ['color_default'],
@@ -336,6 +340,7 @@
   // game.js multiplies into its own water/land speed calc.
   function update(dt, awayFromHome) {
     ensureDayNightButton();
+    ensureHideButton();
     if (state.invulnTimer > 0) state.invulnTimer = Math.max(0, state.invulnTimer - dt);
     if (state.hullFullFlash > 0) state.hullFullFlash = Math.max(0, state.hullFullFlash - dt);
     if (state.lastLostMessage) {
@@ -394,6 +399,16 @@
     state.isNight = !state.isNight;
     persist();
   }
+
+  // ---- Hide in Shell toggle: game.js pulls the turtle into its shell after it has stood still for
+  // CONFIG.hideInShell.idleSeconds while this is on; any movement input brings it back out. A hidden
+  // turtle takes no enemy damage (game.js's takeHit wrapper for enemies checks it). ----
+  function toggleHide() {
+    if (!hasSkill('hideInShell')) return;
+    state.hideOn = !state.hideOn;
+    persist();
+  }
+  function getHideConfig() { return CONFIG.hideInShell; }
 
   // ---- Speed skills (game.js multiplies these into its water/land speed calc each frame) ----
   function swimSpeedMultiplier() {
@@ -465,6 +480,7 @@
       shells: data.banked?.shells || 0,
     };
     state.shellCollection = Array.isArray(data.shellCollection) ? data.shellCollection : [];
+    state.hideOn = data.hideOn === true;
     state.isNight = typeof data.isNight === 'boolean' ? data.isNight : false; // missing on old saves -> default day
     // Cosmetics: old saves have no `cosmetics` field at all — default to just the free color owned/
     // equipped and nothing else. A save with a partial/corrupt object still gets safe defaults per field.
@@ -507,6 +523,7 @@
       banked: { ...state.banked },
       shellCollection: state.shellCollection.slice(),
       isNight: state.isNight,
+      hideOn: state.hideOn,
       cosmetics: { owned: state.cosmetics.owned.slice(), equipped: { ...state.cosmetics.equipped } },
       turtleMaster: state.turtleMaster,
       homeVersion: 2, // 2 = homeLevel counts hut upgrades; bump if the hut save shape changes (loads tolerate it missing)
@@ -859,6 +876,29 @@
     updateDayNightButtonLabel();
   }
 
+  // Hide in Shell toggle button — same row as Day/Night, shown everywhere once the perk is unlocked.
+  // Lit (green) while on. Created once from update(), like the Day/Night button above.
+  const SHELL_SVG = '<svg width="28" height="28" viewBox="0 0 28 28"><ellipse cx="14" cy="15" rx="11" ry="9" fill="#5a9a4a" stroke="#2d5a26" stroke-width="2"/><path d="M14 6v18M6 11l8 4 8-4M6 19l8-4 8 4" stroke="#2d5a26" stroke-width="1.6" fill="none" stroke-linejoin="round"/><circle cx="14" cy="15" r="2.4" fill="#8fd66b" stroke="#2d5a26" stroke-width="1.2"/></svg>';
+  let hideBtn = null;
+  function updateHideButtonLabel() {
+    if (!hideBtn) return;
+    hideBtn.classList.toggle('tt-on', state.hideOn);
+    hideBtn.title = `Hide in Shell: ${state.hideOn ? 'on' : 'off'}`;
+    hideBtn.setAttribute('aria-pressed', state.hideOn ? 'true' : 'false');
+  }
+  function ensureHideButton() {
+    if (!hasSkill('hideInShell') || hideBtn) return;
+    hideBtn = document.createElement('button');
+    hideBtn.id = 'tt-hide-btn';
+    hideBtn.className = 'tt-icon-btn';
+    hideBtn.type = 'button';
+    hideBtn.innerHTML = SHELL_SVG;
+    hideBtn.style.display = 'flex';
+    hideBtn.addEventListener('click', () => { toggleHide(); updateHideButtonLabel(); });
+    ensureIconRow().appendChild(hideBtn);
+    updateHideButtonLabel();
+  }
+
   // ---- Sound toggle (top-right) — shares the same on/off preference intro.js's mute button reads
   // and writes (window.TT_SOUND, see intro.js) so the setting stays in sync across both screens.
   let soundBtn = null;
@@ -1019,7 +1059,7 @@
 
   window.Progression = {
     tryPickup, bankCarried, takeHit, getStarveDim: () => starveDim, isInvulnerable, setRespawnHandler, setDeathHandler, respawnAtHome,
-    update, updateSleep, getSleepConfig, swimSpeedMultiplier, moveSpeedMultiplier, toggleDayNight, drawHUD, setHomeButtonVisible, tryEatFromHud,
+    update, updateSleep, getSleepConfig, getHideConfig, swimSpeedMultiplier, moveSpeedMultiplier, toggleDayNight, drawHUD, setHomeButtonVisible, tryEatFromHud,
     buyUpgrade, canUpgrade, addStat, addPlayTime,
     attachSlot, getSaveData, persist,
     hasSkill,

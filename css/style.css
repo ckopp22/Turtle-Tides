@@ -150,6 +150,9 @@ html, body {
 #tt-upgrade-btn { order: 1; }
 #tt-shop-btn { order: 2; }
 #tt-daynight-btn { order: 3; }
+#tt-hide-btn { order: 4; }
+/* Hide in Shell toggle: green while on. */
+#tt-hide-btn.tt-on { background: #8fd66b; border-color: #2d5a26; }
 
 /* Sound toggle (progression.js) — top right, mirrors intro.js's mute button styling/position. */
 #tt-sound-btn {
