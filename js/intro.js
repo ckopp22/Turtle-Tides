@@ -184,7 +184,7 @@
       fetch(`assets/sfx/${f}`).then(r => r.arrayBuffer()).then(b => audioCtx.decodeAudioData(b))
         .then(buf => { l.buf = buf; }).catch(() => {});
     }
-    for (const f of ['bag.m4a', 'shell.mp3', 'coin.mp3', 'sand.mp3', 'stomp.mp3']) {
+    for (const f of ['bag.m4a', 'shell.mp3', 'coin.mp3', 'sand.mp3', 'stomp.mp3', 'full.mp3']) {
       fetch(`assets/sfx/${f}`).then(r => r.arrayBuffer()).then(b => audioCtx.decodeAudioData(b))
         .then(buf => { pickupBuffers[f] = buf; }).catch(() => {});
     }
@@ -328,6 +328,13 @@
     full: seconds => {
       if (!soundOn) return;
       // squeeze/stretch the clip so it ends exactly when the HUD's hull-full flash does
+      const fb = pickupBuffers['full.mp3'];
+      if (audioCtx && fb) { // decoded buffer: <audio>.play() from the game loop can be blocked (esp. iOS)
+        const src = audioCtx.createBufferSource(), gain = audioCtx.createGain();
+        src.buffer = fb; src.playbackRate.value = seconds ? fb.duration / seconds : 1; gain.gain.value = 0.6;
+        src.connect(gain); gain.connect(audioCtx.destination); src.start();
+        return;
+      }
       fullClip.playbackRate = seconds && fullClip.duration ? fullClip.duration / seconds : 1;
       fullClip.currentTime = 0;
       fullClip.play().catch(() => {});
