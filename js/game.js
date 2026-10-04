@@ -1887,7 +1887,7 @@
   function inView(s, vw, vh, margin) {
     return s.x > camX - margin && s.x < camX + vw + margin && s.y > camY - margin && s.y < camY + vh + margin;
   }
-  // Debug bisecting on a phone: ?debug=1&skip=terrain,grass,shore turns those layers off.
+  // Debug bisecting on a phone: ?debug=1&skip=terrain,grass,shore turns those layers off (also: scenery, ripples, pickups, enemies, hud, night).
   const skip = {};
   for (const k of (new URLSearchParams(location.search).get('skip') || '').split(',')) if (k) skip[k] = true;
   function render(t) {
@@ -1904,19 +1904,17 @@
     if (!skip.terrain) drawTerrain();
     if (!skip.grass) drawGrassTextures();
     if (shore && !skip.shore) drawShore(t);
-    drawRipples(); // above water, below turtle/scenery
+    if (!skip.ripples) drawRipples(); // above water, below turtle/scenery
     drawSandText();
     ctx.drawImage(islandDetail.canvas, islandDetail.worldX, islandDetail.worldY);
-    coinPickups.draw();
-    coconutPickups.draw();
-    shellPickups.draw();
+    if (!skip.pickups) { coinPickups.draw(); coconutPickups.draw(); shellPickups.draw(); }
 
     // Cull scenery to the visible world rect (plus a small margin) so a big world with lots of
     // trees still draws only a couple dozen-to-hundred objects per frame.
     rebuildHomeDecorIfNeeded();
     const vw = viewW / ZOOM, vh = viewH / ZOOM, margin = 80;
     visibleBuf.length = 0; // reused buffer: no per-frame array allocations
-    for (const s of scenery) if (inView(s, vw, vh, margin)) visibleBuf.push(s);
+    if (!skip.scenery) for (const s of scenery) if (inView(s, vw, vh, margin)) visibleBuf.push(s);
     for (const s of homeDecorList) if (inView(s, vw, vh, margin)) visibleBuf.push(s);
     if (window.Enemies && !skip.enemies) window.Enemies.collectVisible(visibleBuf, ctx, camX, camY, vw, vh, margin);
     const visible = visibleBuf;
@@ -1927,9 +1925,9 @@
     if (window.Enemies) window.Enemies.drawDebug(ctx, camX, camY, vw, vh);
     ctx.restore();
 
-    drawNightSky(); // screen space, under the HUD/joystick so they stay fully readable
+    if (!skip.night) drawNightSky(); // screen space, under the HUD/joystick so they stay fully readable
     drawJoystick(); // screen space
-    window.Progression.drawHUD(ctx); // screen space
+    if (!skip.hud) window.Progression.drawHUD(ctx); // screen space
     // Starvation dim (see Progression.getStarveDim) or, once dead, the fade to black picking up from it.
     const dimA = deathTimer >= 0
       ? deathStartDim + (1 - deathStartDim) * Math.min(1, deathTimer / DEATH_FADE_SECONDS)
