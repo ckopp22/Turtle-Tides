@@ -38,7 +38,7 @@
   // collectionBook and closet. `perk` is the short text the shop row shows. Costs climb gently; the
   // cheap early pieces make the first few buys quick wins.
   const INDOOR = [
-    { id: 'bed',     name: 'Bed',            layer: '01_bed_192.png',              cost: 20, unlocks: ['sleep'],                  perk: 'Sleep',                      solids: [{ rect: [16, 44, 80, 108] }], hotspot: { rect: [16, 44, 80, 108], label: 'Sleep', action: 'sleep' } },
+    { id: 'bed',     name: 'Bed',            layer: '01_bed_192.png',              cost: 20, unlocks: ['sleep'],                  perk: 'Sleep',                      solids: [{ rect: [16, 44, 80, 108] }], hotspot: { rect: [16, 44, 80, 108], action: 'sleep' } },
     { id: 'chest',   name: 'Chest',          layer: '08_chest_192.png',            cost: 25, unlocks: ['closet', 'turtleShop'],   perk: 'Closet + Turtle Shop',        solids: [{ rect: [137, 141, 177, 169] }] },
     { id: 'doormat', name: 'Doormat',        layer: '03_doormat_192.png',          cost: 30, unlocks: ['moveSpeed1'],             perk: 'Move Speed I',               solids: [] },
     { id: 'table',   name: 'Table & Stools', layer: '04_table_and_stools_192.png', cost: 45, unlocks: ['swimSpeed1'],             perk: 'Swim Speed I',               solids: [{ circle: [152, 82, 18] }, { circle: [152, 112, 8] }, { circle: [128, 82, 8] }] },
@@ -425,14 +425,15 @@
     ctx.imageSmoothingEnabled = true;
     if (!sleep.phase) drawFurnitureCues(ctx, lay, t);
   }
-  // Pulsing outline + small label on every tappable piece; brighter while the mouse is over it.
+  // Pulsing outline on every tappable piece (brighter under the mouse), plus a bobbing "Tap" prompt
+  // while the turtle is within nearbyPx of it.
   let cursorOn = false;
   function drawFurnitureCues(ctx, lay, t) {
     const s = lay.s, pad = CONFIG.hitPad, mx = (mouse.x - lay.x0) / s, my = (mouse.y - lay.y0) / s;
     let hovering = false;
     ctx.save();
-    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-    ctx.font = `700 ${Math.max(11, Math.round(4.5 * s))}px system-ui, sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `700 ${Math.max(14, Math.round(6 * s))}px system-ui, sans-serif`;
     ctx.lineJoin = 'round';
     for (let i = 0; i < INDOOR.length; i++) {
       if (!spotActive(i)) continue;
@@ -446,8 +447,12 @@
       ctx.strokeStyle = `rgba(255,255,255,${hov ? 0.9 : 0.25 + 0.3 * pulse})`;
       ctx.lineWidth = Math.max(2, s);
       ctx.strokeRect(x, y, w, hh);
-      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(40,24,8,0.85)'; ctx.fillStyle = '#fff';
-      ctx.strokeText(h.label, x + w / 2, y + hh * 0.5 + 6); ctx.fillText(h.label, x + w / 2, y + hh * 0.5 + 6);
+      const ndx = room.x - clamp(room.x, r[0], r[2]), ndy = room.y - clamp(room.y, r[1], r[3]);
+      if (ndx * ndx + ndy * ndy <= CONFIG.nearbyPx * CONFIG.nearbyPx) {
+        const ty = y + hh / 2 + Math.sin(t * 5) * s;
+        ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(40,24,8,0.9)'; ctx.fillStyle = '#fff';
+        ctx.strokeText('Tap', x + w / 2, ty); ctx.fillText('Tap', x + w / 2, ty);
+      }
     }
     ctx.restore();
     if (hovering !== cursorOn) { cursorOn = hovering; document.getElementById('game').style.cursor = hovering ? 'pointer' : ''; }
