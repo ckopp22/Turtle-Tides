@@ -1536,7 +1536,10 @@
     if (spawned) clampToWorld(); // keep the turtle in bounds after a phone rotation, etc.
   }
   window.addEventListener('resize', resize);
-  window.addEventListener('orientationchange', resize);
+  // iOS reports stale innerWidth/innerHeight right after a rotation, so re-measure a few times as it settles.
+  function resizeSettled() { resize(); [100, 300, 600].forEach(ms => setTimeout(resize, ms)); }
+  window.addEventListener('orientationchange', resizeSettled);
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
 
   // Camera: centers on the turtle, clamped so the view never shows past the world edge.
   // (If the viewport is ever bigger than the world, e.g. a very wide monitor, center the world instead.)
