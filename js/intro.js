@@ -451,7 +451,9 @@
     canvas.height = Math.round(viewH * dpr);
   }
   window.addEventListener('resize', resize);
-  window.addEventListener('orientationchange', resize);
+  // iOS reports stale innerWidth/innerHeight right after a rotation (canvas then looks zoomed), so re-measure as it settles.
+  window.addEventListener('orientationchange', () => { resize(); [100, 300, 600].forEach(ms => setTimeout(resize, ms)); });
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
 
   // ---- Tiny scene manager: each scene is {enter, exit, update(dt), draw()}. on() tracks listeners
   // so exit() (via goto/teardownScene) can remove them — nothing leaks between scenes. ----
