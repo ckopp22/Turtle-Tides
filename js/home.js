@@ -19,14 +19,13 @@
     // size, collision radius, and the lit animation's speed (frames/sec; the sheet has 6 frames).
     campfire: { x: -135, y: 120, size: 72, radius: 18, fps: 8 },
     // Clickable furniture (tap/click). hitPad = art px added around each hit area for fingers.
-    // requireNearby: if true the turtle must be within nearbyPx (art px) of the item first, else a
-    // "Come closer" hint shows. A press only counts as a tap if it moves < tapMaxMovePx and ends
+    // The turtle must be within nearbyPx (art px) of an item to use it, else a "Come closer" hint
+    // shows (the same distance shows the "Tap" prompt). A press only counts as a tap if it moves < tapMaxMovePx and ends
     // within tapMaxMs, so dragging the joystick never triggers furniture.
-    hitPad: 5, requireNearby: false, nearbyPx: 36, tapMaxMovePx: 12, tapMaxMs: 600, hintSeconds: 1.6,
+    hitPad: 5, nearbyPx: 36, tapMaxMovePx: 12, tapMaxMs: 600, hintSeconds: 1.6,
     // Bed -> sleep. Fade to dark, show the turtle asleep on the bed for asleepSeconds, fade back in.
-    // Restores all hearts and saves. Limits are off by default: cooldownSeconds (0 = none; skipped at
-    // full health) and onlyAtNight (uses the Day/Night toggle).
-    sleep: { fadeSeconds: 0.5, revealSeconds: 0.4, asleepSeconds: 2.5, dim: 0.8, scale: 1.3, cooldownSeconds: 0, onlyAtNight: false },
+    // Restores all hearts and saves. cooldownSeconds is off by default (0 = none; skipped at full health).
+    sleep: { fadeSeconds: 0.5, revealSeconds: 0.4, asleepSeconds: 2.5, dim: 0.8, scale: 1.3, cooldownSeconds: 0 },
   };
 
   // ---- Hut upgrades. The island shop's "Home" track (progression.js TRACKS.home) sells them one at a
@@ -206,7 +205,6 @@
   function showHint(text) { hint.text = text; hint.timer = CONFIG.hintSeconds; }
   function startSleep() {
     const P = window.Progression, c = CONFIG.sleep;
-    if (c.onlyAtNight && !P.state.isNight) { showHint('You can only sleep at night'); return; }
     const full = P.state.hearts >= P.maxHearts(), now = P.state.stats.playSeconds;
     if (!full && c.cooldownSeconds > 0 && lastSleepAt >= 0 && now - lastSleepAt < c.cooldownSeconds) {
       showHint(`Not sleepy yet (${Math.ceil(c.cooldownSeconds - (now - lastSleepAt))}s)`); return;
@@ -248,10 +246,8 @@
     if (scene !== 'interior' || phase !== 0 || sleep.phase) return;
     const u = hitSpot((cx - L.x0) / L.s, (cy - L.y0) / L.s);
     if (!u) return;
-    if (CONFIG.requireNearby) {
-      const r = u.hotspot.rect, dx = room.x - clamp(room.x, r[0], r[2]), dy = room.y - clamp(room.y, r[1], r[3]);
-      if (Math.hypot(dx, dy) > CONFIG.nearbyPx) { showHint('Come closer'); return; }
-    }
+    const r = u.hotspot.rect, dx = room.x - clamp(room.x, r[0], r[2]), dy = room.y - clamp(room.y, r[1], r[3]);
+    if (Math.hypot(dx, dy) > CONFIG.nearbyPx) { showHint('Come closer'); return; }
     ACTIONS[u.hotspot.action](u);
   }
   // Pointer events (mouse + touch + pen). A tap = short press with little movement.
