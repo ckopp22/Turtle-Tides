@@ -234,6 +234,7 @@
     banked: { coins: 0, coconuts: 0 },
     carriedFinds: [],  // ids of finds picked up this trip (they take hull space; lost on death)
     collection: {},    // find id -> how many have been banked (saved; drives the collection book)
+    bookRewards: {},   // collection-book page id -> true once its completion reward has been paid (saved)
     hungerZeroTimer: 0,  // seconds spent at 0 hunger (grace + repeat heart-loss ticking)
     hungerHeartTicks: 0,
     hideOn: false,  // Hide in Shell toggle (hut upgrade perk): shell up whenever the turtle stops moving
@@ -287,6 +288,14 @@
     return true;
   }
   // ---- Stats (lifetime counters for the future collection book) ----
+  // Collection-book page reward: pays `coins` into the bank once per page; false if already paid.
+  function claimPageReward(pageId, coins) {
+    if (state.bookRewards[pageId]) return false;
+    state.bookRewards[pageId] = true;
+    state.banked.coins += coins;
+    persist();
+    return true;
+  }
   function addStat(key, n = 1) { if (key in state.stats) state.stats[key] += n; }
   function addPlayTime(dt) { state.stats.playSeconds += dt; }
   function bankCarried() {
@@ -516,6 +525,8 @@
       coconuts: data.banked?.coconuts || 0,
     };
     // Finds banked so far (old saves' shell trophies are dropped: they had no types).
+    state.bookRewards = {};
+    for (const k in (data.bookRewards || {})) if (data.bookRewards[k] === true) state.bookRewards[k] = true;
     state.collection = {};
     const col = data.collection || {};
     for (const it of CONFIG.finds.items) if (Number.isFinite(col[it.id]) && col[it.id] > 0) state.collection[it.id] = Math.floor(col[it.id]);
@@ -561,6 +572,7 @@
       homeLevel: state.homeLevel,
       banked: { ...state.banked },
       collection: { ...state.collection },
+      bookRewards: { ...state.bookRewards },
       isNight: state.isNight,
       hideOn: state.hideOn,
       cosmetics: { owned: state.cosmetics.owned.slice(), equipped: { ...state.cosmetics.equipped } },
@@ -1009,7 +1021,7 @@
   window.Progression = {
     tryPickup, bankCarried, takeHit, getStarveDim: () => starveDim, isInvulnerable, setRespawnHandler, setDeathHandler, respawnAtHome,
     update, restoreHearts, maxHearts, getHideConfig, swimSpeedMultiplier, moveSpeedMultiplier, toggleDayNight, drawHUD, setHomeButtonVisible, tryEatFromHud,
-    buyUpgrade, canUpgrade, addStat, addPlayTime,
+    buyUpgrade, canUpgrade, addStat, addPlayTime, claimPageReward,
     attachSlot, getSaveData, persist,
     hasSkill, FINDS: CONFIG.finds, randomFindIndex,
     SHOP_CATEGORIES, getShopItems: () => CONFIG.shop.items, buyCosmetic, equipCosmetic, unequipCategory, ownsCosmetic, equippedIn, getEquippedColorTint, drawEquippedCosmetics,

@@ -1846,13 +1846,6 @@
     if (!grassReady) { started = false; requestAnimationFrame(() => start(slotId, saveData)); return; } // wait for grass textures so nothing draws untextured
     if (!shore) { started = false; requestAnimationFrame(() => start(slotId, saveData)); return; } // wait for Shore.js's sand/water tiles too
     window.Progression.attachSlot(slotId, saveData);
-    // Testing shortcut: ?home=N jumps the saved home level to N (0-max) so the hut upgrades can be
-    // checked without earning coins. Persists to the slot like a normal purchase would.
-    const homeParam = new URLSearchParams(location.search).get('home');
-    if (homeParam !== null && Number.isFinite(+homeParam)) {
-      window.Progression.state.homeLevel = Math.max(0, Math.min(Home.UPGRADES.length, Math.floor(+homeParam)));
-      window.Progression.persist();
-    }
     Home.syncFromSave();
     spawnTurtle();
     last = performance.now();

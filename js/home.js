@@ -579,9 +579,12 @@
   ];
   const BOOK_SPRITE = 56; // px each find is drawn at (the sheet is 64px cells, scaled whole-number-ish)
   const SWIPE_MIN_PX = 50;
-  // TODO: page-completion rewards. Called when a finds page is drawn with every item found; no reward
-  // is built yet, so this is only the hook (page = a BOOK_PAGES entry).
-  function onPageComplete(page) {}
+  const PAGE_REWARD_COINS = 100; // paid once per finds page, the first time the book is opened with that page complete
+  function pageCounts(page, P) { // { found, total } for a finds page
+    let found = 0, total = 0;
+    for (const it of P.FINDS.items) if (it.tier === page.tier) { total++; if (P.state.collection[it.id] > 0) found++; }
+    return { found, total };
+  }
   function fmtPlayTime(sec) {
     const m = Math.floor(sec / 60), h = Math.floor(m / 60);
     return h > 0 ? `${h}h ${m % 60}m` : `${m}m`;
@@ -604,7 +607,6 @@
         <span class="tt-book-sprite" style="background-image:url(${F.sheet});background-position:${sx}px ${sy}px"></span>
         <span class="tt-book-name">${n ? it.name : '???'}</span>${n ? `<span class="tt-book-count">x${n}</span>` : ''}</div>`;
     });
-    if (found === total) onPageComplete(page);
     return `<h4>${page.title}<span class="tt-book-prog${found === total ? ' done' : ''}">${found} / ${total}</span></h4><div class="tt-book-grid">${cells}</div>`;
   }
   function renderBook() {
@@ -632,6 +634,7 @@
     wrap.className = 'tt-name-prompt';
     wrap.innerHTML = `<div class="tt-name-box tt-upgrade-box tt-closet-box tt-book-box">
       <div class="tt-closet-head"><div class="tt-book-total"></div><h3>Collection</h3><button type="button" class="tt-closet-x" aria-label="Close">&#x2715;</button></div>
+      <div class="tt-book-note"></div>
       <div class="tt-book-page"></div>
       <div class="tt-book-nav"><button type="button" class="tt-book-prev" aria-label="Previous page">&#x25C0;</button><span class="tt-book-pos"></span><button type="button" class="tt-book-next" aria-label="Next page">&#x25B6;</button></div>
       <div class="tt-name-actions"><button type="button" class="tt-cancel tt-closet-close">Close</button></div>
@@ -654,6 +657,17 @@
       if (Math.abs(dx) >= SWIPE_MIN_PX && Math.abs(dx) > Math.abs(dy) * 1.5) turnPage(dx < 0 ? 1 : -1);
     });
     pageEl.addEventListener('pointercancel', () => { sid = -1; });
+    // pay out any finds page that is now complete (once each), and say so
+    const P = window.Progression, paid = [];
+    for (const pg of BOOK_PAGES) {
+      if (pg.stats) continue;
+      const c = pageCounts(pg, P);
+      if (c.found === c.total && P.claimPageReward(pg.id, PAGE_REWARD_COINS)) paid.push(pg.title);
+    }
+    if (paid.length) {
+      wrap.querySelector('.tt-book-note').textContent = `Page complete: ${paid.join(', ')}! +${paid.length * PAGE_REWARD_COINS} coins`;
+      if (window.TT_SOUND) window.TT_SOUND.coin();
+    }
     renderBook();
     try { history.pushState({ ttBook: 1 }, ''); screenPushed = true; } catch { screenPushed = false; }
   }
