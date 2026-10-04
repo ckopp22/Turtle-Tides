@@ -127,6 +127,19 @@
   // Shell pickup SFX (assets/sfx/shell.mp3), played from game.js via TT_SOUND.shell.
   const shellClip = gAudio('assets/sfx/shell.mp3');
   shellClip.volume = 0.6;
+  const walkLoop = { buf: null, src: null, vol: 0.6 }, swimLoop = { buf: null, src: null, vol: 0.1 };
+  // Starts/stops/re-rates a buffer loop. Returns false if the buffer isn't ready (caller falls back to the <audio> clip).
+  function driveLoop(l, active, rate) {
+    if (!audioCtx || !l.buf) return false;
+    if (active && !l.src) {
+      const src = audioCtx.createBufferSource(), gain = audioCtx.createGain();
+      src.buffer = l.buf; src.loop = true; gain.gain.value = l.vol;
+      src.connect(gain); gain.connect(audioCtx.destination);
+      src.start(); l.src = src;
+    } else if (!active && l.src) { l.src.stop(); l.src = null; }
+    if (l.src && l.src.playbackRate.value !== rate) l.src.playbackRate.value = rate;
+    return true;
+  }
   // Walking loop (assets/sfx/walking.mp3), driven from game.js via TT_SOUND.walking(active) while moving on ground.
   const walkClip = gAudio('assets/sfx/walking.mp3');
   walkClip.loop = true;
@@ -165,6 +178,12 @@
         .then(buf => { bankBuffers[i] = buf; }).catch(() => {});
     });
     // Pickup SFX: same decoded-buffer + trimmed-silence trick to kill the <audio> start delay on collect.
+    // Walk/swim loops play from decoded buffers (looping BufferSource): a looping <audio> routed through
+    // WebAudio dropped Chrome iOS to ~4 fps.
+    for (const [l, f] of [[walkLoop, 'walking.mp3'], [swimLoop, 'water-walking.mp3']]) {
+      fetch(`assets/sfx/${f}`).then(r => r.arrayBuffer()).then(b => audioCtx.decodeAudioData(b))
+        .then(buf => { l.buf = buf; }).catch(() => {});
+    }
     for (const f of ['bag.m4a', 'shell.mp3', 'coin.mp3', 'sand.mp3', 'stomp.mp3']) {
       fetch(`assets/sfx/${f}`).then(r => r.arrayBuffer()).then(b => audioCtx.decodeAudioData(b))
         .then(buf => { pickupBuffers[f] = buf; }).catch(() => {});
@@ -269,11 +288,13 @@
       playPickup('shell.mp3', shellClip);
     },
     walking: (active, rate) => {
+      if (driveLoop(walkLoop, active && soundOn, rate || 1)) { if (!walkClip.paused) walkClip.pause(); return; }
       if (rate && walkClip.playbackRate !== rate) walkClip.playbackRate = rate; // only on change: setting it every frame is costly on iOS Chrome
       if (active && soundOn) { if (walkClip.paused) walkClip.play().catch(() => {}); }
       else if (!walkClip.paused) walkClip.pause();
     },
     swimming: (active, floating) => {
+      if (driveLoop(swimLoop, active && soundOn, floating ? 0.5 : 1)) { if (!swimClip.paused) swimClip.pause(); return; }
       const sr = floating ? 0.5 : 1; // slower while just floating
       if (swimClip.playbackRate !== sr) swimClip.playbackRate = sr;
       if (active && soundOn) { if (swimClip.paused) swimClip.play().catch(() => {}); }
