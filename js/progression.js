@@ -64,6 +64,41 @@
       swimSpeedTiers: [1.2, 1.4],  // [Swim Speed I, Swim Speed II]
       moveSpeedTiers: [1.2, 1.4],  // [Move Speed I, Move Speed II]
     },
+    // Finds: the 25 collectibles scattered over the map (replacing the old shell pickup). Listed in
+    // the sprite sheet's order (assets/collectibles/items25_spritesheet.png, 5x5 of 64px, row-major),
+    // so an item's sheet cell is its index. `tier` sets how often it spawns: a pickup first rolls a tier
+    // by `tierWeights`, then picks one item of that tier at random. 10 common / 10 rare / 5 very rare.
+    finds: {
+      sheet: 'assets/collectibles/items25_spritesheet.png', cell: 64, cols: 5,
+      tierWeights: { common: 70, rare: 25, veryRare: 5 },
+      items: [
+        { id: 'starfish',        name: 'Starfish',          tier: 'common'   },
+        { id: 'sand_dollar',     name: 'Sand Dollar',       tier: 'rare'     },
+        { id: 'spiral_shell',    name: 'Spiral Shell',      tier: 'rare'     },
+        { id: 'oyster_pearl',    name: 'Oyster Pearl',      tier: 'rare'     },
+        { id: 'message_bottle',  name: 'Message in a Bottle', tier: 'rare'   },
+        { id: 'treasure_map',    name: 'Treasure Map',      tier: 'veryRare' },
+        { id: 'driftwood',       name: 'Driftwood',         tier: 'common'   },
+        { id: 'kelp',            name: 'Kelp',              tier: 'common'   },
+        { id: 'fish',            name: 'Fish',              tier: 'common'   },
+        { id: 'coconut_half',    name: 'Coconut Half',      tier: 'common'   },
+        { id: 'banana_bunch',    name: 'Banana Bunch',      tier: 'common'   },
+        { id: 'pineapple',       name: 'Pineapple',         tier: 'common'   },
+        { id: 'palm_leaf',       name: 'Palm Leaf',         tier: 'common'   },
+        { id: 'hibiscus',        name: 'Hibiscus',          tier: 'rare'     },
+        { id: 'compass',         name: 'Compass',           tier: 'veryRare' },
+        { id: 'rope_coil',       name: 'Rope Coil',         tier: 'common'   },
+        { id: 'barrel',          name: 'Barrel',            tier: 'rare'     },
+        { id: 'treasure_chest',  name: 'Treasure Chest',    tier: 'veryRare' },
+        { id: 'blue_gem',        name: 'Blue Gem',          tier: 'veryRare' },
+        { id: 'old_key',         name: 'Old Key',           tier: 'veryRare' },
+        { id: 'lantern',         name: 'Lantern',           tier: 'rare'     },
+        { id: 'shovel',          name: 'Shovel',            tier: 'rare'     },
+        { id: 'anchor',          name: 'Anchor',            tier: 'rare'     },
+        { id: 'sea_urchin',      name: 'Sea Urchin',        tier: 'rare'     },
+        { id: 'seagull_feather', name: 'Seagull Feather',   tier: 'common'   },
+      ],
+    },
     hideInShell: {
       idleSeconds: 0.5, // standing still this long (toggle on) pulls the turtle into its shell
     },
@@ -195,9 +230,10 @@
     hunger: CONFIG.hunger.baseMax,
     hullLevel: 0,
     homeLevel: 0,
-    carried: { coins: 0, coconuts: 0, shells: 0 },
-    banked: { coins: 0, coconuts: 0, shells: 0 },
-    shellCollection: [], // banked shell trophies; TODO: shell variety/color once that system exists
+    carried: { coins: 0, coconuts: 0 },
+    banked: { coins: 0, coconuts: 0 },
+    carriedFinds: [],  // ids of finds picked up this trip (they take hull space; lost on death)
+    collection: {},    // find id -> how many have been banked (saved; drives the collection book)
     hungerZeroTimer: 0,  // seconds spent at 0 hunger (grace + repeat heart-loss ticking)
     hungerHeartTicks: 0,
     hideOn: false,  // Hide in Shell toggle (hut upgrade perk): shell up whenever the turtle stops moving
@@ -220,19 +256,33 @@
   function hungerMax() { return CONFIG.hunger.baseMax; }
   function hungerDrainRate() { return CONFIG.hunger.baseDrainPerSecond; }
   function hullCap() { return CONFIG.hull.capTiers[state.hullLevel]; }
-  function carriedTotal() { return state.carried.coins + state.carried.coconuts + state.carried.shells; }
+  function carriedTotal() { return state.carried.coins + state.carried.coconuts + state.carriedFinds.length; }
 
   // ---- Pickup / bank / loss ----
   // Returns false (and flashes the hull-full cue) if the hull has no room; caller should leave the
   // item on the ground in that case rather than consuming it.
-  function tryPickup(type) {
+  // Picks which find a new pickup is: rolls a tier by CONFIG.finds.tierWeights, then an item of that tier.
+  const findsByTier = {};
+  for (const it of CONFIG.finds.items) (findsByTier[it.tier] || (findsByTier[it.tier] = [])).push(it);
+  function randomFindIndex() {
+    const w = CONFIG.finds.tierWeights;
+    let total = 0;
+    for (const t in w) total += w[t];
+    let r = Math.random() * total, tier = 'common';
+    for (const t in w) { tier = t; if ((r -= w[t]) < 0) break; }
+    const list = findsByTier[tier];
+    return CONFIG.finds.items.indexOf(list[Math.floor(Math.random() * list.length)]);
+  }
+  // `type` is 'coins' | 'coconuts' | 'finds'; for a find, `findIndex` is its index in CONFIG.finds.items.
+  function tryPickup(type, findIndex) {
     if (carriedTotal() >= hullCap()) {
       // tryPickup runs every frame while overlapping an item, so only sound off when the flash isn't already running
       if (state.hullFullFlash <= 0 && window.TT_SOUND) window.TT_SOUND.full(CONFIG.hullFullFlashSeconds);
       state.hullFullFlash = CONFIG.hullFullFlashSeconds;
       return false;
     }
-    state.carried[type]++;
+    if (type === 'finds') state.carriedFinds.push(CONFIG.finds.items[findIndex].id);
+    else state.carried[type]++;
     if (type === 'coins' || type === 'coconuts') state.stats[type]++;
     return true;
   }
@@ -243,16 +293,17 @@
     if (carriedTotal() === 0) return false;
     state.banked.coins += state.carried.coins;
     state.banked.coconuts += state.carried.coconuts;
-    for (let i = 0; i < state.carried.shells; i++) state.shellCollection.push({ bankedAt: Date.now() });
-    state.banked.shells += state.carried.shells;
-    state.carried = { coins: 0, coconuts: 0, shells: 0 };
+    for (const id of state.carriedFinds) state.collection[id] = (state.collection[id] || 0) + 1;
+    state.carriedFinds = [];
+    state.carried = { coins: 0, coconuts: 0 };
     persist();
     if (window.TT_SOUND) window.TT_SOUND.bank();
     return true;
   }
   function loseCarried() {
     const lost = carriedTotal();
-    state.carried = { coins: 0, coconuts: 0, shells: 0 };
+    state.carried = { coins: 0, coconuts: 0 };
+    state.carriedFinds = [];
     return lost;
   }
   // Auto-eats one carried coconut to refill hunger once it runs out (MDD s4 v1 assumption).
@@ -463,9 +514,11 @@
     state.banked = {
       coins: data.banked?.coins || 0,
       coconuts: data.banked?.coconuts || 0,
-      shells: data.banked?.shells || 0,
     };
-    state.shellCollection = Array.isArray(data.shellCollection) ? data.shellCollection : [];
+    // Finds banked so far (old saves' shell trophies are dropped: they had no types).
+    state.collection = {};
+    const col = data.collection || {};
+    for (const it of CONFIG.finds.items) if (Number.isFinite(col[it.id]) && col[it.id] > 0) state.collection[it.id] = Math.floor(col[it.id]);
     state.hideOn = data.hideOn === true;
     state.isNight = typeof data.isNight === 'boolean' ? data.isNight : false; // missing on old saves -> default day
     // Cosmetics: old saves have no `cosmetics` field at all — default to just the free color owned/
@@ -488,7 +541,8 @@
     state.stats = {};
     for (const k of ['coconuts', 'coins', 'castles', 'deaths', 'playSeconds']) state.stats[k] = Number.isFinite(st[k]) && st[k] > 0 ? st[k] : 0;
     // Never restore carried items from a save — see loseUnbankedOnClose above.
-    state.carried = { coins: 0, coconuts: 0, shells: 0 };
+    state.carried = { coins: 0, coconuts: 0 };
+    state.carriedFinds = [];
     state.hearts = maxHearts();
     state.hunger = hungerMax();
     state.hungerZeroTimer = 0;
@@ -506,7 +560,7 @@
       hullLevel: state.hullLevel,
       homeLevel: state.homeLevel,
       banked: { ...state.banked },
-      shellCollection: state.shellCollection.slice(),
+      collection: { ...state.collection },
       isNight: state.isNight,
       hideOn: state.hideOn,
       cosmetics: { owned: state.cosmetics.owned.slice(), equipped: { ...state.cosmetics.equipped } },
@@ -616,9 +670,6 @@
     }
     ctx.restore();
   }
-  // TODO: banked shell total + a shell-collection viewer live behind a future "collection book"
-  // button (state.shellCollection already tracks each banked shell) — not built yet, scope for now
-  // is the HUD layout restyle only.
   function drawHUD(ctx) {
     const pad = 14, innerPad = 12;
     // Panel widens once the "Turtle Master" badge replaces the "Lv N" home badge (that label is a
@@ -960,7 +1011,7 @@
     update, restoreHearts, maxHearts, getHideConfig, swimSpeedMultiplier, moveSpeedMultiplier, toggleDayNight, drawHUD, setHomeButtonVisible, tryEatFromHud,
     buyUpgrade, canUpgrade, addStat, addPlayTime,
     attachSlot, getSaveData, persist,
-    hasSkill,
+    hasSkill, FINDS: CONFIG.finds, randomFindIndex,
     SHOP_CATEGORIES, getShopItems: () => CONFIG.shop.items, buyCosmetic, equipCosmetic, unequipCategory, ownsCosmetic, equippedIn, getEquippedColorTint, drawEquippedCosmetics,
     state, // read-only-by-convention access (e.g. debug/future HUD tweaks)
   };

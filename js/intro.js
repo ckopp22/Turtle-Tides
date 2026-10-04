@@ -984,8 +984,8 @@
     const data = {
       slotId: slot, name, createdAt: now, lastPlayedAt: now,
       heartsLevel: 0, hullLevel: 0, homeLevel: 0,
-      banked: { coins: 0, coconuts: 0, shells: 0 },
-      shellCollection: [],
+      banked: { coins: 0, coconuts: 0 },
+      collection: {},
     };
     writeSlot(slot, data);
     closeNameInput();

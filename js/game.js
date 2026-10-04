@@ -1185,12 +1185,12 @@
     ctx.restore();
   }
 
-  // ---- Collectible pickups: coins (currency), coconuts (food), and shells (trophies) — all placed
+  // ---- Collectible pickups: coins (currency), coconuts (food), and finds (the 25 collectibles) — all placed
   // and animated the same way (dart-thrown across land, never water; bob + respawn after pickup),
   // so makePickupType() below is shared by all three instead of copy-pasting per item. Pickups route
   // through window.Progression.tryPickup(), which gates them on hull capacity (MDD s4) — an item
-  // stays on the ground (not consumed) if the hull is full. Coin art is real (coin.png); coconut/
-  // shell use simple canvas-shape placeholders. TODO: real coconut/shell sprites.
+  // stays on the ground (not consumed) if the hull is full. Each find pickup rolls which of the 25 it is
+  // (by rarity, see progression.js CONFIG.finds) when placed and again each time it respawns.
   let gameTime = 0;
 
   // Picks a random spot that's not in water and not on the sand-text patch. Shared by every pickup
@@ -1214,10 +1214,11 @@
     function respawn(it) {
       const p = randomLandSpot();
       it.x = p.x; it.y = p.y; it.active = true;
+      if (opts.pickKind) it.kind = opts.pickKind();
     }
     for (let i = 0; i < opts.count; i++) {
       const p = randomLandSpot();
-      items.push({ x: p.x, y: p.y, active: true, respawnAt: 0, bobSeed: rand() * Math.PI * 2 });
+      items.push({ x: p.x, y: p.y, active: true, respawnAt: 0, bobSeed: rand() * Math.PI * 2, kind: opts.pickKind ? opts.pickKind() : 0 });
     }
     // One-off bonus pickup dropped at a spot (e.g. from a knocked-down sandcastle); removed once taken.
     function dropAt(x, y) {
@@ -1241,10 +1242,10 @@
         }
         if (it.popAt !== undefined && popHeight(it) > 0) continue; // can't grab it mid-hop
         if (Math.hypot(turtle.x - it.x, turtle.y - it.y) < pickupDist) {
-          if (window.Progression.tryPickup(key)) {
+          if (window.Progression.tryPickup(key, it.kind)) {
             if (key === 'coconuts' && window.TT_SOUND) window.TT_SOUND.coconut();
             if (key === 'coins' && window.TT_SOUND) window.TT_SOUND.coin();
-            if (key === 'shells' && window.TT_SOUND) window.TT_SOUND.shell();
+            if (key === 'finds' && window.TT_SOUND) window.TT_SOUND.shell();
             it.active = false;
             it.respawnAt = gameTime + opts.respawnSeconds;
             if (it.temp) items.splice(i, 1);
@@ -1266,7 +1267,7 @@
         ctx.beginPath(); ctx.ellipse(it.x, it.y + 22, opts.drawH * 0.4 * (1 - hopH / 400), opts.drawH * 0.18 * (1 - hopH / 400), 0, 0, Math.PI * 2); ctx.fill();
         ctx.globalAlpha = 1; // no save/restore needed: only alpha + fillStyle changed
         const hop = it.popAt !== undefined ? popHeight(it) : 0;
-        opts.drawItem(it.x, it.y + (hop > 0 ? -hop : bob));
+        opts.drawItem(it.x, it.y + (hop > 0 ? -hop : bob), it);
       }
     }
     return { update, draw, dropAt, items };
@@ -1292,21 +1293,21 @@
       ctx.drawImage(coconutImg, cx - dw / 2, cy - dh / 2, dw, dh);
     },
   });
-  const shellPickups = makePickupType('shells', {
-    count: 16, pickupRadius: 24, respawnSeconds: 26, drawH: 24, bobSpeed: 2.2, bobAmplitude: 5,
-    drawItem(cx, cy) {
-      const r = 14;
-      ctx.save();
-      ctx.fillStyle = '#f0d9a8';
-      ctx.beginPath();
-      ctx.moveTo(cx, cy + r);
-      for (let a = -1; a <= 1.001; a += 0.25) ctx.lineTo(cx + Math.sin(a) * r, cy - Math.cos(a) * r * 0.8);
-      ctx.closePath(); ctx.fill();
-      ctx.strokeStyle = '#c9a86a'; ctx.lineWidth = 1;
-      for (let a = -0.8; a <= 0.81; a += 0.4) {
-        ctx.beginPath(); ctx.moveTo(cx, cy + r); ctx.lineTo(cx + Math.sin(a) * r, cy - Math.cos(a) * r * 0.8); ctx.stroke();
-      }
-      ctx.restore();
+  // The 25 finds: one 5x5 sprite sheet (64px cells, in progression.js CONFIG.finds order); `it.kind` is
+  // the cell index. Drawn crisp (smoothing off) since it's pixel art.
+  const FINDS = window.Progression.FINDS;
+  const findsImg = new Image();
+  findsImg.src = FINDS.sheet;
+  const FIND_DRAW = 46; // world px
+  const findPickups = makePickupType('finds', {
+    count: 16, pickupRadius: 24, respawnSeconds: 26, drawH: 28, bobSpeed: 2.2, bobAmplitude: 5,
+    pickKind: window.Progression.randomFindIndex,
+    drawItem(cx, cy, it) {
+      if (!findsImg.complete || !findsImg.naturalWidth) return;
+      const c = FINDS.cell;
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(findsImg, (it.kind % FINDS.cols) * c, Math.floor(it.kind / FINDS.cols) * c, c, c, cx - FIND_DRAW / 2, cy - FIND_DRAW / 2, FIND_DRAW, FIND_DRAW);
+      ctx.imageSmoothingEnabled = true;
     },
   });
 
@@ -1403,7 +1404,7 @@
     updateSandPuffs(dt);
     coinPickups.update();
     coconutPickups.update();
-    shellPickups.update();
+    findPickups.update();
 
     const atHome = isHomeIsland(turtle.x, turtle.y);
     const hungerSpeedMult = window.Progression.update(dt, !atHome);
@@ -1753,7 +1754,7 @@
     drawSandText();
     ctx.drawImage(islandDetail.canvas, islandDetail.worldX, islandDetail.worldY);
     Home.drawGround(ctx, t); // outdoor campfire
-    if (!skip.pickups) { coinPickups.draw(); coconutPickups.draw(); shellPickups.draw(); }
+    if (!skip.pickups) { coinPickups.draw(); coconutPickups.draw(); findPickups.draw(); }
 
     // Cull scenery to the visible world rect (plus a small margin) so a big world with lots of
     // trees still draws only a couple dozen-to-hundred objects per frame.
@@ -1869,7 +1870,7 @@
     turtleAlive: () => deathTimer < 0,
     takeHit: n => state === 'shell' ? false : window.Progression.takeHit(n), // a turtle tucked into its shell takes no enemy damage
   });
-  window.TurtleGame = { start, renderCosmeticPreview };
+  window.TurtleGame = { start, renderCosmeticPreview, debugFinds: () => findPickups.items }; // debugFinds: console poking only
 
   // ---- Test mode (?test=1): no intro, no rAF loop. Math.random is seeded (top of file) and every
   // time input is a fixed number, so render() output is a pure function of the shot spec. Driven by
@@ -1927,7 +1928,7 @@
       add('world_corner', { x: 60, y: 60, t: 2 });
       add('world_edge_se', { x: WORLD_SIZE - 60, y: WORLD_SIZE - 400, t: 2 });
       // pickups (bob phase depends on gameTime) + mid-hop drop + sand puff
-      for (const [k, p] of [['coin', coinPickups], ['coconut', coconutPickups], ['shell', shellPickups]]) {
+      for (const [k, p] of [['coin', coinPickups], ['coconut', coconutPickups], ['find', findPickups]]) {
         const it = near(p.items, C.x + 900, C.y - 700);
         add('pickup_' + k, { x: it.x + 50, y: it.y + 40, gameTime: 3.3, t: 1 });
         add('pickup_' + k + '_b', { x: it.x - 60, y: it.y + 10, gameTime: 4.1, t: 1 });
