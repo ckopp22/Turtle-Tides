@@ -117,10 +117,10 @@
   splashClip.volume = 0.6;
   // Coconut pickup SFX (assets/sfx/bag.m4a), played from game.js via TT_SOUND.coconut.
   const coconutClip = gAudio('assets/sfx/bag.m4a');
-  coconutClip.volume = 0.6;
+  coconutClip.volume = 1.0;
   // Coin pickup SFX (assets/sfx/coin.mp3), played from game.js via TT_SOUND.coin.
   const coinClip = gAudio('assets/sfx/coin.mp3');
-  coinClip.volume = 0.6;
+  coinClip.volume = 0.3;
   // Bite SFX (assets/sfx/bite.mp3), played from progression.js via TT_SOUND.bite when eating from the HUD.
   const biteClip = gAudio('assets/sfx/bite.mp3');
   biteClip.volume = 0.2;
