@@ -456,8 +456,10 @@
     state.hullLevel = clampLevel(data.hullLevel, CONFIG.hull.capTiers.length - 1);
     // homeLevel = number of hut upgrades unlocked (max Home.UPGRADES.length). Older saves had a 0-20
     // level track (clamped here) or, briefly, a homeItems list (its length is used if higher).
-    state.homeLevel = clampLevel(Math.max(data.homeLevel || 0, Array.isArray(data.homeItems) ? data.homeItems.length : 0), window.Home.UPGRADES.length);
-    state.homeSeenLevel = Number.isFinite(data.homeSeenLevel) ? clampLevel(data.homeSeenLevel, state.homeLevel) : state.homeLevel;
+    // homeVersion 2 saves predate the "level 1 = the hut" shift, so every level moves up by one.
+    const shift = data.homeVersion === 2 && (data.homeLevel || 0) > 0 ? 1 : 0;
+    state.homeLevel = clampLevel(Math.max((data.homeLevel || 0) + shift, Array.isArray(data.homeItems) ? data.homeItems.length : 0), window.Home.UPGRADES.length);
+    state.homeSeenLevel = Number.isFinite(data.homeSeenLevel) ? clampLevel(data.homeSeenLevel + shift, state.homeLevel) : state.homeLevel;
     state.banked = {
       coins: data.banked?.coins || 0,
       coconuts: data.banked?.coconuts || 0,
@@ -509,7 +511,7 @@
       hideOn: state.hideOn,
       cosmetics: { owned: state.cosmetics.owned.slice(), equipped: { ...state.cosmetics.equipped } },
       turtleMaster: state.turtleMaster,
-      homeVersion: 2, // 2 = homeLevel counts hut upgrades; bump if the hut save shape changes (loads tolerate it missing)
+      homeVersion: 3, // 3 = homeLevel 0 is nothing, 1 is the hut, then its upgrades (2 = no hut step); bump if the save shape changes (loads tolerate it missing)
       homeSeenLevel: state.homeSeenLevel,
       stats: { ...state.stats },
     };

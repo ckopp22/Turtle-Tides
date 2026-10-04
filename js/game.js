@@ -1759,7 +1759,7 @@
     const vw = viewW / ZOOM, vh = viewH / ZOOM, margin = 80;
     visibleBuf.length = 0; // reused buffer: no per-frame array allocations
     if (!skip.scenery) for (const s of scenery) if (inView(s, vw, vh, margin)) visibleBuf.push(s);
-    if (inView(Home.hutEntry, vw, vh, 220)) visibleBuf.push(Home.hutEntry); // big sprite: wider cull margin
+    if (Home.hutBuilt() && inView(Home.hutEntry, vw, vh, 220)) visibleBuf.push(Home.hutEntry); // big sprite: wider cull margin
     if (window.Enemies && !skip.enemies) window.Enemies.collectVisible(visibleBuf, ctx, camX, camY, vw, vh, margin);
     const visible = visibleBuf;
     if (perf) perf.visible = visible.length;
