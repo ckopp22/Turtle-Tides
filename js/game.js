@@ -1733,6 +1733,7 @@
     if (!skip.ripples) drawRipples(); // above water, below turtle/scenery
     drawSandText();
     ctx.drawImage(islandDetail.canvas, islandDetail.worldX, islandDetail.worldY);
+    Home.drawGround(ctx, t); // outdoor campfire
     if (!skip.pickups) { coinPickups.draw(); coconutPickups.draw(); shellPickups.draw(); }
 
     // Cull scenery to the visible world rect (plus a small margin) so a big world with lots of

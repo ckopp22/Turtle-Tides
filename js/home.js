@@ -15,6 +15,9 @@
     // Hut position in world px relative to the island center; the anchor is the middle of the wall's
     // bottom edge (art 96,178). Kept well inland: the island is ~260px radius.
     hutOffset: { x: 0, y: 55 },
+    // Outdoor campfire (upgrades 9 and 10): center in world px relative to the island center, drawn
+    // size, collision radius, and the lit animation's speed (frames/sec; the sheet has 6 frames).
+    campfire: { x: -135, y: 120, size: 72, radius: 18, fps: 8 },
   };
 
   // ---- Hut upgrades. The island shop's "Home" track (progression.js TRACKS.home) sells them one at a
@@ -25,7 +28,7 @@
   // home-level perks (sleep, turtleShop, moveSpeed1/2, swimSpeed1/2, dayNight, hideInShell) plus the
   // collectionBook and closet. `perk` is the short text the shop row shows. Costs climb gently; the
   // cheap early pieces make the first few buys quick wins.
-  const UPGRADES = [
+  const INDOOR = [
     { id: 'bed',     name: 'Bed',            layer: '01_bed_192.png',              cost: 20, unlocks: ['sleep'],                  perk: 'Sleep',                      solids: [{ rect: [16, 44, 80, 108] }] },
     { id: 'chest',   name: 'Chest',          layer: '08_chest_192.png',            cost: 25, unlocks: ['closet', 'turtleShop'],   perk: 'Closet + Turtle Shop',        solids: [{ rect: [137, 141, 177, 169] }] },
     { id: 'doormat', name: 'Doormat',        layer: '03_doormat_192.png',          cost: 30, unlocks: ['moveSpeed1'],             perk: 'Move Speed I',               solids: [] },
@@ -35,6 +38,13 @@
     { id: 'lantern', name: 'Lantern',        layer: '07_lantern_192.png',          cost: 95, unlocks: ['dayNight', 'swimSpeed2'], perk: 'Day/Night + Swim Speed II',  solids: [] },
     { id: 'rug',     name: 'Rug',            layer: '02_rug_192.png',              cost: 120, unlocks: [],                       perk: 'Decor',                      solids: [] },
   ];
+  // Outdoor upgrades come after the hut items (levels 9-10): the campfire next to the hut, first
+  // unlit, then lit (animated) with Hide in Shell. Drawn on the island, not in the room.
+  const OUTDOOR = [
+    { id: 'campfireUnlit', name: 'Campfire Pit', cost: 150, unlocks: [],              perk: 'A place for a fire' },
+    { id: 'campfireLit',   name: 'Campfire',     cost: 190, unlocks: ['hideInShell'], perk: 'Hide in Shell' },
+  ];
+  const UPGRADES = INDOOR.concat(OUTDOOR); // everything the shop's Home row sells, in order
   const DRAW_FIRST = 'rug'; // layered under every other item
   const POP = { startDelay: 0.5, stagger: 0.45, duration: 0.45, overshoot: 1.7 }; // newly unlocked items pop in on entering
 
@@ -53,9 +63,11 @@
 
   function load(src) { const i = new Image(); i.onload = rebuildRoom; i.src = src; return i; }
   const hutImg = load('assets/home/hut_exterior_192.png');
+  const fireUnlitImg = load('assets/home/campfire_unlit_64.png');
+  const fireLitImg = load('assets/home/campfire_spritesheet.png'); // 6 frames of 64x64
   const baseImg = load('assets/home/00_hut_interior_empty_192.png');
   const layerImgs = {};
-  for (const u of UPGRADES) layerImgs[u.id] = load('assets/home/' + u.layer);
+  for (const u of INDOOR) layerImgs[u.id] = load('assets/home/' + u.layer);
 
   // The interior (base + every unlocked layer, rug first) is composed once into this canvas and drawn
   // from it every frame; rebuildRoom() only reruns when an image finishes loading or the unlocked
@@ -67,7 +79,7 @@
     roomCtx.clearRect(0, 0, ART, ART);
     if (baseImg.complete && baseImg.naturalWidth) roomCtx.drawImage(baseImg, 0, 0);
     drawLayer(DRAW_FIRST);
-    for (const u of UPGRADES) if (u.id !== DRAW_FIRST) drawLayer(u.id);
+    for (const u of INDOOR) if (u.id !== DRAW_FIRST) drawLayer(u.id);
   }
   function drawLayer(id) {
     const img = layerImgs[id];
@@ -84,7 +96,7 @@
   function syncUnlocked() {
     const lv = level();
     roomSolids.length = 0;
-    UPGRADES.forEach((u, i) => {
+    INDOOR.forEach((u, i) => {
       shown[u.id] = i < lv;
       if (i < lv) for (const sh of u.solids) roomSolids.push(sh.rect ? [0, ...sh.rect] : [1, ...sh.circle]);
     });
@@ -108,15 +120,17 @@
     syncUnlocked(); // clean slate (e.g. an animation cut short by leaving last time)
     if (lv > seen) {
       const names = [];
-      for (let i = seen; i < lv; i++) {
-        const u = UPGRADES[i], b = layerBBox(u.id);
+      for (let i = seen; i < Math.min(lv, INDOOR.length); i++) { // outdoor items just appear on the island
+        const u = INDOOR[i], b = layerBBox(u.id);
         shown[u.id] = false; // keep it out of the cached canvas until its animation is done
         pops.push({ id: u.id, delay: POP.startDelay + (i - seen) * POP.stagger, cx: b.x + b.w / 2, cy: b.y + b.h / 2, played: false });
         names.push(`${u.name} (${u.perk})`);
       }
-      rebuildRoom();
-      popClock = 0;
-      showToast('New in your home: ' + names.join(', '));
+      if (names.length) {
+        rebuildRoom();
+        popClock = 0;
+        showToast('New in your home: ' + names.join(', '));
+      }
       P.state.homeSeenLevel = lv;
       P.persist();
     }
@@ -179,6 +193,7 @@
   let scene = 'world';   // 'world' | 'interior' — which one is drawn/simulated
   let phase = 0;         // 0 = none, 1 = fading to black, 2 = fading back in
   let alpha = 0, pending = null;
+  let fireX = 0, fireY = 0;
   const solids = [];     // world-space copies of HUT_SOLIDS
   const trigger = [0, 0, 0, 0];
   const room = { x: 0, y: 0, vx: 0, vy: 0, angle: -Math.PI / 2, speed: 0 }; // room (art px) coords
@@ -194,6 +209,7 @@
     for (const b of HUT_SOLIDS) solids.push([wx(b[0]), wy(b[1]), wx(b[2]), wy(b[3])]);
     trigger[0] = wx(DOOR_TRIGGER[0]); trigger[1] = wy(DOOR_TRIGGER[1]);
     trigger[2] = wx(DOOR_TRIGGER[2]); trigger[3] = wy(DOOR_TRIGGER[3]);
+    fireX = o.center.x + CONFIG.campfire.x; fireY = o.center.y + CONFIG.campfire.y;
   }
 
   const clamp = (v, lo, hi) => v < lo ? lo : v > hi ? hi : v;
@@ -222,6 +238,7 @@
   // ---- World side ----
   function collideWorld(t, r) {
     for (const b of solids) pushOutRect(t, r, b[0], b[1], b[2], b[3]);
+    if (level() > INDOOR.length) pushOutCircle(t, r, fireX, fireY, CONFIG.campfire.radius); // campfire (pit or lit)
   }
   function startFade(swap) { phase = 1; alpha = 0; pending = swap; }
   function enterSwap() {
@@ -296,6 +313,18 @@
     ctx.drawImage(hutImg, hutX - ANCHOR_X * s, hutY - ANCHOR_Y * s, ART * s, ART * s);
     ctx.imageSmoothingEnabled = true;
   }
+  // Flat ground-level pieces on the island, drawn under the turtle/scenery (so no depth sorting): the
+  // outdoor campfire. `t` is real time in seconds (drives the flame animation).
+  function drawGround(ctx, t) {
+    const lv = level();
+    if (lv <= INDOOR.length) return;
+    const c = CONFIG.campfire, x = fireX - c.size / 2, y = fireY - c.size / 2;
+    ctx.imageSmoothingEnabled = false;
+    if (lv > INDOOR.length + 1) { // lit
+      if (fireLitImg.complete && fireLitImg.naturalWidth) ctx.drawImage(fireLitImg, (Math.floor(t * c.fps) % 6) * 64, 0, 64, 64, x, y, c.size, c.size);
+    } else if (fireUnlitImg.complete && fireUnlitImg.naturalWidth) ctx.drawImage(fireUnlitImg, x, y, c.size, c.size);
+    ctx.imageSmoothingEnabled = true;
+  }
   // Biggest whole-number scale that fits, room centered. Reused result object (no per-frame allocation).
   const L = { s: 1, x0: 0, y0: 0, tk: CONFIG.roomTurtleScale };
   function layout(w, h) {
@@ -317,7 +346,7 @@
 
   window.Home = {
     syncFromSave: syncUnlocked, hasFeature, UPGRADES,
-    init, tick, collideWorld, checkDoor, layout, drawRoom, drawFade, hutEntry, room,
+    init, tick, collideWorld, checkDoor, layout, drawRoom, drawFade, drawGround, hutEntry, room,
     TURTLE_SCALE: CONFIG.roomTurtleScale,
     isInterior: () => scene === 'interior',
     // Safe zone flag for enemies/other systems: true whenever the player is inside the hut.
