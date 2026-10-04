@@ -224,6 +224,7 @@
       sleep.dim = Math.min(1, sleep.t / c.fadeSeconds);
       if (sleep.t >= c.fadeSeconds) { // fully dark: tuck in, heal, save
         sleep.phase = 2; sleep.t = 0;
+        if (window.TT_SOUND) window.TT_SOUND.snore();
         window.Progression.restoreHearts();
         lastSleepAt = window.Progression.state.stats.playSeconds;
         sleep.msg = sleep.full ? 'Fully rested' : 'Hearts restored!';
@@ -328,12 +329,14 @@
   function startFade(swap) { phase = 1; alpha = 0; pending = swap; }
   function enterSwap() {
     scene = 'interior';
+    if (window.TT_SOUND) { window.TT_SOUND.door(); window.TT_SOUND.fire(0); }
     room.x = ROOM_SPAWN.x; room.y = ROOM_SPAWN.y; room.vx = room.vy = room.speed = 0; room.angle = -Math.PI / 2;
     if (onEnterInterior) onEnterInterior();
     startPops();
   }
   function exitSwap() {
     scene = 'world';
+    if (window.TT_SOUND) window.TT_SOUND.door();
     if (pops.length) { pops.length = 0; syncUnlocked(); } // left mid pop-in: bake the items in
     turtle.x = hutX; turtle.y = hutY + CONFIG.exitDropPx; turtle.vx = turtle.vy = 0; turtle.angle = Math.PI / 2;
   }
@@ -412,6 +415,15 @@
       if (fireLitImg.complete && fireLitImg.naturalWidth) ctx.drawImage(fireLitImg, (Math.floor(t * c.fps) % 6) * 64, 0, 64, 64, x, y, c.size, c.size);
     } else if (fireUnlitImg.complete && fireUnlitImg.naturalWidth) ctx.drawImage(fireUnlitImg, x, y, c.size, c.size);
     ctx.imageSmoothingEnabled = true;
+  }
+  // Campfire crackle while the lit fire is on screen-ish: full volume within FIRE_NEAR px, fading to
+  // nothing by FIRE_FAR px. Called every world frame by game.js.
+  const FIRE_NEAR = 120, FIRE_FAR = 600;
+  function updateAmbient() {
+    if (!window.TT_SOUND) return;
+    if (fireStage() < 2) { window.TT_SOUND.fire(0); return; }
+    const d = Math.hypot(turtle.x - fireX, turtle.y - fireY);
+    window.TT_SOUND.fire(clamp(1 - (d - FIRE_NEAR) / (FIRE_FAR - FIRE_NEAR), 0, 1));
   }
   // Biggest whole-number scale that fits, room centered. Reused result object (no per-frame allocation).
   const L = { s: 1, x0: 0, y0: 0, tk: CONFIG.roomTurtleScale };
@@ -547,7 +559,7 @@
   function closeScreen(fromPop) { // closes whichever full-screen panel (closet / collection book) is open
     if (!closet && !book) return;
     if (closet) { closet.remove(); closet = null; }
-    if (book) { book.remove(); book = null; }
+    if (book) { book.remove(); book = null; if (window.TT_SOUND) window.TT_SOUND.bookClose(); }
     modal = false;
     if (screenPushed && !fromPop) { screenPushed = false; try { history.back(); } catch {} }
     screenPushed = false;
@@ -608,12 +620,14 @@
   function turnPage(d) {
     const n = Math.max(0, Math.min(BOOK_PAGES.length - 1, bookPage + d));
     if (n === bookPage) return;
+    if (window.TT_SOUND) window.TT_SOUND.bookPage();
     bookPage = n;
     renderBook();
   }
   function openBook() {
     closeScreen();
     modal = true; bookPage = 0;
+    if (window.TT_SOUND) window.TT_SOUND.bookOpen();
     const wrap = document.createElement('div');
     wrap.className = 'tt-name-prompt';
     wrap.innerHTML = `<div class="tt-name-box tt-upgrade-box tt-closet-box tt-book-box">
@@ -650,7 +664,7 @@
 
   window.Home = {
     syncFromSave: syncUnlocked, hasFeature, hutBuilt, UPGRADES,
-    init, tick, collideWorld, checkDoor, layout, drawRoom, drawFade, drawGround, drawSleepDim, drawMessages, hutEntry, room,
+    init, tick, collideWorld, checkDoor, updateAmbient, layout, drawRoom, drawFade, drawGround, drawSleepDim, drawMessages, hutEntry, room,
     TURTLE_SCALE: CONFIG.roomTurtleScale, SLEEP_SCALE: CONFIG.sleep.scale, bedSpot: BED_SPOT,
     isAsleep: () => sleep.phase === 2,
     isInterior: () => scene === 'interior',

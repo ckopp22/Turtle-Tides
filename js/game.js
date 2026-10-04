@@ -1377,7 +1377,8 @@
     const speed = Home.room.speed / Home.TURTLE_SCALE;
     if (speed > 5) walkFrame += speed * dt * FRAMES_PER_SPEED; else walkFrame = 0;
     if (window.TT_SOUND) {
-      window.TT_SOUND.walking(speed > 5, Math.min(4, Math.max(1, WALK_SOUND_BASE_RATE * speed / (MAX_SPEED * LAND_SPEED_MULT))));
+      window.TT_SOUND.walking(false, 1);     // no sandy footsteps indoors: floorboards creak instead
+      if (speed > 5) window.TT_SOUND.creak();
       window.TT_SOUND.swimming(false, true);
     }
   }
@@ -1511,6 +1512,7 @@
     }
 
     Home.checkDoor();
+    Home.updateAmbient();
     if (window.Enemies) window.Enemies.update(dt);
   }
 

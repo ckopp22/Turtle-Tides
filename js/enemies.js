@@ -336,7 +336,9 @@
     else e.unreach = 0;
     return false;
   }
-  function startChase(e) { e.flank = Math.random() * Math.PI * 2; e.lose = 0; e.stuck = 0; e.unreach = 0; e.hasTarget = false; setState(e, CHASE); }
+  function startChase(e) {
+    if (window.TT_SOUND && window.TT_SOUND.enemy) window.TT_SOUND.enemy(e.type, Math.hypot(api.turtle.x - e.x, api.turtle.y - e.y)); // its cry, quieter when far
+    e.flank = Math.random() * Math.PI * 2; e.lose = 0; e.stuck = 0; e.unreach = 0; e.hasTarget = false; setState(e, CHASE); }
   function giveUpChase(e) {
     e.giveUp = CONFIG.giveUpCooldown; e.lose = 0; e.stuck = 0; e.unreach = 0;
     setState(e, RETURN); // walks back to its spawn point; crabs burrow once they arrive
