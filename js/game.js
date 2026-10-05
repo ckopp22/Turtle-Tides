@@ -239,6 +239,7 @@
   window.addEventListener('keydown', e => {
     if (typingInField()) return;
     if (DEBUG_STATES[e.key]) { state = DEBUG_STATES[e.key]; stateTime = 0; return; }
+    if (DEBUG && e.key === 'c') { window.Progression.state.banked.coins += 1000; window.Progression.persist(); return; } // ?debug=1: c = +1000 banked coins
     if (DEBUG && (e.key === 'u' || e.key === 't')) { // ?debug=1: u = lock/unlock the Adventure Zone, t = teleport into it (unlocking it first)
       if (e.key === 'u') setAdventureUnlocked(!adventureUnlocked);
       else if (spawned) { setAdventureUnlocked(true); turtle.x = WORLD_SIZE + 700; turtle.y = CENTER.y; turtle.vx = turtle.vy = 0; }
