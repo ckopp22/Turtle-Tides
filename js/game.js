@@ -162,13 +162,29 @@
   // Death sequence: slow fade to black, a beat of full black, then respawn on the island.
   const DEATH_FADE_SECONDS = 2.5, DEATH_BLACK_SECONDS = 1;
   let deathTimer = -1; // -1 = alive; otherwise seconds since death
+  let deathX = 0, deathY = 0; // where the turtle was caught: carried items are dropped here (see the end of the death sequence)
   let deathStartDim = 0; // starvation dim already on screen when death hits, so the fade continues from it
   function startDeath() {
     deathStartDim = window.Progression.getStarveDim();
     state = 'dying'; stateTime = 0; deathTimer = 0;
+    deathX = turtle.x; deathY = turtle.y;
     if (window.TT_SOUND) window.TT_SOUND.gameover();
   }
   window.Progression && window.Progression.setDeathHandler(startDeath);
+  // Carried items scatter around the death spot as ordinary pickups (they stay until grabbed; not saved across reloads).
+  // TODO: persist dropped piles in the save slot if they should survive closing the game.
+  function dropLostItems() {
+    const lost = window.Progression.takeLostItems();
+    if (!lost) return;
+    const drops = [];
+    for (let i = 0; i < lost.coins; i++) drops.push([coinPickups, 0]);
+    for (let i = 0; i < lost.coconuts; i++) drops.push([coconutPickups, 0]);
+    for (const k of lost.finds) drops.push([findPickups, k]);
+    drops.forEach(([pk, kind], i) => {
+      const a = (i / drops.length) * Math.PI * 2, r = 30 + Math.random() * 40;
+      pk.dropAt(deathX + Math.cos(a) * r, deathY + Math.sin(a) * r, kind);
+    });
+  }
 
   // ---- Input -> normalized direction vector (length 0..1) ----
   const keys = new Set();
@@ -1263,8 +1279,8 @@
       items.push({ x: p.x, y: p.y, active: true, respawnAt: 0, bobSeed: rand() * Math.PI * 2, kind: opts.pickKind ? opts.pickKind() : 0 });
     }
     // One-off bonus pickup dropped at a spot (e.g. from a knocked-down sandcastle); removed once taken.
-    function dropAt(x, y) {
-      items.push({ x, y, active: true, respawnAt: 0, bobSeed: Math.random() * Math.PI * 2, temp: true, popAt: gameTime });
+    function dropAt(x, y, kind = 0) {
+      items.push({ x, y, active: true, respawnAt: 0, bobSeed: Math.random() * Math.PI * 2, temp: true, popAt: gameTime, kind });
     }
     // Hop arc for a dropped item: a high launch, then a smaller bounce, then rest (0 = landed).
     const POP_DUR1 = 0.7, POP_DUR2 = 0.35, POP_H1 = 110, POP_H2 = 28;
@@ -1439,6 +1455,7 @@
       if (deathTimer >= DEATH_FADE_SECONDS + DEATH_BLACK_SECONDS) {
         deathTimer = -1; state = 'normal'; stateTime = 0;
         window.Progression.respawnAtHome();
+        dropLostItems();
       }
     }
     if (shakeTime > 0) shakeTime = Math.max(0, shakeTime - dt);

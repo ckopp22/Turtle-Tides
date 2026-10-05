@@ -309,8 +309,12 @@
     if (window.TT_SOUND) window.TT_SOUND.bank();
     return true;
   }
+  // Contents of the last death's loss, for game.js to drop in the world (find ids -> indices into CONFIG.finds.items).
+  let lostItems = null;
+  function takeLostItems() { const l = lostItems; lostItems = null; return l; }
   function loseCarried() {
     const lost = carriedTotal();
+    lostItems = lost ? { coins: state.carried.coins, coconuts: state.carried.coconuts, finds: state.carriedFinds.map(id => CONFIG.finds.items.findIndex(f => f.id === id)) } : null;
     state.carried = { coins: 0, coconuts: 0 };
     state.carriedFinds = [];
     return lost;
@@ -366,7 +370,7 @@
     state.hungerHeartTicks = 0;
     state.invulnTimer = 0;
     starveDim = 0;
-    if (lost > 0) state.lastLostMessage = { text: `Lost ${lost} item${lost === 1 ? '' : 's'} from that trip`, timer: 3 };
+    if (lost > 0) state.lastLostMessage = { text: `Dropped ${lost} item${lost === 1 ? '' : 's'} where you were caught`, timer: 3 };
     persist();
     if (respawnHandler) respawnHandler();
     return lost;
@@ -1028,7 +1032,7 @@
   }
 
   window.Progression = {
-    tryPickup, bankCarried, takeHit, getStarveDim: () => starveDim, isInvulnerable, setRespawnHandler, setDeathHandler, respawnAtHome,
+    tryPickup, bankCarried, takeLostItems, takeHit, getStarveDim: () => starveDim, isInvulnerable, setRespawnHandler, setDeathHandler, respawnAtHome,
     update, restoreHearts, maxHearts, getHideConfig, swimSpeedMultiplier, moveSpeedMultiplier, toggleDayNight, drawHUD, setHomeButtonVisible, tryEatFromHud, getIconRow: ensureIconRow,
     buyUpgrade, canUpgrade, addStat, addPlayTime, claimPageReward,
     attachSlot, getSaveData, persist,
