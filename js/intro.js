@@ -239,22 +239,86 @@
     }
   }
   ['pointerdown', 'keydown'].forEach(t => window.addEventListener(t, syncBeach, { passive: true }));
-  // Gameplay background music (assets/sfx/music1-3.mp3): cycles through the tracks while in the game, quietly.
-  // Has its own on/off (the top-right music button in progression.js) on top of the master sound toggle.
+  // Gameplay background music, in two sets that each cycle through their own tracks, quietly: the normal set
+  // (assets/sfx/music1-3.mp3) and the Adventure Zone set (files given by game.js's ADVENTURE.music through
+  // TT_SOUND.musicPrepareAdventure, created only once the zone is unlocked so a locked game never downloads them).
+  // game.js flips between them with TT_SOUND.musicZone(); the two sets crossfade by level (0..1) and each remembers
+  // where it was. Has its own on/off (the top-right music button in progression.js) on top of the master sound toggle.
   const MUSIC_VOL = 0.08;
-  const musicClips = [1, 2, 3].map(n => {
-    const a = gAudio(`assets/sfx/music${n}.mp3`);
-    a.volume = MUSIC_VOL;
-    a.addEventListener('ended', () => { musicIdx = (musicIdx + 1) % musicClips.length; syncMusic(); });
-    return a;
-  });
-  let musicIdx = 0, musicOn = readMusic();
+  const MUSIC_TICK_MS = 50;
+  const musicSets = { home: null, adv: null };
+  function makeMusicSet(srcs, level) {
+    const set = { clips: [], idx: 0, level, bad: 0, primed: false };
+    srcs.forEach((src, i) => {
+      const a = gAudio(src);
+      if (i > 0) a.preload = 'none'; // only the first track is fetched up front; the rest load when their turn comes
+      a.volume = MUSIC_VOL * level;
+      a.addEventListener('ended', () => { set.idx = (set.idx + 1) % set.clips.length; syncMusic(); });
+      a.addEventListener('error', () => { // missing/undecodable file: skip it; with none left the set is "failed" and ignored
+        if (++set.bad < set.clips.length) { set.idx = (set.idx + 1) % set.clips.length; syncMusic(); } else syncMusic();
+      });
+      set.clips.push(a);
+    });
+    return set;
+  }
+  musicSets.home = makeMusicSet([1, 2, 3].map(n => `assets/sfx/music${n}.mp3`), 1);
+  let musicOn = readMusic();
+  let musicZoneAdv = false, musicFadeSec = 2, musicFadeTimer = null;
+  const setUsable = set => !!set && set.bad < set.clips.length;
   function syncMusic() {
     const want = soundOn && musicOn && currentScene === SCENES.GAME_HANDOFF;
-    musicClips.forEach((c, i) => { if (i !== musicIdx && !c.paused) c.pause(); });
-    const cur = musicClips[musicIdx];
-    if (want) { if (cur.paused) { if (cur.ended) cur.currentTime = 0; cur.play().catch(() => {}); } }
-    else if (!cur.paused) cur.pause();
+    for (const k in musicSets) {
+      const set = musicSets[k];
+      if (!set) continue;
+      set.clips.forEach((c, i) => { if (i !== set.idx && !c.paused) c.pause(); });
+      const cur = set.clips[set.idx];
+      if (want && set.level > 0 && setUsable(set)) {
+        cur.volume = MUSIC_VOL * set.level;
+        if (cur.paused) { if (cur.ended) cur.currentTime = 0; cur.play().catch(() => {}); }
+      } else if (!cur.paused) cur.pause();
+    }
+  }
+  // Moves each set's level toward its target (the zone's set up, the other down) over musicFadeSec; the timer only
+  // runs while a fade is in progress.
+  function stepMusicFade() {
+    const goAdv = musicZoneAdv && setUsable(musicSets.adv); // no usable adventure tracks (file not added yet): stay on the normal music
+    let moving = false;
+    for (const k in musicSets) {
+      const set = musicSets[k];
+      if (!set) continue;
+      const target = (k === 'adv') === goAdv ? 1 : 0, step = musicFadeSec > 0 ? MUSIC_TICK_MS / 1000 / musicFadeSec : 1;
+      set.level = set.level < target ? Math.min(target, set.level + step) : Math.max(target, set.level - step);
+      if (set.level !== target) moving = true;
+    }
+    syncMusic();
+    if (!moving) { clearInterval(musicFadeTimer); musicFadeTimer = null; }
+  }
+  function musicZone(adv, fadeSec) {
+    if (adv === musicZoneAdv && musicFadeTimer === null) return;
+    musicZoneAdv = adv;
+    if (fadeSec != null) musicFadeSec = fadeSec;
+    if (musicFadeTimer === null) musicFadeTimer = setInterval(stepMusicFade, MUSIC_TICK_MS);
+  }
+  function musicPrepareAdventure(files) {
+    if (musicSets.adv || !files || !files.length) return;
+    musicSets.adv = makeMusicSet(files, musicZoneAdv ? 1 : 0);
+    primeAdventure(); // inside a tap (the Table purchase) this unlocks the element for later script-started playback (iOS)
+  }
+  // iOS only lets an <audio> element start from script after it has been played once from a user gesture: play the
+  // first adventure track muted for a moment, then put it back. Retried on the first tap/key until it takes.
+  function primeAdventure() {
+    const set = musicSets.adv;
+    if (!set || set.primed || !soundOn || set.level > 0) return;
+    const c = set.clips[set.idx];
+    set.primed = true;
+    c.muted = true;
+    c.play().then(() => { if (set.level === 0) { c.pause(); c.currentTime = 0; } c.muted = false; }).catch(() => { c.muted = false; set.primed = false; });
+  }
+  ['pointerdown', 'keydown'].forEach(t => window.addEventListener(t, primeAdventure, { passive: true }));
+  function musicInfo() { // ?debug=1 overlay
+    const h = musicSets.home, a = musicSets.adv;
+    const name = set => set ? (set.clips[set.idx].src.split('/').pop() + (setUsable(set) ? '' : ' (missing)')) : '-';
+    return `home ${name(h)} ${h.level.toFixed(2)} | adv ${name(a)} ${a ? a.level.toFixed(2) : '-'}`;
   }
   // Heart-loss SFX (assets/sfx/umph.mp3), played from progression.js takeHit() (damage and hunger both go through it).
   const umphClip = gAudio('assets/sfx/umph.mp3');
@@ -438,6 +502,7 @@
     walking: (active, rate) => Sound.walking(active, rate),
     swimming: (active, floating) => Sound.swimming(active, floating),
     toggle: () => { soundOn = !soundOn; writeSound(soundOn); syncMusic(); return soundOn; },
+    musicZone, musicPrepareAdventure, musicInfo,
     musicGet: () => musicOn,
     musicToggle: () => { musicOn = !musicOn; writeMusic(musicOn); syncMusic(); return musicOn; },
   };

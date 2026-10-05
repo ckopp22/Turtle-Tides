@@ -1,7 +1,7 @@
 // Offline support. Shell (index.html, css, js) is network-first so deploys show up right away online;
 // assets/** are cache-first. Bump CACHE on every deploy that adds/changes an asset file (the shell
 // URLs are read from index.html at install, so its ?v= bumps are picked up automatically).
-const CACHE = 'tt-v1';
+const CACHE = 'tt-v2';
 
 // Critical art: install fails if any of these can't be fetched.
 const ART = [
@@ -96,6 +96,9 @@ const ART = [
 
 // SFX (~19 MB): cached best-effort so a flaky connection can't block install.
 const SFX = [
+  'assets/sfx/adventure1.mp3',
+  'assets/sfx/adventure2.mp3',
+  'assets/sfx/adventure3.mp3',
   'assets/sfx/bag.m4a',
   'assets/sfx/beach.mp3',
   'assets/sfx/bear.mp3',

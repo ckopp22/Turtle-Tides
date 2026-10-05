@@ -39,6 +39,11 @@
     fogBand: 300,            // locked: world px of fog thickening toward the edge (the baked edge fog hides under the grass)
     fogAlpha: 0.85,          // fog opacity at the very edge
     seed: 7351,              // seeds the zone's scenery, so it's the same every load
+    music: {
+      files: ['assets/sfx/adventure1.mp3', 'assets/sfx/adventure2.mp3', 'assets/sfx/adventure3.mp3'], // cycled like the normal music; drop-in: a missing file just keeps the normal music
+      fadeSeconds: 2,        // crossfade length between the normal and adventure music
+      hysteresis: 150,       // world px past the border before the music switches to adventure, and back inside it before switching back
+    },
   };
   const WORLD_PAD = WORLD_SIZE * (ADVENTURE.worldMult - 1) / 2; // new land on each side of the home zone
   const WORLD_MIN = -WORLD_PAD, WORLD_MAX = WORLD_SIZE + WORLD_PAD;
@@ -53,6 +58,7 @@
   // The fog fringe hugs whichever edge is current.
   const bounds = { x0: 0, y0: 0, x1: WORLD_SIZE, y1: WORLD_SIZE };
   let adventureUnlocked = false;
+  let inAdventure = false; // the turtle is out in the zone (with hysteresis, see updateZoneFlag)
   const HOME = { x: CENTER.x, y: CENTER.y + 90 };
 
   // Camera zoom: smaller = more of the map visible. Zoomed out further on narrow/mobile
@@ -781,6 +787,17 @@
 
   // The Adventure Zone is open exactly when the hut's Table & Stools (feature 'adventureZone') is owned, so the save
   // needs no flag of its own: loading a save that has the table opens it, buying the table opens it with a message.
+  // Zone check: one rectangle test per frame. Enter only once the turtle is `hysteresis` px past the home square's
+  // border, leave only once it is that far back inside, so hovering at the border can't flip the music back and forth.
+  function updateZoneFlag() {
+    const m = ADVENTURE.music.hysteresis, x = turtle.x, y = turtle.y;
+    const now = inAdventure
+      ? !(x >= m && x < WORLD_SIZE - m && y >= m && y < WORLD_SIZE - m)
+      : (x < -m || x >= WORLD_SIZE + m || y < -m || y >= WORLD_SIZE + m);
+    if (now === inAdventure) return;
+    inAdventure = now;
+    if (window.TT_SOUND) window.TT_SOUND.musicZone(now, ADVENTURE.music.fadeSeconds);
+  }
   function syncAdventureUnlock(announce) {
     if (adventureUnlocked || !Home.hasFeature('adventureZone')) return;
     setAdventureUnlocked(true);
@@ -799,7 +816,8 @@
     bounds.x1 = bounds.y1 = on ? WORLD_MAX : WORLD_SIZE;
     const inside = (b, x0, y0) => x0 >= b.x0 + EDGE_FOG_WIDTH && y0 >= b.y0 + EDGE_FOG_WIDTH && x0 + CHUNK <= b.x1 - EDGE_FOG_WIDTH && y0 + CHUNK <= b.y1 - EDGE_FOG_WIDTH;
     for (const [key, ch] of chunks) if (!inside(old, ch.cx * CHUNK, ch.cy * CHUNK) || !inside(bounds, ch.cx * CHUNK, ch.cy * CHUNK)) dropChunk(key, ch);
-    if (on) startAdventureScenery();
+    if (on) { startAdventureScenery(); if (window.TT_SOUND) window.TT_SOUND.musicPrepareAdventure(ADVENTURE.music.files); } // fetch the zone's first track once, now
+    else if (inAdventure) { inAdventure = false; if (window.TT_SOUND) window.TT_SOUND.musicZone(false, ADVENTURE.music.fadeSeconds); }
     clampToWorld();
   }
   // ---- "Turtle Tides" written in the sand, south outer ring (the coastal sand band every biome's
@@ -1720,6 +1738,7 @@
       turtle.angle += diff * Math.min(1, 10 * dt);
     }
 
+    if (adventureUnlocked) updateZoneFlag();
     Home.checkDoor();
     Home.updateAmbient();
     if (window.Enemies) window.Enemies.update(dt);
@@ -2077,7 +2096,7 @@
       take() { const c = calls; calls = 0; return c; },
       show(fps, avg, worst, c) {
         const mem = performance.memory ? `${(performance.memory.usedJSHeapSize / 1048576).toFixed(1)} MB` : 'n/a';
-        el.textContent = `fps ${fps.toFixed(0)}\nframe ${avg.toFixed(1)}ms (worst ${worst.toFixed(1)})\nwork ${p.ms.toFixed(1)}ms\nvisible ${p.visible} / ${scenery.length}\ndraws/frame ${c.toFixed(0)}\nadventure ${adventureUnlocked ? 'unlocked' : 'locked'}  chunks ${chunks.size}\nheap ${mem}\ndpr ${dpr}\n${loadedVer} skip:${Object.keys(skip).join(',') || '-'}`;
+        el.textContent = `fps ${fps.toFixed(0)}\nframe ${avg.toFixed(1)}ms (worst ${worst.toFixed(1)})\nwork ${p.ms.toFixed(1)}ms\nvisible ${p.visible} / ${scenery.length}\ndraws/frame ${c.toFixed(0)}\nadventure ${adventureUnlocked ? 'unlocked' : 'locked'}${inAdventure ? ' (in zone)' : ''}  chunks ${chunks.size}\nmusic ${window.TT_SOUND && window.TT_SOUND.musicInfo ? window.TT_SOUND.musicInfo() : '-'}\nheap ${mem}\ndpr ${dpr}\n${loadedVer} skip:${Object.keys(skip).join(',') || '-'}`;
       } };
     return p;
   })() : null;
