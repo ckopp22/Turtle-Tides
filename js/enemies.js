@@ -35,6 +35,9 @@
     farScreens: 1,           // enemies farther than this many screen widths update at a lower rate (off-screen anyway)
     farTickSeconds: 0.1,     // ...once per this long, with the accumulated dt so they move at the same speed
     debugSpawnOffset: 150,   // world px: ?debug=1 spawn key puts the enemy this far from the turtle
+    spawnTickSeconds: 0.2,   // the spawner runs at most this often
+    spawnsPerTick: 6,        // ...and places at most this many enemies per run (a big zone pool fills in over a few seconds)
+    spawnFailsPerTick: 3,    // ...and gives up for spawnRetrySeconds after this many failed slots in one run
     types: {
       crab: {
         sheet: 'assets/enemies/crab_spritesheet.png',
@@ -90,11 +93,26 @@
 
   // Convert the sprite-width distances to squared world px once, so per-frame checks are just d2 < x2.
   const sq = v => (v * U) * (v * U);
-  for (const k in CONFIG.types) {
-    const c = CONFIG.types[k];
+  function derive(c) {
     c.detect2 = sq(c.detect); c.attack2 = sq(c.attackRange); c.hit2 = sq(c.attackRange * CONFIG.hitRangeSlack);
     c.ambush2 = c.ambush ? sq(c.ambush) : 0;
     c.sleepDetect2 = c.sleepChance ? c.detect2 * c.sleepDetectMult * c.sleepDetectMult : 0;
+  }
+  for (const k in CONFIG.types) derive(CONFIG.types[k]);
+  // Adventure Zone variants (numbers come from game.js's ADVENTURE.enemies via init): a little faster, wider detection,
+  // shorter attack cooldown; damage and everything else stay the same. The player-is-faster rule is enforced here:
+  // any type slower than the player (speed < 1) is clamped below maxSpeedFrac, so only the snake can ever outrun the turtle.
+  const ADV_TYPES = {};
+  function buildAdventureTypes(m) {
+    for (const k in CONFIG.types) {
+      const base = CONFIG.types[k], c = Object.assign({}, base);
+      c.speed = base.speed < 1 ? Math.min(base.speed * m.speedMult, m.maxSpeedFrac) : base.speed * m.speedMult;
+      c.detect = base.detect * m.detectMult;
+      if (base.ambush) c.ambush = base.ambush * m.detectMult;
+      c.cooldown = base.cooldown * m.cooldownMult;
+      derive(c);
+      ADV_TYPES[k] = c;
+    }
   }
   const LOSE2 = sq(CONFIG.loseInterestDist), LEASH2 = sq(CONFIG.leash);
 
@@ -104,15 +122,17 @@
 
   let api = null;
   let now = 0, nextSpawnTry = 0, playerSpeed = 160;
+let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; advOn = zone unlocked
   const sheets = {};
-  const pool = []; // fixed-size: one slot per configured enemy, plus a few extra for debug spawns
+  const pool = []; // fixed-size: one slot per configured enemy (home pool, then the Adventure Zone pool), plus a few extra for debug spawns
+  const nearList = []; // enemies close enough to simulate this frame (rebuilt each update, reused)
   let ctxRef = null;
 
   const rnd = (a, b) => a + Math.random() * (b - a);
 
   function makeSlot(type, respawnAt) {
     const e = {
-      type, cfg: type ? CONFIG.types[type] : null, active: false, respawnAt, debug: false,
+      type, cfg: type ? CONFIG.types[type] : null, active: false, respawnAt, debug: false, pool: 'home',
       x: 0, y: 0, sx: 0, sy: 0, biome: '', state: WANDER, t: 0, anim: 0, row: 0, frame: 0,
       tx: 0, ty: 0, hasTarget: false, pause: 0, flip: 1, angle: 0, cd: 0, giveUp: 0, steer: 0, steerT: 0, dodge: 0, dodgeT: 0, flank: 0, atkAngle: 0, acc: 0,
       lose: 0, stuck: 0, unreach: 0, path: null, pi: 0, pathLen: 0, replans: 0, hiddenFor: 0, emergeToChase: false, hitDone: false,
@@ -130,12 +150,30 @@
       const img = new Image(); img.src = CONFIG.types[k].sheet; sheets[k] = img;
       for (let i = 0; i < CONFIG.types[k].count && pool.length < CONFIG.maxTotal; i++) pool.push(makeSlot(k, CONFIG.graceSeconds));
     }
+    adv = a.adventure || null;
+    if (adv) { // Adventure Zone pool: idle (never spawns, never simulated) until game.js calls setAdventure(true)
+      buildAdventureTypes(adv);
+      for (const k in CONFIG.types) for (let i = 0; i < adv.countPerType && countPool('adv') < adv.maxTotal; i++) { const e = makeSlot(k, Infinity); e.pool = 'adv'; pool.push(e); }
+    }
     if (DEBUG) for (let i = 0; i < 4; i++) pool.push(makeSlot(null, 0));
+    nearList.length = pool.length;
+  }
+  function countPool(which) { let n = 0; for (const e of pool) if (e.pool === which) n++; return n; }
+  // The zone opens (first spawns after the usual grace period) or closes (everything in it is removed, nothing simulated).
+  function setAdventure(on) {
+    if (!adv || on === advOn) return;
+    advOn = on;
+    for (const e of pool) {
+      if (e.pool !== 'adv') continue;
+      if (on) e.respawnAt = now + CONFIG.graceSeconds;
+      else { e.active = false; e.respawnAt = Infinity; }
+    }
   }
 
   // ---- Spawning ----
   function placeEnemy(e, type, x, y, biome) {
-    e.type = type; e.cfg = CONFIG.types[type]; e.active = true;
+    e.type = type; e.active = true;
+    e.cfg = adv && !api.inHomeZone(x, y) ? ADV_TYPES[type] : CONFIG.types[type]; // stats follow where it spawned
     e.x = e.sx = x; e.y = e.sy = y; e.biome = biome;
     e.state = WANDER; e.t = 0; e.anim = 0; e.hasTarget = false; e.pause = rnd(0.5, 2);
     e.cd = 0; e.steer = 0; e.steerT = 0; e.dodge = 0; e.dodgeT = 0; e.giveUp = 0; e.lose = 0; e.stuck = 0; e.unreach = 0; e.flip = Math.random() < 0.5 ? 1 : -1;
@@ -146,10 +184,14 @@
     const minTurtle = CONFIG.spawnMinScreens * Math.max(v.w, v.h), minTurtle2 = minTurtle * minTurtle;
     const mapR = api.worldSize / 2, minC2 = (CONFIG.minCenterFrac * mapR) ** 2;
     const T = api.turtle;
+    const zone = e.pool === 'adv', span = api.worldMax - api.worldMin;
     for (let i = 0; i < CONFIG.spawnAttemptsPerFrame; i++) {
-      const x = Math.random() * api.worldSize, y = Math.random() * api.worldSize;
+      const x = zone ? api.worldMin + Math.random() * span : Math.random() * api.worldSize;
+      const y = zone ? api.worldMin + Math.random() * span : Math.random() * api.worldSize;
+      if (zone && api.inHomeZone(x, y)) continue; // the zone pool only spawns outside the original map
       const cx = x - api.center.x, cy = y - api.center.y;
       if (cx * cx + cy * cy < minC2) continue;
+      if (!zone && api.homeSpawnR2 && cx * cx + cy * cy > api.homeSpawnR2) continue; // home spawns keep to the original walkable circle
       const tx = x - T.x, ty = y - T.y;
       if (tx * tx + ty * ty < minTurtle2) continue;
       if (!api.walkable(x, y) || api.inSandText(x, y)) continue;
@@ -163,13 +205,16 @@
 
   function updateSpawner() {
     if (now < nextSpawnTry) return;
-    let live = 0;
-    for (const e of pool) if (e.active) live++;
-    if (live >= CONFIG.maxTotal) return;
+    nextSpawnTry = now + CONFIG.spawnTickSeconds;
+    let liveHome = 0, liveAdv = 0;
+    for (const e of pool) if (e.active) { if (e.pool === 'adv') liveAdv++; else liveHome++; }
+    let spawned = 0, failed = 0;
     for (const e of pool) {
       if (e.active || !e.type || e.debug || now < e.respawnAt) continue;
-      if (trySpawn(e)) { live++; if (live >= CONFIG.maxTotal) return; }
-      else { nextSpawnTry = now + CONFIG.spawnRetrySeconds; return; }
+      if (e.pool === 'adv') { if (!advOn || liveAdv >= adv.maxTotal) continue; }
+      else if (liveHome >= CONFIG.maxTotal) continue;
+      if (trySpawn(e)) { if (e.pool === 'adv') liveAdv++; else liveHome++; if (++spawned >= CONFIG.spawnsPerTick) return; }
+      else if (++failed >= CONFIG.spawnFailsPerTick) { nextSpawnTry = now + CONFIG.spawnRetrySeconds; return; } // a few misses per pass, then wait
     }
   }
 
@@ -506,16 +551,19 @@
     const act = CONFIG.activeScreens * Math.max(v.w, v.h), act2 = act * act;
     const far = CONFIG.farScreens * Math.max(v.w, v.h), far2 = far * far;
     const safe = api.isHomeIsland(T.x, T.y), alive = api.turtleAlive();
+    let nn = 0;
     for (const e of pool) {
       if (!e.active) continue;
       const dx = T.x - e.x, dy = T.y - e.y;
       if (dx * dx + dy * dy > act2) continue; // far away: frozen, costs nothing
+      nearList[nn++] = e;
       if (dx * dx + dy * dy > far2) { // far: tick at a low rate with the accumulated dt
         e.acc += dt;
         if (e.acc < CONFIG.farTickSeconds) continue;
         tick(e, e.acc, safe, alive); e.acc = 0;
       } else { tick(e, e.acc + dt, safe, alive); e.acc = 0; }
     }
+    nearCount = nn;
     separate();
   }
 
@@ -524,13 +572,14 @@
   const SEP2 = sq(CONFIG.separation);
   function mobile(e) { return e.state !== HIDDEN && e.state !== BURROW && e.state !== EMERGE && e.state !== SLEEP && e.state !== WAKE; }
   function airborne(e) { return e.cfg.flies && (e.state === CHASE || e.state === ATTACK || e.state === RETURN); }
-  function separate() {
-    const n = pool.length;
+  let nearCount = 0;
+  function separate() { // only the enemies simulated this frame (nearList), so a big far-away population costs nothing here
+    const n = nearCount;
     for (let i = 0; i < n; i++) {
-      const a = pool[i];
+      const a = nearList[i];
       if (!a.active || !mobile(a)) continue;
       for (let j = i + 1; j < n; j++) {
-        const b = pool[j];
+        const b = nearList[j];
         if (!b.active || !mobile(b) || airborne(a) !== airborne(b)) continue;
         const dx = b.x - a.x, dy = b.y - a.y, d2 = dx * dx + dy * dy;
         if (d2 >= SEP2) continue;
@@ -633,5 +682,7 @@
     });
   }
 
-  window.Enemies = { init, update, resetAggro, collectVisible, drawDebug, CONFIG, get pool() { return DEBUG ? pool : null; }, get api() { return DEBUG ? api : null; } }; // pool/api only exposed with ?debug=1, for console poking
+  const statsBuf = { home: 0, adv: 0, near: 0 };
+  function stats() { statsBuf.home = statsBuf.adv = 0; for (const e of pool) if (e.active) { if (e.pool === 'adv') statsBuf.adv++; else statsBuf.home++; } statsBuf.near = nearCount; return statsBuf; } // ?debug=1 overlay
+  window.Enemies = { init, update, setAdventure, stats, resetAggro, collectVisible, drawDebug, CONFIG, get pool() { return DEBUG ? pool : null; }, get api() { return DEBUG ? api : null; } }; // pool/api only exposed with ?debug=1, for console poking
 })();

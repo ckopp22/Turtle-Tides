@@ -39,6 +39,14 @@
     fogBand: 300,            // locked: world px of fog thickening toward the edge (the baked edge fog hides under the grass)
     fogAlpha: 0.85,          // fog opacity at the very edge
     seed: 7351,              // seeds the zone's scenery, so it's the same every load
+    enemies: {               // the zone's own enemy pool; the home zone's enemies (enemies.js CONFIG) are untouched
+      countPerType: 16,      // per type (crab/bear/snake/seagull) vs 3 in the home zone; only those near the turtle are simulated
+      maxTotal: 64,          // hard cap on live zone enemies
+      speedMult: 1.10,
+      detectMult: 1.15,      // detection (and the crab's ambush) radius
+      cooldownMult: 0.9,     // attack cooldown; damage is unchanged
+      maxSpeedFrac: 0.95,    // clamp: a type slower than the player can never get past this fraction of the player's speed (snake is exempt)
+    },
     music: {
       files: ['assets/sfx/adventure1.mp3', 'assets/sfx/adventure2.mp3', 'assets/sfx/adventure3.mp3'], // cycled like the normal music; drop-in: a missing file just keeps the normal music
       fadeSeconds: 2,        // crossfade length between the normal and adventure music
@@ -816,6 +824,7 @@
     bounds.x1 = bounds.y1 = on ? WORLD_MAX : WORLD_SIZE;
     const inside = (b, x0, y0) => x0 >= b.x0 + EDGE_FOG_WIDTH && y0 >= b.y0 + EDGE_FOG_WIDTH && x0 + CHUNK <= b.x1 - EDGE_FOG_WIDTH && y0 + CHUNK <= b.y1 - EDGE_FOG_WIDTH;
     for (const [key, ch] of chunks) if (!inside(old, ch.cx * CHUNK, ch.cy * CHUNK) || !inside(bounds, ch.cx * CHUNK, ch.cy * CHUNK)) dropChunk(key, ch);
+    if (window.Enemies) window.Enemies.setAdventure(on);
     if (on) { startAdventureScenery(); if (window.TT_SOUND) window.TT_SOUND.musicPrepareAdventure(ADVENTURE.music.files); } // fetch the zone's first track once, now
     else if (inAdventure) { inAdventure = false; if (window.TT_SOUND) window.TT_SOUND.musicZone(false, ADVENTURE.music.fadeSeconds); }
     clampToWorld();
@@ -2096,7 +2105,7 @@
       take() { const c = calls; calls = 0; return c; },
       show(fps, avg, worst, c) {
         const mem = performance.memory ? `${(performance.memory.usedJSHeapSize / 1048576).toFixed(1)} MB` : 'n/a';
-        el.textContent = `fps ${fps.toFixed(0)}\nframe ${avg.toFixed(1)}ms (worst ${worst.toFixed(1)})\nwork ${p.ms.toFixed(1)}ms\nvisible ${p.visible} / ${scenery.length}\ndraws/frame ${c.toFixed(0)}\nadventure ${adventureUnlocked ? 'unlocked' : 'locked'}${inAdventure ? ' (in zone)' : ''}  chunks ${chunks.size}\nmusic ${window.TT_SOUND && window.TT_SOUND.musicInfo ? window.TT_SOUND.musicInfo() : '-'}\nheap ${mem}\ndpr ${dpr}\n${loadedVer} skip:${Object.keys(skip).join(',') || '-'}`;
+        el.textContent = `fps ${fps.toFixed(0)}\nframe ${avg.toFixed(1)}ms (worst ${worst.toFixed(1)})\nwork ${p.ms.toFixed(1)}ms\nvisible ${p.visible} / ${scenery.length}\ndraws/frame ${c.toFixed(0)}\nadventure ${adventureUnlocked ? 'unlocked' : 'locked'}${inAdventure ? ' (in zone)' : ''}  chunks ${chunks.size}\nenemies ${window.Enemies ? (st => `home ${st.home} zone ${st.adv} active ${st.near}`)(window.Enemies.stats()) : '-'}\nmusic ${window.TT_SOUND && window.TT_SOUND.musicInfo ? window.TT_SOUND.musicInfo() : '-'}\nheap ${mem}\ndpr ${dpr}\n${loadedVer} skip:${Object.keys(skip).join(',') || '-'}`;
       } };
     return p;
   })() : null;
@@ -2152,12 +2161,17 @@
     requestAnimationFrame(frame);
   }
   const viewRect = { x: 0, y: 0, w: 0, h: 0 };
-  const ENEMY_WALK_R2 = (WORLD_SIZE / 2 - EDGE_FOG_WIDTH * 0.4) ** 2; // same fog margin pickups use
+  const ENEMY_WALK_R2 = (WORLD_SIZE / 2 - EDGE_FOG_WIDTH * 0.4) ** 2; // same fog margin pickups use (home zone)
+  const ENEMY_ZONE_R2 = ((WORLD_MAX - WORLD_MIN) / 2 - EDGE_FOG_WIDTH * 0.4) ** 2; // same margin around the enlarged world
+  // Enemies may go anywhere inside the circle that fits the playable world: the old circle until the zone is
+  // open (so a locked game plays exactly as before), the enlarged one after, so they can cross the old edge both ways.
+  const enemyRoom2 = () => adventureUnlocked ? ENEMY_ZONE_R2 : ENEMY_WALK_R2;
   if (!TEST && window.Enemies && !skip.noenemies) window.Enemies.init({
     turtle, worldSize: WORLD_SIZE, center: CENTER,
     basePlayerSpeed: MAX_SPEED * LAND_SPEED_MULT, // enemy speeds are fractions of this (skill bonuses ignored)
-    walkable: (x, y) => { const dx = x - CENTER.x, dy = y - CENTER.y; return dx * dx + dy * dy <= ENEMY_WALK_R2 && !isWater(x, y) && !isHomeIsland(x, y); },
-    flyable: (x, y) => { const dx = x - CENTER.x, dy = y - CENTER.y; return dx * dx + dy * dy <= ENEMY_WALK_R2 && !isHomeIsland(x, y); }, // fliers cross water/obstacles, never the island
+    walkable: (x, y) => { const dx = x - CENTER.x, dy = y - CENTER.y; return dx * dx + dy * dy <= enemyRoom2() && !isWater(x, y) && !isHomeIsland(x, y); },
+    flyable: (x, y) => { const dx = x - CENTER.x, dy = y - CENTER.y; return dx * dx + dy * dy <= enemyRoom2() && !isHomeIsland(x, y); }, // fliers cross water/obstacles, never the island
+    adventure: ADVENTURE.enemies, worldMin: WORLD_MIN, worldMax: WORLD_MAX, inHomeZone, homeSpawnR2: ENEMY_WALK_R2,
     isHomeIsland, inSandText: inSandTextZone, blockedAt,
     biomeAt: (x, y) => dominantBiome(x, y).biome, // allocates; only called when spawning / picking wander targets
     view: () => { viewRect.x = camX; viewRect.y = camY; viewRect.w = viewW / ZOOM; viewRect.h = viewH / ZOOM; return viewRect; },
