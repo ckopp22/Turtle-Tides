@@ -70,7 +70,7 @@
     // by `tierWeights`, then picks one item of that tier at random. 10 common / 10 rare / 5 very rare.
     finds: {
       sheet: 'assets/collectibles/items25_spritesheet.png', cell: 64, cols: 5,
-      tierWeights: { common: 70, rare: 25, veryRare: 5 },
+      tierWeights: { common: 80, rare: 17, veryRare: 3 },
       items: [
         { id: 'starfish',        name: 'Starfish',          tier: 'common'   },
         { id: 'sand_dollar',     name: 'Sand Dollar',       tier: 'rare'     },

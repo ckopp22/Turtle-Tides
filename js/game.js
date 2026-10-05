@@ -1318,7 +1318,7 @@
   const coinImg = new Image();
   coinImg.src = 'assets/items/coin.png';
   const coinPickups = makePickupType('coins', {
-    count: 30, pickupRadius: 26, respawnSeconds: 20, drawH: 30, bobSpeed: 2.4, bobAmplitude: 6,
+    count: 60, pickupRadius: 26, respawnSeconds: 20, drawH: 30, bobSpeed: 2.4, bobAmplitude: 6,
     drawItem(cx, cy) {
       if (!coinImg.complete || !coinImg.naturalWidth) return;
       const dw = 30 * coinImg.naturalWidth / coinImg.naturalHeight;
@@ -1342,7 +1342,7 @@
   findsImg.src = FINDS.sheet;
   const FIND_DRAW = 46; // world px
   const findPickups = makePickupType('finds', {
-    count: 16, pickupRadius: 24, respawnSeconds: 26, drawH: 28, bobSpeed: 2.2, bobAmplitude: 5,
+    count: 10, pickupRadius: 24, respawnSeconds: 26, drawH: 28, bobSpeed: 2.2, bobAmplitude: 5,
     pickKind: window.Progression.randomFindIndex,
     drawItem(cx, cy, it) {
       if (!findsImg.complete || !findsImg.naturalWidth) return;
