@@ -153,7 +153,6 @@ html, body {
 #tt-compass { order: 0; display: none; position: relative; width: 64px; height: 64px; flex: none; pointer-events: none;
   background: url(../assets/items/compass_base_64.png?v=1) 0 0 / 100% 100% no-repeat; image-rendering: pixelated; }
 #tt-compass-needle { position: absolute; inset: 0; background: url(../assets/items/compass_needle_16dir_spritesheet.png?v=1) 0 0 / 1024px 64px no-repeat; image-rendering: pixelated; }
-#tt-daynight-btn { order: 3; }
 #tt-hide-btn { order: 4; }
 /* Hide in Shell icon: the shell-only frame (bottom row, first col) cropped from the turtle sprite sheet. */
 .tt-shell-icon { width: 26px; height: 30px; background: url(../assets/turtle-sheet.png?v=1) -7.3px -192.4px / 324px 229px no-repeat; image-rendering: pixelated; }

@@ -41,10 +41,11 @@
     { id: 'bed',     name: 'Bed',            layer: '01_bed_192.png',              cost: 20, unlocks: ['sleep'],                  perk: 'Sleep',                      solids: [{ rect: [16, 44, 80, 108] }], hotspot: { rect: [16, 44, 80, 108], action: 'sleep' } },
     { id: 'chest',   name: 'Chest',          layer: '08_chest_192.png',            cost: 25, unlocks: ['closet'],                perk: 'Closet',                     solids: [{ rect: [137, 141, 177, 169] }], hotspot: { rect: [137, 141, 177, 169], action: 'closet' } },
     { id: 'doormat', name: 'Doormat',        layer: '03_doormat_192.png',          cost: 30, unlocks: ['moveSpeed1'],             perk: 'Move Speed I',               solids: [] },
+    { id: 'window',  name: 'Window',         layer: null,                          cost: 40, unlocks: ['dayNight'],             perk: 'Day/Night',                  solids: [], hotspot: { rect: [74, 10, 118, 36], action: 'daynight' } }, // art is in the base room image; no layer
     { id: 'table',   name: 'Table & Stools', layer: '04_table_and_stools_192.png', cost: 45, unlocks: ['swimSpeed1'],             perk: 'Swim Speed I',               solids: [{ circle: [152, 82, 18] }, { circle: [152, 112, 8] }, { circle: [128, 82, 8] }] },
     { id: 'shelf',   name: 'Shelf',          layer: '05_shelf_192.png',            cost: 60, unlocks: ['collectionBook'],         perk: 'Collection Book',            solids: [], hotspot: { rect: [130, 17, 178, 36], action: 'book' } },
     { id: 'plant',   name: 'Plant',          layer: '06_plant_192.png',            cost: 75, unlocks: ['moveSpeed2'],             perk: 'Move Speed II',              solids: [{ circle: [30, 158, 9] }] },
-    { id: 'lantern', name: 'Lantern',        layer: '07_lantern_192.png',          cost: 95, unlocks: ['dayNight', 'swimSpeed2'], perk: 'Day/Night + Swim Speed II',  solids: [] },
+    { id: 'lantern', name: 'Lantern',        layer: '07_lantern_192.png',          cost: 95, unlocks: ['swimSpeed2'],             perk: 'Swim Speed II',               solids: [] },
     { id: 'rug',     name: 'Rug',            layer: '02_rug_192.png',              cost: 120, unlocks: [],                       perk: 'Decor',                      solids: [] },
   ];
   // Outdoor upgrades come after the hut items (levels 9-10): the campfire next to the hut, first
@@ -79,7 +80,7 @@
   const fireLitImg = load('assets/home/campfire_spritesheet.png'); // 6 frames of 64x64
   const baseImg = load('assets/home/00_hut_interior_empty_192.png');
   const layerImgs = {};
-  for (const u of INDOOR) layerImgs[u.id] = load('assets/home/' + u.layer);
+  for (const u of INDOOR) if (u.layer) layerImgs[u.id] = load('assets/home/' + u.layer);
 
   // The interior (base + every unlocked layer, rug first) is composed once into this canvas and drawn
   // from it every frame; rebuildRoom() only reruns when an image finishes loading or the unlocked
@@ -95,7 +96,7 @@
   }
   function drawLayer(id) {
     const img = layerImgs[id];
-    if (shown[id] && img.complete && img.naturalWidth) roomCtx.drawImage(img, 0, 0);
+    if (img && shown[id] && img.complete && img.naturalWidth) roomCtx.drawImage(img, 0, 0);
   }
 
   // ---- What the saved home level (Progression.state.homeLevel) means for the room ----
@@ -136,10 +137,12 @@
     if (lv > seen) {
       const names = [];
       for (let i = seen; i < indoorCount(); i++) { // outdoor items just appear on the island
-        const u = INDOOR[i], b = layerBBox(u.id);
+        const u = INDOOR[i];
+        names.push(`${u.name} (${u.perk})`);
+        if (!u.layer) continue; // layer-less items (the window) are already in the base art: toast only
+        const b = layerBBox(u.id);
         shown[u.id] = false; // keep it out of the cached canvas until its animation is done
         pops.push({ id: u.id, delay: POP.startDelay + (i - seen) * POP.stagger, cx: b.x + b.w / 2, cy: b.y + b.h / 2, played: false });
-        names.push(`${u.name} (${u.perk})`);
       }
       if (names.length) {
         rebuildRoom();
@@ -203,7 +206,7 @@
 
 
   // ---- Clickable furniture + sleeping ----
-  const ACTIONS = { sleep: startSleep, closet: openCloset, book: openBook };
+  const ACTIONS = { sleep: startSleep, closet: openCloset, book: openBook, daynight: () => window.Progression.toggleDayNight() };
   const sleep = { phase: 0, t: 0, dim: 0, msg: '', full: false }; // phase: 0 none, 1 fading to dark, 2 asleep, 3 waking
   const hint = { text: '', timer: 0 };
   let lastSleepAt = -1;
@@ -436,8 +439,23 @@
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(roomCanvas, lay.x0, lay.y0, ART * lay.s, ART * lay.s);
     drawPops(ctx, lay);
+    drawWindowNight(ctx, lay, t);
     ctx.imageSmoothingEnabled = true;
     if (!sleep.phase && !modal) drawFurnitureCues(ctx, lay, t);
+  }
+  // Window -> night sky over the glass (art px 79..113 x 14..32), eased toward the Day/Night setting.
+  let winNight = 0, winLastT = 0;
+  function drawWindowNight(ctx, lay, t) {
+    const dt = Math.min(0.1, Math.max(0, t - winLastT)); winLastT = t;
+    if (!hasFeature('dayNight')) return;
+    const target = window.Progression.state.isNight ? 1 : 0;
+    winNight = winNight < target ? Math.min(target, winNight + 2 * dt) : Math.max(target, winNight - 2 * dt); // ~0.5s fade
+    if (winNight <= 0.001) return;
+    const s = lay.s, x = lay.x0 + 79 * s, y = lay.y0 + 14 * s;
+    ctx.fillStyle = `rgba(8,16,38,${0.92 * winNight})`;
+    ctx.fillRect(x, y, 35 * s, 19 * s);
+    ctx.fillStyle = `rgba(255,255,220,${0.9 * winNight})`; // a few stars
+    for (const [sx, sy] of [[85, 19], [100, 17], [106, 26], [92, 28]]) ctx.fillRect(lay.x0 + sx * s, lay.y0 + sy * s, s, s);
   }
   // A bobbing "Tap" prompt over a tappable piece while the turtle is within nearbyPx of it, and a pointer
   // cursor while the mouse is over one.

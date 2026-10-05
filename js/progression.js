@@ -395,7 +395,6 @@
   // (safe on the home island, same as birds never spawning there). Returns a speed multiplier
   // game.js multiplies into its own water/land speed calc.
   function update(dt, awayFromHome) {
-    ensureDayNightButton();
     ensureHideButton();
     if (state.invulnTimer > 0) state.invulnTimer = Math.max(0, state.invulnTimer - dt);
     if (state.hullFullFlash > 0) state.hullFullFlash = Math.max(0, state.hullFullFlash - dt);
@@ -521,9 +520,11 @@
     // homeLevel = number of hut upgrades unlocked (max Home.UPGRADES.length). Older saves had a 0-20
     // level track (clamped here) or, briefly, a homeItems list (its length is used if higher).
     // homeVersion 2 saves predate the "level 1 = the hut" shift, so every level moves up by one.
+    // homeVersion < 4 saves predate the Window (inserted as upgrade 5), so levels >= 5 move up by one.
     const shift = data.homeVersion === 2 && (data.homeLevel || 0) > 0 ? 1 : 0;
-    state.homeLevel = clampLevel(Math.max((data.homeLevel || 0) + shift, Array.isArray(data.homeItems) ? data.homeItems.length : 0), window.Home.UPGRADES.length);
-    state.homeSeenLevel = Number.isFinite(data.homeSeenLevel) ? clampLevel(data.homeSeenLevel + shift, state.homeLevel) : state.homeLevel;
+    const winShift = lv => (data.homeVersion || 0) < 4 && lv + shift >= 5 ? 1 : 0;
+    state.homeLevel = clampLevel(Math.max((data.homeLevel || 0) + shift + winShift(data.homeLevel || 0), Array.isArray(data.homeItems) ? data.homeItems.length : 0), window.Home.UPGRADES.length);
+    state.homeSeenLevel = Number.isFinite(data.homeSeenLevel) ? clampLevel(data.homeSeenLevel + shift + winShift(data.homeSeenLevel), state.homeLevel) : state.homeLevel;
     state.banked = {
       coins: data.banked?.coins || 0,
       coconuts: data.banked?.coconuts || 0,
@@ -590,7 +591,7 @@
       hideOn: state.hideOn,
       cosmetics: { owned: state.cosmetics.owned.slice(), equipped: { ...state.cosmetics.equipped } },
       turtleMaster: state.turtleMaster,
-      homeVersion: 3, // 3 = homeLevel 0 is nothing, 1 is the hut, then its upgrades (2 = no hut step); bump if the save shape changes (loads tolerate it missing)
+      homeVersion: 4, // 4 = Window inserted at upgrade 5; 3 = homeLevel 0 is nothing, 1 is the hut, then its upgrades (2 = no hut step); bump if the save shape changes (loads tolerate it missing)
       homeSeenLevel: state.homeSeenLevel,
       stats: { ...state.stats },
     };
@@ -909,29 +910,6 @@
     upgradeBtn.style.display = visible ? 'flex' : 'none';
     if (!visible) closeUpgradePanel();
   }
-  // Day/Night toggle button — same icon-button pattern as Upgrades above, but shown everywhere (not
-  // just at home) once unlocked, since it's a global setting. Ensured (created once, icon kept in
-  // sync) from update() below so nothing else has to remember to call it.
-  let dayNightBtn = null;
-  function updateDayNightButtonLabel() {
-    if (dayNightBtn) {
-      const src = state.isNight ? 'assets/items/sun_icon.png?v=1' : 'assets/items/moon_icon.png?v=1';
-      dayNightBtn.innerHTML = `<img src="${src}" alt="" width="28" height="28">`;
-    }
-  }
-  function ensureDayNightButton() {
-    if (!hasSkill('dayNight') || dayNightBtn) return;
-    dayNightBtn = document.createElement('button');
-    dayNightBtn.id = 'tt-daynight-btn';
-    dayNightBtn.className = 'tt-icon-btn';
-    dayNightBtn.type = 'button';
-    dayNightBtn.title = 'Day / Night';
-    dayNightBtn.style.display = 'flex';
-    dayNightBtn.addEventListener('click', () => { toggleDayNight(); updateDayNightButtonLabel(); });
-    ensureIconRow().appendChild(dayNightBtn);
-    updateDayNightButtonLabel();
-  }
-
   // Hide in Shell toggle button — same row as Day/Night, shown everywhere once the perk is unlocked.
   // Lit (green) while on. Created once from update(), like the Day/Night button above.
   let hideBtn = null;
