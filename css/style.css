@@ -465,3 +465,11 @@ button { touch-action: manipulation; }
 .tt-book-pos { font: 700 14px system-ui, sans-serif; color: #6b5b3a; }
 .tt-book-note { flex: none; margin: 0 0 8px; padding: 8px 10px; border-radius: 10px; background: #ffe9a8; border: 2px solid #c98a1e; font: 700 13px system-ui, sans-serif; color: #3a2a10; text-align: center; }
 .tt-book-note:empty { display: none; }
+
+/* Short landscape screens (phones on their side): shrink the shop/closet/book panels so they fit. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .tt-upgrade-box { width: min(280px, 90vw); max-height: 94vh; max-height: 94dvh; }
+  .tt-closet-box { width: min(520px, 94vw); max-height: 94vh; max-height: 94dvh; }
+  .tt-closet-preview { width: 72px; height: 72px; margin-bottom: 4px; }
+  .tt-closet-buy { min-height: 40px; }
+}

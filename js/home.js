@@ -424,10 +424,11 @@
     const d = Math.hypot(turtle.x - fireX, turtle.y - fireY);
     window.TT_SOUND.fire(clamp(1 - (d - FIRE_NEAR) / (FIRE_FAR - FIRE_NEAR), 0, 1));
   }
-  // Biggest whole-number scale that fits, room centered. Reused result object (no per-frame allocation).
+  // Biggest scale that fits, room centered: whole numbers from 2x up, quarter steps below (short landscape phones). Reused result object (no per-frame allocation).
   const L = { s: 1, x0: 0, y0: 0, tk: CONFIG.roomTurtleScale };
   function layout(w, h) {
-    L.s = Math.max(1, Math.floor(Math.min(w, h) / ART));
+    const raw = Math.min(w, h) / ART;
+    L.s = Math.max(1, raw >= 2 ? Math.floor(raw) : Math.floor(raw * 4) / 4);
     L.x0 = Math.floor((w - ART * L.s) / 2); L.y0 = Math.floor((h - ART * L.s) / 2);
     return L;
   }
