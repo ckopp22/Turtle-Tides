@@ -481,3 +481,13 @@ button { touch-action: manipulation; }
   .tt-closet-preview { width: 72px; height: 72px; margin-bottom: 4px; }
   .tt-closet-buy { min-height: 40px; }
 }
+
+/* Toast banner for first-time finds */
+.discovery-toast {
+  position: fixed; top: 64px; left: 50%; transform: translate(-50%, -20px);
+  padding: 8px 16px; border-radius: 999px;
+  background: rgba(20, 60, 70, 0.9); color: #fff; font-weight: 700; font-size: 15px;
+  pointer-events: none; opacity: 0; z-index: 20; white-space: nowrap;
+  transition: opacity 0.3s, transform 0.3s;
+}
+.discovery-toast.show { opacity: 1; transform: translate(-50%, 0); }

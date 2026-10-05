@@ -1270,6 +1270,21 @@
     return { x, y };
   }
 
+  // Small banner at the top of the screen; replaces any toast still showing.
+  let toastEl = null, toastTimer = 0;
+  function showDiscoveryToast(name) {
+    if (!toastEl) {
+      toastEl = document.createElement('div');
+      toastEl.className = 'discovery-toast';
+      document.body.appendChild(toastEl);
+    }
+    toastEl.textContent = 'New find: ' + name + '!';
+    toastEl.classList.remove('show');
+    void toastEl.offsetWidth; // restart the animation
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2200);
+  }
   function makePickupType(key, opts) {
     const items = [];
     function respawn(it) {
@@ -1303,7 +1318,12 @@
         }
         if (it.popAt !== undefined && popHeight(it) > 0) continue; // can't grab it mid-hop
         if (Math.hypot(turtle.x - it.x, turtle.y - it.y) < pickupDist) {
-          if (window.Progression.tryPickup(key, it.kind)) {
+          const P = window.Progression;
+          // First-ever find of this kind = not banked in the collection and not already carried this trip.
+          const foundItem = key === 'finds' ? P.FINDS.items[it.kind] : null;
+          const isNew = foundItem && !P.state.collection[foundItem.id] && !P.state.carriedFinds.includes(foundItem.id);
+          if (P.tryPickup(key, it.kind)) {
+            if (isNew) showDiscoveryToast(foundItem.name);
             if (key === 'coconuts' && window.TT_SOUND) window.TT_SOUND.coconut();
             if (key === 'coins' && window.TT_SOUND) window.TT_SOUND.coin();
             if (key === 'finds' && window.TT_SOUND) window.TT_SOUND.shell();
