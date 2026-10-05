@@ -219,6 +219,13 @@ html, body {
   cursor: pointer;
 }
 
+/* Narrow (portrait phone) screens: the Turtle Master HUD panel (280px) runs under the top-right buttons,
+   so stack them in a column down the right edge instead of a row. */
+@media (max-width: 480px) {
+  #tt-sound-btn { right: 14px; top: 56px; }
+  #tt-music-btn { right: 14px; top: 98px; }
+}
+
 .tt-upgrade-box {
   width: min(360px, 90vw);
   max-height: 82vh;
