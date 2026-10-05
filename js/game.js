@@ -104,8 +104,50 @@
     turtle, center: CENTER, bodyRadius: TURTLE_BODY_RADIUS,
     maxSpeed: MAX_SPEED * LAND_SPEED_MULT, accel: ACCEL, decel: DECEL,
     onEnter: () => { if (window.Enemies) window.Enemies.resetAggro(); }, // chasers give up when the turtle goes inside
-    onEnterInterior: () => window.Progression.setHomeButtonVisible(false), // hide the island's shop buttons indoors (they reappear on the first outdoor frame)
+    onEnterInterior: () => { window.Progression.setHomeButtonVisible(false); setCompassShown(false); }, // hide the island's shop buttons indoors (they reappear on the first outdoor frame)
   });
+  // ---- Compass: DOM HUD element (in the shop icon's slot) whose turtle needle points at the hut door.
+  // Heading is re-checked ~10x/s from update(); the DOM is only touched when the frame or visibility changes.
+  const COMPASS_ARRIVE_DIST = 450;   // world units from the hut door: inside this the needle hides ("arrived")
+  const COMPASS_CHECK_INTERVAL = 0.1; // seconds between heading checks
+  const COMPASS_SIZE = 64; // display px (art is 64px, 1x); change style.css width/height/background-size to match
+  const compassDoor = { x: CENTER.x + Home.CONFIG.hutOffset.x, y: CENTER.y + Home.CONFIG.hutOffset.y + Home.CONFIG.exitDropPx };
+  const compassFramePos = []; // 'background-position-x' strings, built once (no per-frame strings)
+  for (let i = 0; i < 16; i++) compassFramePos.push(-i * COMPASS_SIZE + 'px');
+  let compassEl = null, compassNeedle = null, compassShown = false, compassFrame = -1, compassArrived = false, compassTimer = 0;
+  let compassImagesLeft = 2;
+  for (const f of ['compass_base_64.png', 'compass_needle_16dir_spritesheet.png']) {
+    const img = new Image();
+    img.onload = img.onerror = () => { compassImagesLeft--; };
+    img.src = 'assets/items/' + f + '?v=1';
+  }
+  function setCompassShown(show) {
+    if (show === compassShown) return;
+    if (!compassEl) {
+      compassEl = document.createElement('div'); compassEl.id = 'tt-compass';
+      compassNeedle = document.createElement('div'); compassNeedle.id = 'tt-compass-needle';
+      compassEl.appendChild(compassNeedle);
+      window.Progression.getIconRow().appendChild(compassEl);
+    }
+    compassShown = show;
+    compassEl.style.display = show ? 'block' : 'none';
+    if (show) compassFrame = -1, compassTimer = COMPASS_CHECK_INTERVAL; // force a fresh check right away
+  }
+  function updateCompass(dt, onIsland) {
+    if (onIsland) { setCompassShown(false); return; }
+    setCompassShown(true);
+    compassTimer += dt;
+    if (compassTimer < COMPASS_CHECK_INTERVAL) return;
+    compassTimer = 0;
+    const dx = compassDoor.x - turtle.x, dy = compassDoor.y - turtle.y;
+    const arrived = dx * dx + dy * dy < COMPASS_ARRIVE_DIST * COMPASS_ARRIVE_DIST;
+    if (arrived !== compassArrived || compassFrame < 0) { compassArrived = arrived; compassNeedle.style.visibility = arrived ? 'hidden' : 'visible'; }
+    if (arrived) return;
+    // 0 = up, clockwise; frame 0 points north, each frame is 22.5deg clockwise
+    const f = (Math.round(Math.atan2(dx, -dy) * (8 / Math.PI)) + 16) % 16;
+    if (f !== compassFrame) { compassFrame = f; compassNeedle.style.backgroundPositionX = compassFramePos[f]; }
+  }
+
   function spawnTurtle() {
     const p = Home.exitPoint(); // just below the hut's porch
     turtle.x = p.x;
@@ -1500,7 +1542,9 @@
     // Re-check home status against this frame's final position (not the pre-movement one used
     // above for the hunger-penalty speed calc) so the Upgrades button/panel react the instant the
     // turtle actually crosses onto/off the island, not one frame late.
-    window.Progression.setHomeButtonVisible(isHomeIsland(turtle.x, turtle.y));
+    const onIsland = isHomeIsland(turtle.x, turtle.y);
+    window.Progression.setHomeButtonVisible(onIsland);
+    updateCompass(dt, onIsland);
 
     // Face movement direction, turning smoothly.
     if (Math.hypot(turtle.vx, turtle.vy) > 10) {
@@ -1846,6 +1890,7 @@
     started = true;
     resize();
     if (!window.innerWidth || !window.innerHeight) { started = false; requestAnimationFrame(() => start(slotId, saveData)); return; }
+    if (compassImagesLeft > 0) { started = false; requestAnimationFrame(() => start(slotId, saveData)); return; } // compass art
     if (!grassReady) { started = false; requestAnimationFrame(() => start(slotId, saveData)); return; } // wait for grass textures so nothing draws untextured
     if (!shore) { started = false; requestAnimationFrame(() => start(slotId, saveData)); return; } // wait for Shore.js's sand/water tiles too
     window.Progression.attachSlot(slotId, saveData);

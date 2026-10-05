@@ -148,6 +148,11 @@ html, body {
 /* Fixed left-to-right order regardless of unlock/insertion order: Upgrades (shop sign), then Turtle
    Shop (cosmetics), then Day/Night. */
 #tt-upgrade-btn { order: 1; }
+/* Compass (game.js): takes the shop icon's place while the turtle is off the island. Two stacked layers,
+   the face and the needle (a 16-frame sprite sheet, frame picked via background-position-x). */
+#tt-compass { order: 0; display: none; position: relative; width: 64px; height: 64px; flex: none; pointer-events: none;
+  background: url(../assets/items/compass_base_64.png?v=1) 0 0 / 100% 100% no-repeat; image-rendering: pixelated; }
+#tt-compass-needle { position: absolute; inset: 0; background: url(../assets/items/compass_needle_16dir_spritesheet.png?v=1) 0 0 / 1024px 64px no-repeat; image-rendering: pixelated; }
 #tt-daynight-btn { order: 3; }
 #tt-hide-btn { order: 4; }
 /* Hide in Shell toggle: green while on. */
