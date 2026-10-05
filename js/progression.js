@@ -1003,6 +1003,7 @@
       btn.addEventListener('click', () => { buyUpgrade(btn.dataset.track); openUpgradePanel(); });
     });
     wrap.querySelector('.tt-upgrade-close').addEventListener('click', closeUpgradePanel);
+    wrap.addEventListener('click', e => { if (e.target === wrap) closeUpgradePanel(); }); // click outside the box closes
   }
   function closeUpgradePanel() {
     if (upgradePanel) { upgradePanel.remove(); upgradePanel = null; }
