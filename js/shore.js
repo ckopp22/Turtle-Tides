@@ -66,24 +66,47 @@ const Shore = (() => {
     const waterField = makeField(waterGrid);
     const underField = o.sandEdge === 'soft' ? makeField(underGrid) : null;
 
-    const F = new Float32Array(mw0 * mh0);   // shoreline field: 0.5 = waterline
-    const P = new Float32Array(mw0 * mh0);   // per-spot wave timing offset
-    const G = new Uint8Array(mw0 * mh0);     // fine grain that breaks foam up
-    const SA = new Uint8Array(mw0 * mh0);    // 0..255: how much sand may show here
-    for (let y = 0; y < mh0; y++) {
-      for (let x = 0; x < mw0; x++) {
-        const tx = (x * RES) / TILE, ty = (y * RES) / TILE, k = y * mw0 + x;
-        const n = (noise(tx * 2.3, ty * 2.3) - 0.5) * o.wobble * 2 + (noise(tx * 7.1 + 40, ty * 7.1 + 40) - 0.5) * o.wobble * 0.7;
-        F[k] = waterField(tx, ty) + n;
-        P[k] = noise(tx * 1.7 + 77, ty * 1.7 + 77) * 1.3;
-        G[k] = noise(tx * 9 + 3, ty * 9 + 3) * 255;
-        if (underField) {
-          const n2 = (noise(tx * 2.9 + 200, ty * 2.9 + 200) - 0.5) * 0.22 + (noise(tx * 8 + 300, ty * 8 + 300) - 0.5) * 0.08;
-          SA[k] = smoothstep(0.46, 0.54, underField(tx, ty) + n2) * 255;
-        } else {
-          SA[k] = underGrid[Math.min(H - 1, Math.floor(ty))][Math.min(Wt - 1, Math.floor(tx))] * 255;
+    // Mask-cell data (shoreline field, wave phase, grain, sand amount) is generated lazily in BLK x BLK
+    // blocks the first time the camera window needs them, and old blocks are dropped again — memory stays
+    // flat however big the map is (a whole-map Float32Array pair was ~70MB at 5200px, 4x that at 10400px).
+    // `origin` = world position of the map's top-left corner (a multiple of TILE); noise is sampled in
+    // world-aligned tile coords so the coastline looks the same wherever the map's origin sits.
+    const origin = o.origin || { x: 0, y: 0 };
+    const oxT = origin.x / TILE, oyT = origin.y / TILE;
+    const BLK = 64, BLK_CAP = 220;
+    const blocks = new Map();
+    let stamp = 0;
+    function genBlock(bx, by) {
+      const n = BLK * BLK;
+      const b = { F: new Float32Array(n), P: new Float32Array(n), G: new Uint8Array(n), SA: new Uint8Array(n), used: 0 };
+      for (let ly = 0; ly < BLK; ly++) {
+        const y = by * BLK + ly;
+        if (y >= mh0) break;
+        for (let lx = 0; lx < BLK; lx++) {
+          const x = bx * BLK + lx;
+          if (x >= mw0) break;
+          const k = ly * BLK + lx;
+          const tx = (x * RES) / TILE, ty = (y * RES) / TILE, wx = tx + oxT, wy = ty + oyT;
+          const nz = (noise(wx * 2.3, wy * 2.3) - 0.5) * o.wobble * 2 + (noise(wx * 7.1 + 40, wy * 7.1 + 40) - 0.5) * o.wobble * 0.7;
+          b.F[k] = waterField(tx, ty) + nz;
+          b.P[k] = noise(wx * 1.7 + 77, wy * 1.7 + 77) * 1.3;
+          b.G[k] = noise(wx * 9 + 3, wy * 9 + 3) * 255;
+          if (underField) {
+            const n2 = (noise(wx * 2.9 + 200, wy * 2.9 + 200) - 0.5) * 0.22 + (noise(wx * 8 + 300, wy * 8 + 300) - 0.5) * 0.08;
+            b.SA[k] = smoothstep(0.46, 0.54, underField(tx, ty) + n2) * 255;
+          } else {
+            b.SA[k] = underGrid[Math.min(H - 1, Math.floor(ty))][Math.min(Wt - 1, Math.floor(tx))] * 255;
+          }
         }
       }
+      return b;
+    }
+    function getBlock(bx, by) {
+      const key = bx * 4096 + by;
+      let b = blocks.get(key);
+      if (!b) { b = genBlock(bx, by); blocks.set(key, b); }
+      b.used = stamp;
+      return b;
     }
 
     const tmp = canvasOf(1, 1).getContext('2d');
@@ -110,7 +133,7 @@ const Shore = (() => {
     function draw(ctx, camX, camY, vw, vh, time = 0) {
       camX = Math.round(camX); camY = Math.round(camY);
       const l = layers(vw, vh);
-      const nx = Math.floor(camX / RES), ny = Math.floor(camY / RES), need = Math.ceil(vw / RES) + 2, needH = Math.ceil(vh / RES) + 2;
+      const nx = Math.floor((camX - origin.x) / RES), ny = Math.floor((camY - origin.y) / RES), need = Math.ceil(vw / RES) + 2, needH = Math.ceil(vh / RES) + 2;
       const tick = Math.floor(time * TICK);
       const stale = !cache || cache.l !== l || cache.tick !== tick || nx < cache.mx0 || ny < cache.my0 ||
         nx + need > cache.mx0 + l.mw || ny + needH > cache.my0 + l.mh;
@@ -120,19 +143,22 @@ const Shore = (() => {
       const soft = !!underField;
       const t = time * o.speed;
 
+      if (stale) stamp++;
       if (stale) for (let y = 0; y < l.mh; y++) {
         const gy = my0 + y;
+        let cbx = -1, cb = null;
         for (let x = 0; x < l.mw; x++) {
           const gx = mx0 + x, i = (y * l.mw + x) * 4 + 3;
           if (gx < 0 || gy < 0 || gx >= mw0 || gy >= mh0) { wd[i] = fd[i] = md[i] = sd[i] = 0; continue; }
-          const k = gy * mw0 + gx, f = F[k], sa = SA[k];
+          if ((gx >> 6) !== cbx) { cbx = gx >> 6; cb = getBlock(cbx, gy >> 6); }
+          const k = (gy & 63) * BLK + (gx & 63), f = cb.F[k], sa = cb.SA[k];
           if (soft) sd[i] = sa;
           // Cells far from the waterline have a constant result whatever the wave phase: deep water
           // (f > 0.812: mask full, no wet/foam; both gaussians are < exp(-9) there) and deep land
           // (f <= 0.26: all zero). Skips the sin/exp/pow work for most of the view, same output.
           if (f > 0.812) { md[i] = 255; wd[i] = 0; fd[i] = 0; continue; }
           if (f <= 0.26) { md[i] = 0; wd[i] = 0; fd[i] = 0; continue; }
-          const u = (t + P[k]) % 1;                   // this spot's position in its wave cycle
+          const u = (t + cb.P[k]) % 1;                   // this spot's position in its wave cycle
           const e = Math.sin(Math.PI * u);            // 0 → 1 → 0 : arrives, laps, drains
           const th = 0.5 - 0.035 * e;                 // waterline creeps up at the peak
           const wa = smoothstep(th - 0.018, th + 0.018, f);
@@ -143,27 +169,28 @@ const Shore = (() => {
             const edge = Math.exp(-a * a) * (0.3 + 0.7 * e);
             const b = (f - (0.5 + o.waveDepth * (1 - u))) / 0.024;
             const crest = Math.exp(-b * b) * Math.pow(e, 0.7);
-            fd[i] = Math.min(1, (edge * 0.85 + crest) * (0.55 + 0.45 * (G[k] / 255))) * 215;
+            fd[i] = Math.min(1, (edge * 0.85 + crest) * (0.55 + 0.45 * (cb.G[k] / 255))) * 215;
           } else fd[i] = 0;
         }
       }
+      if (stale && blocks.size > BLK_CAP) for (const [key, b] of blocks) if (b.used !== stamp) blocks.delete(key);
       if (stale) {
         l.wet.x.putImageData(l.wet.id, 0, 0); l.foam.x.putImageData(l.foam.id, 0, 0); l.mask.x.putImageData(l.mask.id, 0, 0);
         if (soft) l.smask.x.putImageData(l.smask.id, 0, 0);
       }
-      const ox = mx0 * RES - camX, oy = my0 * RES - camY, ow = l.mw * RES, oh = l.mh * RES;
+      const ox = mx0 * RES + origin.x - camX, oy = my0 * RES + origin.y - camY, ow = l.mw * RES, oh = l.mh * RES;
 
       const prevS = ctx.imageSmoothingEnabled;
       // 1) sand — only where the map says sand (and under water, so the wobbling waterline never shows a gap)
       if (!soft) {
         ctx.save(); ctx.translate(-camX, -camY); ctx.fillStyle = sandPat;
-        const ty0 = Math.max(0, Math.floor(camY / TILE)), ty1 = Math.min(H - 1, Math.floor((camY + vh - 1) / TILE));
-        const tx0 = Math.max(0, Math.floor(camX / TILE)), tx1 = Math.min(Wt - 1, Math.floor((camX + vw - 1) / TILE));
+        const ty0 = Math.max(0, Math.floor((camY - origin.y) / TILE)), ty1 = Math.min(H - 1, Math.floor((camY - origin.y + vh - 1) / TILE));
+        const tx0 = Math.max(0, Math.floor((camX - origin.x) / TILE)), tx1 = Math.min(Wt - 1, Math.floor((camX - origin.x + vw - 1) / TILE));
         for (let ty = ty0; ty <= ty1; ty++) {
           for (let tx = tx0; tx <= tx1; tx++) {
             if (!underGrid[ty][tx]) continue;
             let run = 1; while (tx + run <= tx1 && underGrid[ty][tx + run]) run++;   // merge neighbours into one rect (no seams)
-            ctx.fillRect(tx * TILE, ty * TILE, run * TILE, TILE);
+            ctx.fillRect(origin.x + tx * TILE, origin.y + ty * TILE, run * TILE, TILE);
             tx += run - 1;
           }
         }

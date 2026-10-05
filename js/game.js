@@ -14,6 +14,8 @@
     };
   }
 
+  const DEBUG = new URLSearchParams(location.search).get('debug') === '1'; // perf overlay, hitbox/zone outlines, debug keys
+
   const canvas = document.getElementById('game');
   // Test mode forces software raster: Chrome otherwise flips a canvas from GPU to CPU mid-run after
   // repeated readbacks, which shifts a few pixels between otherwise identical renders.
@@ -26,14 +28,31 @@
   // A small home island at the world center, a water ring around it, and a mainland ring beyond
   // that wraps all the way around, split into 4 compass biomes (N beach, E open forest, S dead
   // trees, W thick forest). World is square so all 4 directions have equal room to explore.
-  const WORLD_SIZE = 5200;                          // ~5-6x a nominal 900px screen in each direction
+  // The original map is the "home zone": WORLD_SIZE square with its original coordinates and layout. The
+  // Adventure Zone is all the new land around it, so the world runs from WORLD_MIN to WORLD_MAX on both axes
+  // (negative coordinates are fine: nothing below indexes arrays by world position).
+  const WORLD_SIZE = 5200;
+  const ADVENTURE = {
+    worldMult: 2,            // world side = this x the original map's side (2 = 4x the area); the one knob for world size
+    fenceInset: 110,         // locked: world px in from the home zone's edge where the fence stands and the turtle stops
+    fencePostGap: 96,        // world px between fence posts
+    fogBand: 300,            // locked: world px of fog thickening toward the edge (the baked edge fog hides under the grass)
+    fogAlpha: 0.85,          // fog opacity at the very edge
+    seed: 7351,              // seeds the zone's scenery, so it's the same every load
+  };
+  const WORLD_PAD = WORLD_SIZE * (ADVENTURE.worldMult - 1) / 2; // new land on each side of the home zone
+  const WORLD_MIN = -WORLD_PAD, WORLD_MAX = WORLD_SIZE + WORLD_PAD;
   const CENTER = { x: WORLD_SIZE / 2, y: WORLD_SIZE / 2 };
   const ISLAND_R = 260;                             // home island radius: safe area, no obstacles
   const WATER_WIDTH = 300;                          // water ring width beyond the island
   const WATER_OUTER_R = ISLAND_R + WATER_WIDTH;     // mainland starts here
   const EDGE_FOG_WIDTH = 260;                       // darkened fringe at the world border
-  const WORLD_W = WORLD_SIZE, WORLD_H = WORLD_SIZE; // kept as separate names: rest of the file (camera,
-                                                     // bounds clamp) already reads WORLD_W/WORLD_H
+  // Zone test: one rectangle check against the home square (everything else is the Adventure Zone).
+  function inHomeZone(x, y) { return x >= 0 && x < WORLD_SIZE && y >= 0 && y < WORLD_SIZE; }
+  // Playable/camera rectangle: just the home zone while the Adventure Zone is locked, the whole world once open.
+  // The fog fringe hugs whichever edge is current.
+  const bounds = { x0: 0, y0: 0, x1: WORLD_SIZE, y1: WORLD_SIZE };
+  let adventureUnlocked = false;
   const HOME = { x: CENTER.x, y: CENTER.y + 90 };
 
   // Camera zoom: smaller = more of the map visible. Zoomed out further on narrow/mobile
@@ -220,6 +239,11 @@
   window.addEventListener('keydown', e => {
     if (typingInField()) return;
     if (DEBUG_STATES[e.key]) { state = DEBUG_STATES[e.key]; stateTime = 0; return; }
+    if (DEBUG && (e.key === 'u' || e.key === 't')) { // ?debug=1: u = lock/unlock the Adventure Zone, t = teleport into it (unlocking it first)
+      if (e.key === 'u') setAdventureUnlocked(!adventureUnlocked);
+      else if (spawned) { setAdventureUnlocked(true); turtle.x = WORLD_SIZE + 700; turtle.y = CENTER.y; turtle.vx = turtle.vy = 0; }
+      return;
+    }
     const k = KEY_MAP[e.key.toLowerCase()];
     if (k) { wakeUp(); keys.add(k); e.preventDefault(); }
   });
@@ -396,60 +420,9 @@
     return landColor;
   }
 
-  // ---- Terrain: a color grid, blended per-pixel once at load, then drawn scaled up each frame
-  // only for the visible camera slice. Fine enough resolution (4 world px/cell) that the shoreline
-  // bands above look smooth rather than blocky; built in row chunks (a setTimeout each) so the
-  // ~1.7M-pixel canvas never freezes the page or a phone while it loads. ----
-  const TERRAIN_CELL = 4;          // world px per terrain grid cell
-  const TERRAIN_ROWS_PER_CHUNK = 40; // rows computed per chunk while building
+  // (The ground — terrain colors + grass textures — is baked in lazily built chunks, see "Ground chunks" below.)
+  const TERRAIN_CELL = 4;          // world px per terrain grid cell (a chunk's color grid is sampled this finely)
   const FOG_COLOR = [8, 28, 36];
-  function buildTerrainChunked() {
-    const cols = Math.ceil(WORLD_SIZE / TERRAIN_CELL), rows = cols;
-    const c = document.createElement('canvas');
-    c.width = cols; c.height = rows;
-    const g = c.getContext('2d');
-    const img = g.createImageData(cols, rows);
-
-    let ry = 0;
-    function step() {
-      const end = Math.min(ry + TERRAIN_ROWS_PER_CHUNK, rows);
-      for (; ry < end; ry++) {
-        const y = ry * TERRAIN_CELL;
-        for (let rx = 0; rx < cols; rx++) {
-          const x = rx * TERRAIN_CELL;
-          let col = shorelineGroundColor(x, y);
-          // Deep-water/fog fringe at the world border so the edge reads as a boundary, not a cliff.
-          const edgeDist = Math.min(x, y, WORLD_SIZE - x, WORLD_SIZE - y);
-          if (edgeDist < EDGE_FOG_WIDTH) col = lerpColor(col, FOG_COLOR, 1 - edgeDist / EDGE_FOG_WIDTH);
-          const i = (ry * cols + rx) * 4;
-          img.data[i] = col[0]; img.data[i + 1] = col[1]; img.data[i + 2] = col[2]; img.data[i + 3] = 255;
-        }
-      }
-      g.putImageData(img, 0, 0); // flush progress so the page shows the map filling in, not a freeze
-      if (ry < rows) setTimeout(step, 0);
-      else if (window.createImageBitmap) {
-        // iOS drew straight from this 1300x1300 CPU-backed canvas at ~10 fps; an ImageBitmap is a
-        // GPU-friendly immutable copy, so the per-frame drawImage in drawTerrain() stays cheap.
-        createImageBitmap(c).then(b => { terrainBitmap = b; }).catch(() => {});
-      }
-    }
-    step();
-    return c;
-  }
-  // Built once at load (reused as-is on resize); rebuilding only makes sense if WORLD_SIZE or the
-  // noise seed ever changes, neither of which happens at runtime.
-  let terrainBitmap = null;
-  const terrainCanvas = buildTerrainChunked();
-
-  function drawTerrain() {
-    // Map the visible world rect straight onto the low-res grid and let drawImage scale it up —
-    // cheap regardless of world size since we never rasterize full-res terrain.
-    const vw = viewW / ZOOM, vh = viewH / ZOOM;
-    const sx = camX / TERRAIN_CELL, sy = camY / TERRAIN_CELL;
-    const sw = vw / TERRAIN_CELL, sh = vh / TERRAIN_CELL;
-    ctx.imageSmoothingEnabled = true; // let the upscale add extra softness to the shoreline blend
-    ctx.drawImage(terrainBitmap || terrainCanvas, sx, sy, sw, sh, camX, camY, vw, vh);
-  }
 
   // None of the tile art (sand3, grass3) tiles cleanly on its own — opposite edges don't match,
   // which showed up as a hard seam line wherever two tiles met. buildSeamlessTile() fixes that per
@@ -488,18 +461,21 @@
   // (water/sand are continuous distance fields, see isWater()/shoreSignedDist() above), so we build
   // one synthetic 64px-cell grid once at load by sampling that geometry, and hand it to Shore.create
   // exactly like a real map. 1 = water, 2 = sand, 0 = everything else (the grass biomes texture
-  // themselves in drawGrassTextures() and just need a plain land color underneath, from
+  // themselves in bakeChunk() and just need a plain land color underneath, from
   // shorelineGroundColor()). Every coastline gets a sand band before grass takes over — using the
   // same SHORE_WET_BAND+SHORE_DRY_BAND distance buildGrassLayers() already fades grass in past, so
   // the two line up — not just the beach biome's own sector (which stays sand all the way inland).
   const SHORE_SAND_BAND = -(SHORE_WET_BAND + SHORE_DRY_BAND);
-  const shoreCols = Math.ceil(WORLD_SIZE / Shore.TILE), shoreRows = shoreCols;
+  // The grid covers the whole enlarged world; its origin is a multiple of Shore.TILE so the home zone's tiles
+  // fall exactly where they always did.
+  const SHORE_ORIGIN = -Math.ceil(WORLD_PAD / Shore.TILE) * Shore.TILE;
+  const shoreCols = Math.ceil((WORLD_MAX - SHORE_ORIGIN) / Shore.TILE), shoreRows = shoreCols;
   const shoreMap = [];
   for (let ty = 0; ty < shoreRows; ty++) {
     const row = [];
-    const y = ty * Shore.TILE + Shore.TILE / 2;
+    const y = SHORE_ORIGIN + ty * Shore.TILE + Shore.TILE / 2;
     for (let tx = 0; tx < shoreCols; tx++) {
-      const x = tx * Shore.TILE + Shore.TILE / 2;
+      const x = SHORE_ORIGIN + tx * Shore.TILE + Shore.TILE / 2;
       if (isWater(x, y)) { row.push(1); continue; }
       const { d, nearIsland } = shoreSignedDist(x, y);
       if (nearIsland) { row.push(2); continue; } // the whole island is sand, not just a coastal band
@@ -532,12 +508,13 @@
       speed: 0.45,     // faster wave cycles = more frequent lapping
       waveDepth: 0.24, // waves reach further out, bigger foam crest
       res: window.innerWidth <= 768 ? 3 : 2, // coarser wave mask on phones
+      origin: { x: SHORE_ORIGIN, y: SHORE_ORIGIN },
     });
   }
   // shore.draw() expects a plain, untransformed ctx (1 canvas px = 1 world px, its own camX/camY
   // bookkeeping does the scrolling) — it doesn't know about this game's ZOOM. So it's rendered onto
   // its own world-sized scratch canvas first, then that scratch is drawn into the real ctx with a
-  // world-space dest rect, same as drawTerrain()/drawGrassTextures() already do, so ZOOM applies to
+  // world-space dest rect, same as drawGround() does, so ZOOM applies to
   // it like everything else.
   let shoreScratch = null;
   function drawShore(t) {
@@ -582,60 +559,6 @@
     forestThick: { dark: [24, 50, 28],   light: [66, 104, 56] },
     deadTrees:   { dark: [110, 88, 48],  light: [200, 172, 104] },
   };
-  function buildGrassLayers() {
-    const cols = Math.ceil(WORLD_SIZE / GRASS_CELL), rows = cols;
-    const layers = {};
-    for (const key of GRASS_BIOME_KEYS) {
-      const maskC = document.createElement('canvas'); maskC.width = cols; maskC.height = rows;
-      const varC = document.createElement('canvas'); varC.width = cols; varC.height = rows;
-      layers[key] = {
-        maskCtx: maskC.getContext('2d'), maskImg: maskC.getContext('2d').createImageData(cols, rows), maskCanvas: maskC,
-        varCtx: varC.getContext('2d'), varImg: varC.getContext('2d').createImageData(cols, rows), varCanvas: varC,
-      };
-    }
-    const tileStart = -(SHORE_WET_BAND + SHORE_DRY_BAND);
-    for (let ry = 0; ry < rows; ry++) {
-      const y = ry * GRASS_CELL;
-      for (let rx = 0; rx < cols; rx++) {
-        const x = rx * GRASS_CELL;
-        const { d, nearIsland } = shoreSignedDist(x, y);
-        const i = (ry * cols + rx) * 4;
-        let w = null, landFade = 0;
-        if (!nearIsland && d <= tileStart) {
-          landFade = smoothstep(tileStart, tileStart - GROUND_TILE_FADE, d) * (1 - sandTextFade(x, y));
-          if (landFade > 0) {
-            const dx = x - CENTER.x, dy = y - CENTER.y;
-            w = biomeWeights(Math.atan2(dy, dx) + biomeAngleNoise(x, y));
-          }
-        }
-        const patch = noise2(x / 260 + 500, y / 260 + 500); // soft, large-scale color variation
-        for (const key of GRASS_BIOME_KEYS) {
-          const l = layers[key];
-          const alpha = w ? w[key] * landFade : 0;
-          l.maskImg.data[i] = l.maskImg.data[i + 1] = l.maskImg.data[i + 2] = 255;
-          l.maskImg.data[i + 3] = Math.round(alpha * 255);
-          const c = GRASS_VARIATION_COLORS[key];
-          const col = lerpColor(c.dark, c.light, patch);
-          l.varImg.data[i] = col[0]; l.varImg.data[i + 1] = col[1]; l.varImg.data[i + 2] = col[2];
-          l.varImg.data[i + 3] = Math.round(0.15 * 255); // low opacity, clipped to the mask at draw time
-        }
-      }
-    }
-    for (const key of GRASS_BIOME_KEYS) {
-      layers[key].maskCtx.putImageData(layers[key].maskImg, 0, 0);
-      layers[key].varCtx.putImageData(layers[key].varImg, 0, 0);
-      // Bake the variation wash + biome tint into one low-res overlay so drawGrassTextures() does a
-      // single source-atop blend per biome instead of a drawImage plus a full-screen fillRect.
-      const cfg = GRASS_BIOMES[key];
-      layers[key].varCtx.globalCompositeOperation = 'source-over';
-      if (cfg.tintColor) {
-        layers[key].varCtx.fillStyle = `rgba(${cfg.tintColor[0]}, ${cfg.tintColor[1]}, ${cfg.tintColor[2]}, ${cfg.tintAlpha})`;
-        layers[key].varCtx.fillRect(0, 0, cols, rows);
-      }
-    }
-    return layers;
-  }
-  const grassLayers = buildGrassLayers();
   const grassPatterns = {};
   function getGrassPattern(key) {
     if (grassPatterns[key]) return grassPatterns[key];
@@ -643,16 +566,231 @@
     if (!img.complete || !img.naturalWidth) return null;
     return (grassPatterns[key] = ctx.createPattern(buildSeamlessTile(img), 'repeat'));
   }
-  // Cheap presence check (a few sample points) so a biome with nothing in view this frame is
-  // skipped entirely rather than compositing an empty viewport-sized layer.
-  function grassBiomeInView(key, rcx, rcy, vw, vh) {
-    return biomePointHas(key, rcx, rcy) || biomePointHas(key, rcx + vw, rcy) || biomePointHas(key, rcx, rcy + vh) ||
-      biomePointHas(key, rcx + vw, rcy + vh) || biomePointHas(key, rcx + vw / 2, rcy + vh / 2);
+
+  // ---- Ground chunks: the whole ground (terrain colors + grass textures) is pre-rendered into CHUNK-sized
+  // offscreen canvases, built lazily (sliced across frames) for the chunks in or just around the view and
+  // dropped again once they're far away. Memory and per-frame cost follow the screen size, not the world
+  // size, so the 4x bigger world costs no more than the old one. A chunk is baked once: one drawImage per
+  // visible chunk replaces the old per-frame grass compositing. Phones bake at CHUNK_SCALE < 1 to save memory.
+  const CHUNK = 512;
+  const IS_PHONE = window.innerWidth <= 768 || Math.min(screen.width, screen.height) <= 768;
+  const CHUNK_SCALE = IS_PHONE ? 0.75 : 1;   // baked canvas px per world px
+  const CHUNK_PX = Math.round(CHUNK * CHUNK_SCALE);
+  const CHUNK_KEEP = IS_PHONE ? 1 : 2;       // chunks kept beyond the view on each side before eviction (fewer on phones: memory)
+  const CHUNK_PREFETCH = 1;                  // chunks baked ahead beyond the view on each side
+  const CHUNK_URGENT_MS = 12, CHUNK_AHEAD_MS = 3; // per-frame bake budgets: visible chunks missing / prefetching
+  const TERRAIN_P = CHUNK / TERRAIN_CELL + 2, GRASS_P = CHUNK / GRASS_CELL + 2; // grid sizes, padded 1 cell per side so chunk edges blend
+  const chunks = new Map();                  // key -> { cx, cy, canvas, ctx, ready, gen }
+  const chunkSpare = [];                     // canvases of evicted chunks, reused instead of reallocated
+  const chunkKey = (cx, cy) => (cx + 32) * 64 + (cy + 32);
+  const terrainScratch = document.createElement('canvas');
+  terrainScratch.width = terrainScratch.height = TERRAIN_P;
+  const terrainScratchCtx = terrainScratch.getContext('2d');
+  const terrainImg = terrainScratchCtx.createImageData(TERRAIN_P, TERRAIN_P);
+  const layerScratch = document.createElement('canvas'); // one biome's grass, masked, before it's laid on the chunk
+  layerScratch.width = layerScratch.height = CHUNK_PX;
+  const layerScratchCtx = layerScratch.getContext('2d');
+  const grassScratch = {};                               // per biome: low-res mask + variation/tint canvases
+  for (const key of GRASS_BIOME_KEYS) {
+    const mk = () => { const c = document.createElement('canvas'); c.width = c.height = GRASS_P; const g = c.getContext('2d'); return { c, g, img: g.createImageData(GRASS_P, GRASS_P) }; };
+    grassScratch[key] = { mask: mk(), vari: mk(), any: false };
   }
-  const biomeScratch = {};
-  function biomePointHas(key, x, y) {
-    const dx = x - CENTER.x, dy = y - CENTER.y;
-    return biomeWeights(Math.atan2(dy, dx) + biomeAngleNoise(x, y), biomeScratch)[key] > 0.02;
+
+  // Bakes one chunk, yielding every few rows so the caller can stop at its frame budget.
+  function* bakeChunk(ch) {
+    const x0 = ch.cx * CHUNK, y0 = ch.cy * CHUNK, g = ch.ctx, S = CHUNK_SCALE;
+    // 1) terrain colors on a TERRAIN_CELL grid, upscaled with smoothing (same look as the old world-wide bitmap)
+    const td = terrainImg.data;
+    for (let j = 0; j < TERRAIN_P; j++) {
+      const y = y0 + (j - 1) * TERRAIN_CELL;
+      for (let i = 0; i < TERRAIN_P; i++) {
+        const x = x0 + (i - 1) * TERRAIN_CELL;
+        let col = shorelineGroundColor(x, y);
+        // Deep-water/fog fringe at the playable edge so it reads as a boundary, not a cliff.
+        const edgeDist = Math.min(x - bounds.x0, y - bounds.y0, bounds.x1 - x, bounds.y1 - y);
+        if (edgeDist < EDGE_FOG_WIDTH) col = lerpColor(col, FOG_COLOR, Math.min(1, 1 - edgeDist / EDGE_FOG_WIDTH));
+        const k = (j * TERRAIN_P + i) * 4;
+        td[k] = col[0]; td[k + 1] = col[1]; td[k + 2] = col[2]; td[k + 3] = 255;
+      }
+      if ((j & 15) === 15) yield;
+    }
+    terrainScratchCtx.putImageData(terrainImg, 0, 0);
+    g.setTransform(S, 0, 0, S, 0, 0);
+    g.imageSmoothingEnabled = true;
+    g.drawImage(terrainScratch, -TERRAIN_CELL, -TERRAIN_CELL, TERRAIN_P * TERRAIN_CELL, TERRAIN_P * TERRAIN_CELL);
+    yield;
+    // 2) grass: per-biome mask (alpha = that biome's weight, fading out before the shore) and variation wash + tint
+    const tileStart = -(SHORE_WET_BAND + SHORE_DRY_BAND);
+    for (const key of GRASS_BIOME_KEYS) grassScratch[key].any = false;
+    for (let j = 0; j < GRASS_P; j++) {
+      const y = y0 + (j - 1) * GRASS_CELL;
+      for (let i = 0; i < GRASS_P; i++) {
+        const x = x0 + (i - 1) * GRASS_CELL;
+        const { d, nearIsland } = shoreSignedDist(x, y);
+        const k = (j * GRASS_P + i) * 4;
+        let w = null;
+        if (!nearIsland && d <= tileStart) {
+          const landFade = smoothstep(tileStart, tileStart - GROUND_TILE_FADE, d) * (1 - sandTextFade(x, y));
+          if (landFade > 0) {
+            w = biomeWeights(Math.atan2(y - CENTER.y, x - CENTER.x) + biomeAngleNoise(x, y));
+            for (const key in w) w[key] *= landFade;
+          }
+        }
+        const patch = noise2(x / 260 + 500, y / 260 + 500); // soft, large-scale color variation
+        for (const key of GRASS_BIOME_KEYS) {
+          const gs = grassScratch[key], alpha = w ? w[key] : 0;
+          const md = gs.mask.img.data, vd = gs.vari.img.data;
+          md[k] = md[k + 1] = md[k + 2] = 255;
+          md[k + 3] = Math.round(alpha * 255);
+          if (md[k + 3] > 0) gs.any = true;
+          const c = GRASS_VARIATION_COLORS[key], col = lerpColor(c.dark, c.light, patch);
+          vd[k] = col[0]; vd[k + 1] = col[1]; vd[k + 2] = col[2]; vd[k + 3] = Math.round(0.15 * 255); // low opacity, clipped to the mask later
+        }
+      }
+      if ((j & 15) === 15) yield;
+    }
+    for (const key of GRASS_BIOME_KEYS) {
+      const gs = grassScratch[key], cfg = GRASS_BIOMES[key], pattern = getGrassPattern(key);
+      if (!gs.any || !pattern) continue;
+      gs.mask.g.putImageData(gs.mask.img, 0, 0);
+      gs.vari.g.putImageData(gs.vari.img, 0, 0);
+      if (cfg.tintColor) {
+        gs.vari.g.fillStyle = `rgba(${cfg.tintColor[0]}, ${cfg.tintColor[1]}, ${cfg.tintColor[2]}, ${cfg.tintAlpha})`;
+        gs.vari.g.fillRect(0, 0, GRASS_P, GRASS_P);
+      }
+      // Same compositing as the old per-frame version: pattern fill -> mask (destination-in) -> wash+tint
+      // (source-atop) -> laid over the terrain, now once per chunk.
+      const L = layerScratchCtx;
+      L.setTransform(S, 0, 0, S, -x0 * S, -y0 * S);
+      L.globalCompositeOperation = 'source-over';
+      L.clearRect(x0, y0, CHUNK, CHUNK);
+      L.fillStyle = pattern;
+      L.fillRect(x0, y0, CHUNK, CHUNK);
+      L.setTransform(1, 0, 0, 1, 0, 0);
+      const off = -GRASS_CELL * S, size = GRASS_P * GRASS_CELL * S;
+      L.globalCompositeOperation = 'destination-in';
+      L.drawImage(gs.mask.c, off, off, size, size);
+      L.globalCompositeOperation = 'source-atop';
+      L.drawImage(gs.vari.c, off, off, size, size);
+      L.globalCompositeOperation = 'source-over';
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.globalAlpha = cfg.opacity;
+      g.drawImage(layerScratch, 0, 0);
+      g.globalAlpha = 1;
+      yield;
+    }
+    // TODO: if baking a chunk still hitches on slow phones, split the terrain pass finer or lower CHUNK_SCALE.
+  }
+
+  function chunkInBounds(cx, cy) {
+    const x0 = cx * CHUNK, y0 = cy * CHUNK;
+    return x0 < bounds.x1 && x0 + CHUNK > bounds.x0 && y0 < bounds.y1 && y0 + CHUNK > bounds.y0;
+  }
+  function getChunk(cx, cy) {
+    const key = chunkKey(cx, cy);
+    let ch = chunks.get(key);
+    if (ch) return ch;
+    const spare = chunkSpare.pop();
+    const canvas = spare ? spare.canvas : document.createElement('canvas');
+    if (!spare) { canvas.width = canvas.height = CHUNK_PX; }
+    ch = { cx, cy, canvas, ctx: spare ? spare.ctx : canvas.getContext('2d', { alpha: false }), ready: false, gen: null };
+    ch.gen = bakeChunk(ch);
+    chunks.set(key, ch);
+    return ch;
+  }
+  function dropChunk(key, ch) {
+    chunks.delete(key);
+    chunkSpare.push({ canvas: ch.canvas, ctx: ch.ctx });
+  }
+  // Runs the baking generator of one chunk until it's done or the deadline passes (always at least one slice).
+  function stepChunk(ch, deadline) {
+    do {
+      if (ch.gen.next().done) { ch.ready = true; ch.gen = null; return; }
+    } while (performance.now() < deadline);
+  }
+  // Bakes missing/unfinished chunks in cx0..cx1 x cy0..cy1, nearest the camera center first, until the budget is spent.
+  function bakeMissing(cx0, cy0, cx1, cy1, budgetMs) {
+    if (!grassReady) return;
+    const deadline = performance.now() + budgetMs;
+    const mx = (cx0 + cx1 + 1) / 2, my = (cy0 + cy1 + 1) / 2;
+    for (;;) {
+      let best = null, bd = Infinity;
+      for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) {
+        if (!chunkInBounds(cx, cy)) continue;
+        const ch = chunks.get(chunkKey(cx, cy));
+        if (ch && ch.ready) continue;
+        const d = (cx + 0.5 - mx) ** 2 + (cy + 0.5 - my) ** 2;
+        if (d < bd) { bd = d; best = ch || { cx, cy, fresh: true }; }
+      }
+      if (!best) return;
+      const ch = best.fresh ? getChunk(best.cx, best.cy) : best;
+      stepChunk(ch, deadline);
+      if (performance.now() >= deadline) return;
+    }
+  }
+  // Chunk index range covering the camera view plus `margin` chunks. Writes into the shared range object.
+  const chunkRange = { cx0: 0, cy0: 0, cx1: 0, cy1: 0 };
+  function setChunkRange(margin) {
+    const vw = viewW / ZOOM, vh = viewH / ZOOM, r = chunkRange;
+    r.cx0 = Math.floor(camX / CHUNK) - margin; r.cx1 = Math.floor((camX + vw) / CHUNK) + margin;
+    r.cy0 = Math.floor(camY / CHUNK) - margin; r.cy1 = Math.floor((camY + vh) / CHUNK) + margin;
+    return r;
+  }
+  // Called once per frame after the camera is placed: bake what's visible (blocking within a budget), prefetch the
+  // ring around it with a small budget, and drop chunks that are far outside the view.
+  function serviceGround() {
+    let r = setChunkRange(0);
+    bakeMissing(r.cx0, r.cy0, r.cx1, r.cy1, TEST ? 1e9 : CHUNK_URGENT_MS);
+  }
+  function serviceGroundAhead() {
+    let r = setChunkRange(CHUNK_PREFETCH);
+    bakeMissing(r.cx0, r.cy0, r.cx1, r.cy1, CHUNK_AHEAD_MS);
+    r = setChunkRange(CHUNK_KEEP);
+    const keepCount = (r.cx1 - r.cx0 + 1) * (r.cy1 - r.cy0 + 1);
+    if (chunks.size > keepCount) {
+      for (const [key, ch] of chunks) if (ch.cx < r.cx0 || ch.cx > r.cx1 || ch.cy < r.cy0 || ch.cy > r.cy1) dropChunk(key, ch);
+    }
+  }
+  function drawGround() {
+    const r = setChunkRange(0);
+    for (let cy = r.cy0; cy <= r.cy1; cy++) for (let cx = r.cx0; cx <= r.cx1; cx++) {
+      const ch = chunks.get(chunkKey(cx, cy));
+      if (ch && ch.ready) ctx.drawImage(ch.canvas, cx * CHUNK, cy * CHUNK, CHUNK + 1, CHUNK + 1); // +1: overlap so no hairline seams between chunks
+    }
+  }
+  // Bakes everything the first frame at world point (x, y) will show, right now (start()); the warm-up below
+  // normally has it done already while the intro plays.
+  function ensureGroundAt(x, y) {
+    const vw = viewW / ZOOM, vh = viewH / ZOOM;
+    bakeMissing(Math.floor((x - vw / 2) / CHUNK), Math.floor((y - vh / 2) / CHUNK), Math.floor((x + vw / 2) / CHUNK), Math.floor((y + vh / 2) / CHUNK), 1e9);
+  }
+  // Warm-up around the spawn point while the intro screens run (a few ms per timer tick, so nothing stutters).
+  function warmGround() {
+    if (spawned || started) return;
+    if (!grassReady) { setTimeout(warmGround, 100); return; }
+    const p = Home.exitPoint(), w = Math.max(window.innerWidth, window.innerHeight) / ZOOM / 2 + CHUNK / 2;
+    const cx0 = Math.floor((p.x - w) / CHUNK), cx1 = Math.floor((p.x + w) / CHUNK), cy0 = Math.floor((p.y - w) / CHUNK), cy1 = Math.floor((p.y + w) / CHUNK);
+    bakeMissing(cx0, cy0, cx1, cy1, 6);
+    for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) {
+      const ch = chunks.get(chunkKey(cx, cy));
+      if (chunkInBounds(cx, cy) && !(ch && ch.ready)) { setTimeout(warmGround, 16); return; }
+    }
+  }
+  setTimeout(warmGround, 0);
+
+  // Opening/closing the Adventure Zone moves the playable edge (and its fog fringe), so chunks the fog touches
+  // are re-baked; chunks well inside both rectangles are untouched.
+  function setAdventureUnlocked(on) {
+    on = !!on;
+    if (on === adventureUnlocked) return;
+    const old = { x0: bounds.x0, y0: bounds.y0, x1: bounds.x1, y1: bounds.y1 };
+    adventureUnlocked = on;
+    bounds.x0 = bounds.y0 = on ? WORLD_MIN : 0;
+    bounds.x1 = bounds.y1 = on ? WORLD_MAX : WORLD_SIZE;
+    const inside = (b, x0, y0) => x0 >= b.x0 + EDGE_FOG_WIDTH && y0 >= b.y0 + EDGE_FOG_WIDTH && x0 + CHUNK <= b.x1 - EDGE_FOG_WIDTH && y0 + CHUNK <= b.y1 - EDGE_FOG_WIDTH;
+    for (const [key, ch] of chunks) if (!inside(old, ch.cx * CHUNK, ch.cy * CHUNK) || !inside(bounds, ch.cx * CHUNK, ch.cy * CHUNK)) dropChunk(key, ch);
+    if (on) startAdventureScenery();
+    clampToWorld();
   }
   // ---- "Turtle Tides" written in the sand, south outer ring (the coastal sand band every biome's
   // mainland shore gets, see SHORE_SAND_BAND above) — a static decorative easter egg, not gameplay.
@@ -680,59 +818,6 @@
     ctx.font = 'italic 32px "Bradley Hand", "Comic Sans MS", cursive';
     strokeGroove(SAND_SUBTEXT, SAND_SUBTEXT_POS.x, SAND_SUBTEXT_POS.y, 2);
     ctx.restore();
-  }
-
-  let grassScratch = null;
-  function ensureGrassScratch() {
-    if (!grassScratch) grassScratch = document.createElement('canvas');
-    const w = Math.max(1, Math.round(viewW * dpr)), h = Math.max(1, Math.round(viewH * dpr));
-    if (grassScratch.width !== w || grassScratch.height !== h) { grassScratch.width = w; grassScratch.height = h; }
-    return grassScratch;
-  }
-  // Per biome: pattern-fill a scratch canvas, mask it to that biome's blend weight
-  // (destination-in), wash the noise-variation layer and tint over it (source-atop, so both stay
-  // clipped to the mask's alpha), then composite the result over the terrain (source-over) — never
-  // destructive to what's already drawn, so the 3 biomes crossfade naturally at their borders.
-  function drawGrassTextures() {
-    const vw = viewW / ZOOM, vh = viewH / ZOOM;
-    // Whole-pixel camera for the pattern fill only, so it doesn't shimmer while moving; everything
-    // else (terrain, scenery) keeps using the exact sub-pixel camX/camY as before.
-    const rcx = Math.round(camX), rcy = Math.round(camY);
-    const scratch = ensureGrassScratch();
-    const sctx = scratch.getContext('2d');
-
-    for (const key of GRASS_BIOME_KEYS) {
-      if (!grassBiomeInView(key, rcx, rcy, vw, vh)) continue;
-      const pattern = getGrassPattern(key);
-      const layer = grassLayers[key];
-      if (!pattern || !layer) continue;
-      const cfg = GRASS_BIOMES[key];
-
-      sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      sctx.clearRect(0, 0, viewW, viewH);
-      sctx.save();
-      sctx.scale(ZOOM, ZOOM);
-      sctx.translate(-rcx, -rcy);
-      sctx.fillStyle = pattern;
-      sctx.fillRect(rcx, rcy, vw, vh);
-      sctx.restore(); // back to screen space (dpr-only transform)
-
-      const sx = rcx / GRASS_CELL, sy = rcy / GRASS_CELL, sw = vw / GRASS_CELL, sh = vh / GRASS_CELL;
-      sctx.globalCompositeOperation = 'destination-in';
-      sctx.drawImage(layer.maskCanvas, sx, sy, sw, sh, 0, 0, viewW, viewH);
-
-      sctx.globalCompositeOperation = 'source-atop';
-      sctx.drawImage(layer.varCanvas, sx, sy, sw, sh, 0, 0, viewW, viewH); // var wash + tint, pre-baked
-      sctx.globalCompositeOperation = 'source-over';
-
-      ctx.save();
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.globalAlpha = cfg.opacity;
-      ctx.drawImage(scratch, 0, 0, viewW, viewH);
-      ctx.restore();
-    }
-    // TODO: if this costs noticeable frame rate on mobile, fall back to drawing each pattern at a
-    // flat reduced alpha straight over the terrain (skip the mask/tint compositing) instead.
   }
 
   // ---- Home island detail: sand dunes — pre-rendered once to a small canvas (island-sized, not
@@ -781,8 +866,20 @@
   // per-biome minimum distance so the west forest reads dense but the east forest stays open. ----
   const SPACING = { forestThick: 145, forestOpen: 150, deadTrees: 140, beach: 170 };
   const scenery = [];       // { x, y, r, h, sprite, type, collide } — everything drawn
-  let obstacleGrid;         // built after placement: cell key -> array of scenery indices (collide only)
+  const obstacleGrid = new Map(); // cell key -> array of scenery indices (collide only), filled as scenery is added
   const OBSTACLE_CELL = 220;
+  const drawGrid = new Map();     // cell key -> scenery entries, so render() only visits cells in view instead of every entry
+  const DRAW_CELL = 256;
+  function addScenery(s) {
+    const idx = scenery.length;
+    scenery.push(s);
+    if (s.collide) {
+      const k = Math.floor(s.x / OBSTACLE_CELL) * 65536 + Math.floor(s.y / OBSTACLE_CELL);
+      const a = obstacleGrid.get(k); if (a) a.push(idx); else obstacleGrid.set(k, [idx]);
+    }
+    const dk = Math.floor(s.x / DRAW_CELL) * 65536 + Math.floor(s.y / DRAW_CELL);
+    const d = drawGrid.get(dk); if (d) d.push(s); else drawGrid.set(dk, [s]);
+  }
 
   // Pixel-art scenery sprites (sliced from the reference sheet). Each entry is drawn `h` world-px
   // tall, scaled to its own aspect ratio. Collision uses the tight alpha bounding box computed below
@@ -843,9 +940,9 @@
     forestOpen: [{ sprite: 'oak_tree', h: 140 }, { sprite: 'round_tree_med', h: 115 }, { sprite: 'round_tree_single', h: 110 }],
     deadTrees: [{ sprite: 'dead_tree_med', h: 115 }, { sprite: 'dead_tree_small', h: 95 }],
   };
-  function pickTree(biome) {
+  function pickTree(biome, rnd = rand) {
     const opts = BIOME_TREES[biome];
-    return opts[Math.floor(rand() * opts.length)];
+    return opts[Math.floor(rnd() * opts.length)];
   }
 
   // World-space trunk polygon for a circleOnly scenery entry that carries `s.poly` (currently just
@@ -917,7 +1014,11 @@
     };
   }
 
-  function placeScenery() {
+  // Dart-throws scenery over the square [lo, lo + span)^2, in slices (run(n) = n more throws, true when finished).
+  // The home pass uses the game's seeded rand() over the original map, once at load, so its layout never
+  // changes. The adventure pass uses its own seeded rng over the whole enlarged map minus the home square, and
+  // only runs once the zone has been unlocked.
+  function makeScenePlacer(o) {
     const placedGrid = new Map(); // build-time spacing check only
     const cellKey = (x, y, size) => `${Math.floor(x / size)},${Math.floor(y / size)}`;
     function tooClose(x, y, minDist) {
@@ -934,35 +1035,40 @@
       if (!placedGrid.has(k)) placedGrid.set(k, []);
       placedGrid.get(k).push({ x, y });
     }
-
-    const ATTEMPTS = 30000;
-    for (let i = 0; i < ATTEMPTS; i++) {
-      const x = rand() * WORLD_SIZE, y = rand() * WORLD_SIZE;
+    const rnd = o.rnd;
+    if (o.seedNearHome) { // keep the new pass spaced from the home zone's outermost scenery too
+      for (const s of scenery) {
+        if (s.x > -300 && s.x < WORLD_SIZE + 300 && s.y > -300 && s.y < WORLD_SIZE + 300) markPlaced(s.x, s.y, SPACING[dominantBiome(s.x, s.y).biome]);
+      }
+    }
+    function attempt() {
+      const x = o.lo + rnd() * o.span, y = o.lo + rnd() * o.span;
+      if (o.skip && o.skip(x, y)) return;
       const dist = Math.hypot(x - CENTER.x, y - CENTER.y);
-      if (dist <= WATER_OUTER_R + 20) continue;               // never on the island or in the water
-      if (dist > WORLD_SIZE / 2 - EDGE_FOG_WIDTH * 0.4) continue; // keep the far fog fringe emptier
-      if (inSandTextZone(x, y)) continue;                     // keep the sand-text patch clear of scenery
+      if (dist <= WATER_OUTER_R + 20) return;               // never on the island or in the water
+      if (dist > o.maxR) return;                            // keep the far fog fringe emptier
+      if (inSandTextZone(x, y)) return;                     // keep the sand-text patch clear of scenery
       const { biome, weight } = dominantBiome(x, y);
-      if (weight < 0.55) continue; // blend zone between two biomes: leave it sparser/transitional
+      if (weight < 0.55) return; // blend zone between two biomes: leave it sparser/transitional
       const spacing = SPACING[biome];
-      if (tooClose(x, y, spacing)) continue;
+      if (tooClose(x, y, spacing)) return;
       markPlaced(x, y, spacing);
 
-      if (biome === 'beach' && rand() < 0.1) {
-        scenery.push({ x, y, r: 34, cr: 36, type: 'sprite', sprite: 'rock_beach', h: 76, collide: true });
-      } else if (biome === 'beach' && rand() < 0.14) {
-        scenery.push({ x, y, r: 12, cr: 18, type: 'sprite', sprite: 'driftwood_stick', h: 60, collide: true });
-      } else if (biome === 'beach' && (rand(), Math.random() < 0.06)) { // unseeded roll: castles land on different beach spots each load (rand() kept so tree layout is unchanged)
+      if (biome === 'beach' && rnd() < 0.1) {
+        addScenery({ x, y, r: 34, cr: 36, type: 'sprite', sprite: 'rock_beach', h: 76, collide: true });
+      } else if (biome === 'beach' && rnd() < 0.14) {
+        addScenery({ x, y, r: 12, cr: 18, type: 'sprite', sprite: 'driftwood_stick', h: 60, collide: true });
+      } else if (biome === 'beach' && (rnd(), Math.random() < 0.06)) { // unseeded roll: castles land on different beach spots each load (rnd() kept so tree layout is unchanged)
         // rare beach flourish, straight off the reference sheet. knockable: turtle bumping into it
         // flattens it into a walkable rubble pile — see resolveObstacleCollisions/drawScenerySprite.
-        scenery.push({ x, y, r: 24, cr: 38, type: 'sprite', sprite: 'sandcastle_big', h: 90, collide: true, knockable: true, knocked: false });
+        addScenery({ x, y, r: 24, cr: 38, type: 'sprite', sprite: 'sandcastle_big', h: 90, collide: true, knockable: true, knocked: false });
       } else if (biome === 'beach') {
         // none of the beach rolls hit for this spot: leave it bare sand, no tree fallback
       } else if (shoreSignedDist(x, y).d > SHORE_SAND_BAND) {
         // Inside the mainland's outer sand ring (every coastline gets one, not just the beach
         // biome) — leave it bare, no trees on sand.
       } else {
-        const t = pickTree(biome);
+        const t = pickTree(biome, rnd);
         const r = biome === 'forestThick' ? 14 : 12;
         // Trees always collide as a small circle at the trunk's base, not the sprite's full alpha
         // bbox — circleOnly skips the tight-bbox hitbox in resolveObstacleCollisions/debug draw
@@ -972,7 +1078,7 @@
         // tree_cluster3 is 3 trunks side by side, not 1 — gets a single triangular `poly` hitbox
         // (see getTrunkPolygon/pushCircleOutOfPolygon) instead of the single cr/cy circle every
         // other tree uses, point facing down toward the sprite's anchor.
-        const entry = { x, y, r, type: 'sprite', sprite: t.sprite, h: t.h * (0.85 + rand() * 0.3), collide: true, circleOnly: true };
+        const entry = { x, y, r, type: 'sprite', sprite: t.sprite, h: t.h * (0.85 + rnd() * 0.3), collide: true, circleOnly: true };
         if (t.sprite === 'tree_cluster3') {
           entry.poly = [
             { dx: 0, dy: -r * 1.0 },        // bottom point, facing down toward the anchor
@@ -983,22 +1089,30 @@
           entry.cr = r * 1.15;
           entry.cy = -r * 0.9;
         }
-        scenery.push(entry);
+        addScenery(entry);
       }
     }
+    let done = 0;
+    return { run(n) { const end = Math.min(o.attempts, done + n); for (; done < end; done++) attempt(); return done >= o.attempts; } };
   }
-  placeScenery();
+  makeScenePlacer({ rnd: rand, lo: 0, span: WORLD_SIZE, attempts: 30000, maxR: WORLD_SIZE / 2 - EDGE_FOG_WIDTH * 0.4 }).run(30000);
 
-  function buildObstacleGrid() {
-    obstacleGrid = new Map();
-    scenery.forEach((s, idx) => {
-      if (!s.collide) return;
-      const k = Math.floor(s.x / OBSTACLE_CELL) * 65536 + Math.floor(s.y / OBSTACLE_CELL);
-      if (!obstacleGrid.has(k)) obstacleGrid.set(k, []);
-      obstacleGrid.get(k).push(idx);
+  // Adventure Zone scenery: same rules and density as the home zone, generated in slices the first time the zone
+  // opens (a locked game never pays for it), then it stays — the zone's layout is the same every load.
+  let adventureSceneryStarted = false;
+  function startAdventureScenery() {
+    if (adventureSceneryStarted) return;
+    adventureSceneryStarted = true;
+    let seed = ADVENTURE.seed;
+    const span = WORLD_MAX - WORLD_MIN;
+    const placer = makeScenePlacer({
+      rnd: () => (seed = (seed * 16807) % 2147483647) / 2147483647,
+      lo: WORLD_MIN, span, attempts: Math.round(30000 * (span / WORLD_SIZE) ** 2), maxR: span / 2 - EDGE_FOG_WIDTH * 0.4,
+      skip: inHomeZone, seedNearHome: true,
     });
+    (function step() { if (!placer.run(1500)) setTimeout(step, 0); })();
   }
-  buildObstacleGrid();
+
 
   const nearbyBuf = []; // reused every call; callers only iterate it before the next call
   function nearbyObstacles(x, y, radius, tight) {
@@ -1573,11 +1687,12 @@
     resolveObstacleCollisions();
     Home.collideWorld(turtle, TURTLE_BODY_RADIUS);
 
-    const r = TURTLE_RADIUS;
-    if (turtle.x < r) { turtle.x = r; turtle.vx = 0; }
-    if (turtle.x > WORLD_W - r) { turtle.x = WORLD_W - r; turtle.vx = 0; }
-    if (turtle.y < r) { turtle.y = r; turtle.vy = 0; }
-    if (turtle.y > WORLD_H - r) { turtle.y = WORLD_H - r; turtle.vy = 0; }
+    // World edge, or the fence while the Adventure Zone is locked.
+    const m = adventureUnlocked ? TURTLE_RADIUS : ADVENTURE.fenceInset;
+    if (turtle.x < bounds.x0 + m) { turtle.x = bounds.x0 + m; turtle.vx = 0; }
+    if (turtle.x > bounds.x1 - m) { turtle.x = bounds.x1 - m; turtle.vx = 0; }
+    if (turtle.y < bounds.y0 + m) { turtle.y = bounds.y0 + m; turtle.vy = 0; }
+    if (turtle.y > bounds.y1 - m) { turtle.y = bounds.y1 - m; turtle.vy = 0; }
 
     // Re-check home status against this frame's final position (not the pre-movement one used
     // above for the hunger-penalty speed calc) so the Upgrades button/panel react the instant the
@@ -1603,9 +1718,9 @@
   let dpr = 1, viewW = 0, viewH = 0;
 
   function clampToWorld() {
-    const r = TURTLE_RADIUS;
-    turtle.x = Math.max(r, Math.min(WORLD_W - r, turtle.x));
-    turtle.y = Math.max(r, Math.min(WORLD_H - r, turtle.y));
+    const m = adventureUnlocked ? TURTLE_RADIUS : ADVENTURE.fenceInset;
+    turtle.x = Math.max(bounds.x0 + m, Math.min(bounds.x1 - m, turtle.x));
+    turtle.y = Math.max(bounds.y0 + m, Math.min(bounds.y1 - m, turtle.y));
   }
 
   function resize() {
@@ -1634,8 +1749,9 @@
   function triggerShake(strength, duration) { shakeTime = shakeDuration = duration; shakeStrength = strength; }
   function updateCamera() {
     const vw = viewW / ZOOM, vh = viewH / ZOOM;
-    camX = WORLD_W <= vw ? (WORLD_W - vw) / 2 : Math.max(0, Math.min(WORLD_W - vw, turtle.x - vw / 2));
-    camY = WORLD_H <= vh ? (WORLD_H - vh) / 2 : Math.max(0, Math.min(WORLD_H - vh, turtle.y - vh / 2));
+    const bw = bounds.x1 - bounds.x0, bh = bounds.y1 - bounds.y0;
+    camX = bw <= vw ? bounds.x0 + (bw - vw) / 2 : Math.max(bounds.x0, Math.min(bounds.x1 - vw, turtle.x - vw / 2));
+    camY = bh <= vh ? bounds.y0 + (bh - vh) / 2 : Math.max(bounds.y0, Math.min(bounds.y1 - vh, turtle.y - vh / 2));
     if (shakeTime > 0) {
       const falloff = shakeTime / shakeDuration;
       camX += (rand() - 0.5) * shakeStrength * falloff;
@@ -1803,6 +1919,67 @@
   }
 
   const visibleBuf = [];
+  // Scenery in the camera view (+ margin), found via the draw grid instead of scanning every entry.
+  function collectScenery(vw, vh, margin) {
+    const gx0 = Math.floor((camX - margin) / DRAW_CELL), gx1 = Math.floor((camX + vw + margin) / DRAW_CELL);
+    const gy0 = Math.floor((camY - margin) / DRAW_CELL), gy1 = Math.floor((camY + vh + margin) / DRAW_CELL);
+    for (let gy = gy0; gy <= gy1; gy++) for (let gx = gx0; gx <= gx1; gx++) {
+      const arr = drawGrid.get(gx * 65536 + gy);
+      if (arr) for (const s of arr) if (inView(s, vw, vh, margin)) visibleBuf.push(s);
+    }
+  }
+  // Rope fence along the home zone's edge while the Adventure Zone is locked: posts every fencePostGap with a
+  // sagging rope between them, drawn only for the stretch in view. The turtle stops at it (see update()).
+  let fenceFog = null;
+  function drawFence(vw, vh) {
+    if (adventureUnlocked) return;
+    const a = ADVENTURE.fenceInset, G = ADVENTURE.fencePostGap, far = WORLD_SIZE - a, pad = 80;
+    const fb = ADVENTURE.fogBand, top = camY < fb, bottom = camY + vh > WORLD_SIZE - fb, left = camX < fb, right = camX + vw > WORLD_SIZE - fb;
+    if (!(top || bottom || left || right)) return;
+    ctx.save();
+    // Fog rolling in toward the edge (gradients are built once; they live in world space).
+    if (!fenceFog) {
+      const W = WORLD_SIZE, B = ADVENTURE.fogBand, mk = (x0, y0, x1, y1) => {
+        const g = ctx.createLinearGradient(x0, y0, x1, y1);
+        g.addColorStop(0, 'rgba(8, 28, 36, 0)'); g.addColorStop(1, `rgba(8, 28, 36, ${ADVENTURE.fogAlpha})`);
+        return g;
+      };
+      fenceFog = { top: mk(0, B, 0, 0), left: mk(B, 0, 0, 0), bottom: mk(0, W - B, 0, W), right: mk(W - B, 0, W, 0) };
+    }
+    const B = ADVENTURE.fogBand, W = WORLD_SIZE;
+    if (top) { ctx.fillStyle = fenceFog.top; ctx.fillRect(camX, 0, vw, B); }
+    if (bottom) { ctx.fillStyle = fenceFog.bottom; ctx.fillRect(camX, W - B, vw, B); }
+    if (left) { ctx.fillStyle = fenceFog.left; ctx.fillRect(0, camY, B, vh); }
+    if (right) { ctx.fillStyle = fenceFog.right; ctx.fillRect(W - B, camY, B, vh); }
+    ctx.lineCap = 'round';
+    const run = (horizontal, fixed, lo, hi) => { // one edge: posts along [lo, hi] on the fixed coordinate
+      const from = Math.max(a, lo - pad), to = Math.min(far, hi + pad);
+      const k0 = Math.ceil((from - a) / G), k1 = Math.floor((to - a) / G);
+      if (k1 < k0) return;
+      ctx.beginPath();
+      for (let k = k0; k <= k1; k++) {
+        const t = a + k * G, x = horizontal ? t : fixed, y = horizontal ? fixed : t;
+        if (k > k0) { // rope from the previous post's top to this one's, sagging in the middle
+          const pt = t - G, px = horizontal ? pt : fixed, py = horizontal ? fixed : pt;
+          ctx.moveTo(px, py - 24); ctx.quadraticCurveTo((px + x) / 2, (py + y) / 2 - 24 + 9, x, y - 24);
+        }
+      }
+      ctx.strokeStyle = 'rgba(70, 48, 24, 0.8)'; ctx.lineWidth = 5; ctx.stroke(); // rope shadow
+      ctx.save(); ctx.translate(0, -2); ctx.strokeStyle = '#dcc590'; ctx.lineWidth = 3; ctx.stroke(); ctx.restore();
+      for (let k = k0; k <= k1; k++) {
+        const t = a + k * G, x = horizontal ? t : fixed, y = horizontal ? fixed : t;
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.3)'; ctx.fillRect(x - 6, y - 2, 14, 7);
+        ctx.fillStyle = '#6b4a2b'; ctx.fillRect(x - 5, y - 34, 10, 38);
+        ctx.fillStyle = '#8f6a3f'; ctx.fillRect(x - 5, y - 34, 4, 38);
+        ctx.fillStyle = '#5a3d22'; ctx.fillRect(x - 6, y - 36, 12, 4);
+      }
+    };
+    if (top) run(true, a, camX, camX + vw);
+    if (bottom) run(true, far, camX, camX + vw);
+    if (left) run(false, a, camY, camY + vh);
+    if (right) run(false, far, camY, camY + vh);
+    ctx.restore();
+  }
   function inView(s, vw, vh, margin) {
     return s.x > camX - margin && s.x < camX + vw + margin && s.y > camY - margin && s.y < camY + vh + margin;
   }
@@ -1835,11 +2012,11 @@
     ctx.scale(ZOOM, ZOOM);
     ctx.translate(-camX, -camY);
 
-    if (!skip.terrain) drawTerrain();
-    if (!skip.grass) drawGrassTextures();
+    if (!skip.terrain) { serviceGround(); drawGround(); }
     if (shore && !skip.shore) drawShore(t);
     if (!skip.ripples) drawRipples(); // above water, below turtle/scenery
     drawSandText();
+    drawFence(viewW / ZOOM, viewH / ZOOM);
     ctx.drawImage(islandDetail.canvas, islandDetail.worldX, islandDetail.worldY);
     Home.drawGround(ctx, t); // outdoor campfire
     if (!skip.pickups) { coinPickups.draw(); coconutPickups.draw(); findPickups.draw(); }
@@ -1848,13 +2025,14 @@
     // trees still draws only a couple dozen-to-hundred objects per frame.
     const vw = viewW / ZOOM, vh = viewH / ZOOM, margin = 200; // >= widest tree sprite so edge trees don't pop in
     visibleBuf.length = 0; // reused buffer: no per-frame array allocations
-    if (!skip.scenery) for (const s of scenery) if (inView(s, vw, vh, margin)) visibleBuf.push(s);
+    if (!skip.scenery) collectScenery(vw, vh, margin);
     if (Home.hutBuilt() && inView(Home.hutEntry, vw, vh, 220)) visibleBuf.push(Home.hutEntry); // big sprite: wider cull margin
     if (window.Enemies && !skip.enemies) window.Enemies.collectVisible(visibleBuf, ctx, camX, camY, vw, vh, margin);
     const visible = visibleBuf;
     if (perf) perf.visible = visible.length;
     drawSceneryWithTurtle(visible);
     if (DEBUG_HITBOXES) drawDebugHitboxes(visible);
+    if (DEBUG) { ctx.strokeStyle = 'magenta'; ctx.lineWidth = 4; ctx.strokeRect(0, 0, WORLD_SIZE, WORLD_SIZE); } // Adventure Zone boundary (= the home zone's edge)
     if (window.Enemies) window.Enemies.drawDebug(ctx, camX, camY, vw, vh);
     ctx.restore();
 
@@ -1874,7 +2052,7 @@
 
   // ---- Perf overlay: only exists with ?debug=1 in the URL; zero cost otherwise.
   const loadedVer = (document.querySelector('script[src*="game.js"]') || {}).src?.split('?')[1] || '?'; // confirms the phone isn't running a cached build
-  const perf = new URLSearchParams(location.search).get('debug') === '1' ? (() => {
+  const perf = DEBUG ? (() => {
     const el = document.createElement('pre');
     el.style.cssText = 'position:fixed;left:4px;top:4px;margin:0;padding:4px 6px;background:rgba(0,0,0,.65);color:#7f7;font:11px/1.3 monospace;z-index:99;pointer-events:none';
     document.body.appendChild(el);
@@ -1888,7 +2066,7 @@
       take() { const c = calls; calls = 0; return c; },
       show(fps, avg, worst, c) {
         const mem = performance.memory ? `${(performance.memory.usedJSHeapSize / 1048576).toFixed(1)} MB` : 'n/a';
-        el.textContent = `fps ${fps.toFixed(0)}\nframe ${avg.toFixed(1)}ms (worst ${worst.toFixed(1)})\nwork ${p.ms.toFixed(1)}ms\nvisible ${p.visible} / ${scenery.length}\ndraws/frame ${c.toFixed(0)}\nheap ${mem}\ndpr ${dpr}\n${loadedVer} skip:${Object.keys(skip).join(',') || '-'}`;
+        el.textContent = `fps ${fps.toFixed(0)}\nframe ${avg.toFixed(1)}ms (worst ${worst.toFixed(1)})\nwork ${p.ms.toFixed(1)}ms\nvisible ${p.visible} / ${scenery.length}\ndraws/frame ${c.toFixed(0)}\nadventure ${adventureUnlocked ? 'unlocked' : 'locked'}  chunks ${chunks.size}\nheap ${mem}\ndpr ${dpr}\n${loadedVer} skip:${Object.keys(skip).join(',') || '-'}`;
       } };
     return p;
   })() : null;
@@ -1904,6 +2082,7 @@
     const w0 = perf ? performance.now() : 0;
     update(dt);
     render(now / 1000);
+    if (!Home.isInterior()) serviceGroundAhead();
     if (perf) {
       perf.ms = performance.now() - w0;
       perf.frames++; perf.acc += rawMs; perf.worst = Math.max(perf.worst, rawMs);
@@ -1937,6 +2116,7 @@
     window.Progression.attachSlot(slotId, saveData);
     Home.syncFromSave();
     spawnTurtle();
+    ensureGroundAt(turtle.x, turtle.y);
     last = performance.now();
     requestAnimationFrame(frame);
   }
@@ -1953,7 +2133,7 @@
     turtleAlive: () => deathTimer < 0,
     takeHit: n => state === 'shell' ? false : window.Progression.takeHit(n), // a turtle tucked into its shell takes no enemy damage
   });
-  window.TurtleGame = { start, renderCosmeticPreview, debugFinds: () => findPickups.items }; // debugFinds: console poking only
+  window.TurtleGame = { start, renderCosmeticPreview, setAdventureUnlocked, isAdventureUnlocked: () => adventureUnlocked, debugFinds: () => findPickups.items }; // debugFinds: console poking only
 
   // ---- Test mode (?test=1): no intro, no rAF loop. Math.random is seeded (top of file) and every
   // time input is a fixed number, so render() output is a pure function of the shot spec. Driven by
@@ -1961,7 +2141,7 @@
   if (TEST) {
     const P = window.Progression;
     const NONE = { color: 'color_default', hat: null, clothes: null, accessory: null };
-    const ready = () => terrainBitmap && shore && grassReady && sprite.complete && shellMaskSheet &&
+    const ready = () => shore && grassReady && sprite.complete && shellMaskSheet &&
       Object.values(SPRITES).every(i => i.complete && i.naturalWidth) &&
       [coinImg, coconutImg].every(i => i.complete && i.naturalWidth);
     function shot(s) {
