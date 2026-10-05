@@ -826,11 +826,14 @@
   const HITBOX_INSET = {
     // driftwood_stick: { left: 4, right: 4, top: 2, bottom: 2 },
   };
+  let scenerySpritesLeft = 0; // start() waits on this so trees are already there on the first frame
   for (const name of ['pine_tall', 'oak_tree', 'tree_cluster3', 'round_tree_med', 'round_tree_single',
     'pine_sapling', 'dead_tree_med', 'dead_tree_small', 'round_tree_small',
     'driftwood_stick', 'sandcastle_big', 'sandpile', 'rock_beach']) {
     const img = new Image();
-    img.onload = () => computeSpriteBBox(img, name);
+    scenerySpritesLeft++;
+    img.onload = () => { computeSpriteBBox(img, name); scenerySpritesLeft--; };
+    img.onerror = () => { scenerySpritesLeft--; };
     img.src = `assets/scenery/${name}.png`;
     SPRITES[name] = img;
   }
@@ -1823,7 +1826,7 @@
 
     // Cull scenery to the visible world rect (plus a small margin) so a big world with lots of
     // trees still draws only a couple dozen-to-hundred objects per frame.
-    const vw = viewW / ZOOM, vh = viewH / ZOOM, margin = 80;
+    const vw = viewW / ZOOM, vh = viewH / ZOOM, margin = 200; // >= widest tree sprite so edge trees don't pop in
     visibleBuf.length = 0; // reused buffer: no per-frame array allocations
     if (!skip.scenery) for (const s of scenery) if (inView(s, vw, vh, margin)) visibleBuf.push(s);
     if (Home.hutBuilt() && inView(Home.hutEntry, vw, vh, 220)) visibleBuf.push(Home.hutEntry); // big sprite: wider cull margin
@@ -1908,6 +1911,7 @@
     resize();
     if (!window.innerWidth || !window.innerHeight) { started = false; requestAnimationFrame(() => start(slotId, saveData)); return; }
     if (compassImagesLeft > 0) { started = false; requestAnimationFrame(() => start(slotId, saveData)); return; } // compass art
+    if (scenerySpritesLeft > 0) { started = false; requestAnimationFrame(() => start(slotId, saveData)); return; } // scenery art
     if (!grassReady) { started = false; requestAnimationFrame(() => start(slotId, saveData)); return; } // wait for grass textures so nothing draws untextured
     if (!shore) { started = false; requestAnimationFrame(() => start(slotId, saveData)); return; } // wait for Shore.js's sand/water tiles too
     window.Progression.attachSlot(slotId, saveData);
