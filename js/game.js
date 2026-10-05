@@ -250,15 +250,28 @@
     const el = document.activeElement;
     return !!el && /^(INPUT|TEXTAREA)$/.test(el.tagName);
   }
+  // ?debug=1 shortcuts, shared by the keys above and the on-screen buttons below (phones have no keyboard).
+  function debugAction(name) {
+    if (name === 'c') { window.Progression.state.banked.coins += 1000; window.Progression.persist(); }
+    else if (name === 'u') setAdventureUnlocked(!adventureUnlocked);
+    else if (name === 't' && spawned && !Home.isInterior()) { setAdventureUnlocked(true); turtle.x = WORLD_SIZE + 700; turtle.y = CENTER.y; turtle.vx = turtle.vy = 0; }
+  }
+  if (DEBUG) {
+    const bar = document.createElement('div');
+    bar.style.cssText = 'position:fixed;right:6px;bottom:calc(6px + env(safe-area-inset-bottom));z-index:99;display:flex;gap:6px;opacity:.85';
+    for (const [name, label] of [['u', 'Lock/Unlock'], ['t', 'Warp to zone'], ['c', '+1000 coins']]) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.textContent = label;
+      b.style.cssText = 'font:600 12px system-ui,sans-serif;padding:8px 10px;border-radius:10px;border:1px solid rgba(0,0,0,.4);background:#fff3c4;color:#222;touch-action:manipulation';
+      b.addEventListener('click', () => debugAction(name));
+      bar.appendChild(b);
+    }
+    document.body.appendChild(bar);
+  }
   window.addEventListener('keydown', e => {
     if (typingInField()) return;
     if (DEBUG_STATES[e.key]) { state = DEBUG_STATES[e.key]; stateTime = 0; return; }
-    if (DEBUG && e.key === 'c') { window.Progression.state.banked.coins += 1000; window.Progression.persist(); return; } // ?debug=1: c = +1000 banked coins
-    if (DEBUG && (e.key === 'u' || e.key === 't')) { // ?debug=1: u = lock/unlock the Adventure Zone, t = teleport into it (unlocking it first)
-      if (e.key === 'u') setAdventureUnlocked(!adventureUnlocked);
-      else if (spawned) { setAdventureUnlocked(true); turtle.x = WORLD_SIZE + 700; turtle.y = CENTER.y; turtle.vx = turtle.vy = 0; }
-      return;
-    }
+    if (DEBUG && (e.key === 'c' || e.key === 'u' || e.key === 't')) { debugAction(e.key); return; } // ?debug=1: c = +1000 banked coins, u = lock/unlock the Adventure Zone, t = teleport into it (unlocking it first)
     const k = KEY_MAP[e.key.toLowerCase()];
     if (k) { wakeUp(); keys.add(k); e.preventDefault(); }
   });
