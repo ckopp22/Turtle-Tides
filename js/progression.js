@@ -355,7 +355,8 @@
     return eatCoconutManual();
   }
 
-  let respawnHandler = null;
+  let respawnHandler = null, upgradeHandler = null;
+  function setUpgradeHandler(fn) { upgradeHandler = fn; } // game.js hooks this to react to purchases (e.g. the Table opening the Adventure Zone)
   function setRespawnHandler(fn) { respawnHandler = fn; } // game.js hooks this to reset turtle.x/y
   // Death sequence hook: game.js plays the fade-out and then calls respawnAtHome() itself. Without a
   // handler, dying respawns instantly like before.
@@ -502,6 +503,7 @@
     if (!canUpgrade(track)) return false;
     state.banked.coins -= TRACKS[track].cost();
     TRACKS[track].apply();
+    if (upgradeHandler) upgradeHandler(track);
     if (!state.turtleMaster && allUpgradesMaxed()) {
       state.turtleMaster = true;
       showCongratsBanner();
@@ -512,7 +514,7 @@
   }
 
   // ---- Save integration (bridges to intro.js's localStorage slots via window.TT_SAVE) ----
-  let activeSlotId = null;
+  let activeSlotId = null, migratedHome = false;
   function loadFromSave(data) {
     data = data || {};
     state.heartsLevel = clampLevel(data.heartsLevel, CONFIG.hearts.upgradeCosts.length);
@@ -529,6 +531,16 @@
       coins: data.banked?.coins || 0,
       coconuts: data.banked?.coconuts || 0,
     };
+    // homeVersion < 5 saves predate the Table & Stools moving up to upgrade 4 (it used to be 6th, after the Doormat and
+    // Window). Levels 6+ own the same set either way; a save at level 4 or 5 owned the Doormat (and Window) but not the table,
+    // so it drops back to level 3 and gets those two purchases refunded at the prices it paid (Doormat 30, Window 40).
+    migratedHome = false;
+    if ((data.homeVersion || 0) < 5) {
+      const OLD_REFUND = { 4: 30, 5: 70 }; // levels owning Doormat / Doormat + Window
+      if (OLD_REFUND[state.homeLevel]) { state.banked.coins += OLD_REFUND[state.homeLevel]; state.homeLevel = 3; migratedHome = true; }
+      if (state.homeSeenLevel === 4 || state.homeSeenLevel === 5) state.homeSeenLevel = 3;
+      state.homeSeenLevel = Math.min(state.homeSeenLevel, state.homeLevel);
+    }
     // Finds banked so far (old saves' shell trophies are dropped: they had no types).
     state.bookRewards = {};
     for (const k in (data.bookRewards || {})) if (data.bookRewards[k] === true) state.bookRewards[k] = true;
@@ -537,6 +549,7 @@
     for (const it of CONFIG.finds.items) if (Number.isFinite(col[it.id]) && col[it.id] > 0) state.collection[it.id] = Math.floor(col[it.id]);
     state.hideOn = data.hideOn === true;
     state.isNight = typeof data.isNight === 'boolean' ? data.isNight : false; // missing on old saves -> default day
+    if (migratedHome) state.isNight = false; // the Window (Day/Night) was refunded by the home-order migration
     // Cosmetics: old saves have no `cosmetics` field at all — default to just the free color owned/
     // equipped and nothing else. A save with a partial/corrupt object still gets safe defaults per field.
     const c = data.cosmetics || {};
@@ -591,7 +604,7 @@
       hideOn: state.hideOn,
       cosmetics: { owned: state.cosmetics.owned.slice(), equipped: { ...state.cosmetics.equipped } },
       turtleMaster: state.turtleMaster,
-      homeVersion: 4, // 4 = Window inserted at upgrade 5; 3 = homeLevel 0 is nothing, 1 is the hut, then its upgrades (2 = no hut step); bump if the save shape changes (loads tolerate it missing)
+      homeVersion: 5, // 5 = Table & Stools moved to upgrade 4 (opens the Adventure Zone); 4 = Window inserted at upgrade 5; 3 = homeLevel 0 is nothing, 1 is the hut, then its upgrades (2 = no hut step); bump if the save shape changes (loads tolerate it missing)
       homeSeenLevel: state.homeSeenLevel,
       stats: { ...state.stats },
     };
@@ -599,6 +612,7 @@
   function attachSlot(slotId, existingData) {
     activeSlotId = slotId;
     loadFromSave(existingData);
+    if (migratedHome) persist(); // write the refund + new level back now so a second load can't refund it again
   }
   function persist() {
     if (activeSlotId == null || !window.TT_SAVE) return;
@@ -1010,7 +1024,7 @@
   }
 
   window.Progression = {
-    tryPickup, bankCarried, takeLostItems, takeHit, getStarveDim: () => starveDim, isInvulnerable, setRespawnHandler, setDeathHandler, respawnAtHome,
+    tryPickup, bankCarried, takeLostItems, takeHit, getStarveDim: () => starveDim, isInvulnerable, setRespawnHandler, setUpgradeHandler, setDeathHandler, respawnAtHome,
     update, restoreHearts, maxHearts, getHideConfig, swimSpeedMultiplier, moveSpeedMultiplier, toggleDayNight, drawHUD, setHomeButtonVisible, tryEatFromHud, getIconRow: ensureIconRow,
     buyUpgrade, canUpgrade, addStat, addPlayTime, claimPageReward,
     attachSlot, getSaveData, persist,

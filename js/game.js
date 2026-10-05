@@ -778,6 +778,15 @@
   }
   setTimeout(warmGround, 0);
 
+  // The Adventure Zone is open exactly when the hut's Table & Stools (feature 'adventureZone') is owned, so the save
+  // needs no flag of its own: loading a save that has the table opens it, buying the table opens it with a message.
+  function syncAdventureUnlock(announce) {
+    if (adventureUnlocked || !Home.hasFeature('adventureZone')) return;
+    setAdventureUnlocked(true);
+    if (announce) showToast('A new area has opened!', 4000); // TODO: polish (effect/sound) in the polish step
+  }
+  window.Progression.setUpgradeHandler(() => syncAdventureUnlock(true));
+
   // Opening/closing the Adventure Zone moves the playable edge (and its fog fringe), so chunks the fog touches
   // are re-baked; chunks well inside both rectangles are untouched.
   function setAdventureUnlocked(on) {
@@ -1386,19 +1395,20 @@
 
   // Small banner at the top of the screen; replaces any toast still showing.
   let toastEl = null, toastTimer = 0;
-  function showDiscoveryToast(name) {
+  function showToast(text, ms = 2200) {
     if (!toastEl) {
       toastEl = document.createElement('div');
       toastEl.className = 'discovery-toast';
       document.body.appendChild(toastEl);
     }
-    toastEl.textContent = 'New find: ' + name + '!';
+    toastEl.textContent = text;
     toastEl.classList.remove('show');
     void toastEl.offsetWidth; // restart the animation
     toastEl.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2200);
+    toastTimer = setTimeout(() => toastEl.classList.remove('show'), ms);
   }
+  function showDiscoveryToast(name) { showToast('New find: ' + name + '!'); }
   function makePickupType(key, opts) {
     const items = [];
     function respawn(it) {
@@ -2115,6 +2125,7 @@
     if (!shore) { started = false; requestAnimationFrame(() => start(slotId, saveData)); return; } // wait for Shore.js's sand/water tiles too
     window.Progression.attachSlot(slotId, saveData);
     Home.syncFromSave();
+    syncAdventureUnlock(false);
     spawnTurtle();
     ensureGroundAt(turtle.x, turtle.y);
     last = performance.now();
