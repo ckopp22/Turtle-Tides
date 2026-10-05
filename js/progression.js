@@ -934,7 +934,6 @@
 
   // Hide in Shell toggle button — same row as Day/Night, shown everywhere once the perk is unlocked.
   // Lit (green) while on. Created once from update(), like the Day/Night button above.
-  const SHELL_SVG = '<svg width="28" height="28" viewBox="0 0 28 28"><ellipse cx="14" cy="15" rx="11" ry="9" fill="#5a9a4a" stroke="#2d5a26" stroke-width="2"/><path d="M14 6v18M6 11l8 4 8-4M6 19l8-4 8 4" stroke="#2d5a26" stroke-width="1.6" fill="none" stroke-linejoin="round"/><circle cx="14" cy="15" r="2.4" fill="#8fd66b" stroke="#2d5a26" stroke-width="1.2"/></svg>';
   let hideBtn = null;
   function updateHideButtonLabel() {
     if (!hideBtn) return;
@@ -948,7 +947,7 @@
     hideBtn.id = 'tt-hide-btn';
     hideBtn.className = 'tt-icon-btn';
     hideBtn.type = 'button';
-    hideBtn.innerHTML = SHELL_SVG;
+    hideBtn.innerHTML = '<span class="tt-shell-icon"></span>';
     hideBtn.style.display = 'flex';
     hideBtn.addEventListener('click', () => { toggleHide(); updateHideButtonLabel(); });
     ensureIconRow().appendChild(hideBtn);
