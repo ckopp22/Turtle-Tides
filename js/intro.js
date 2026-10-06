@@ -712,6 +712,10 @@
     return opts[0];
   }
   const menuTurtle = { x: 0, y: 0, dir: 1, behavior: 'walk', timer: 0, walkFrame: 0 };
+  // Wake rings behind the swimming menu turtle (same look as game.js's drawRipples).
+  const menuRipples = []; // { x, y, age }
+  let menuRippleTimer = 0;
+  const MENU_RIPPLE_LIFETIME = 0.7;
   function resetMenuTurtle() {
     const { waterY } = beachLayout();
     menuTurtle.x = viewW * 0.5; menuTurtle.y = waterY * 0.75;
@@ -723,6 +727,18 @@
     const walkY = waterY * 0.75, swimY = waterY + (viewH - waterY) * 0.35;
     const xMin = viewW * 0.12, xMax = viewW * 0.88;
     menuTurtle.timer -= dt;
+    for (let i = menuRipples.length - 1; i >= 0; i--) {
+      menuRipples[i].age += dt;
+      if (menuRipples[i].age >= MENU_RIPPLE_LIFETIME) menuRipples.splice(i, 1);
+    }
+    // Only once the turtle is actually in the water band, not while easing across the shore.
+    if (menuTurtle.behavior === 'swim' && menuTurtle.y > waterY + 10) {
+      menuRippleTimer += dt;
+      if (menuRippleTimer >= 0.25) {
+        menuRippleTimer = 0;
+        menuRipples.push({ x: menuTurtle.x - menuTurtle.dir * 20, y: menuTurtle.y, age: 0 });
+      }
+    } else menuRippleTimer = 0;
     if (menuTurtle.behavior === 'walk' || menuTurtle.behavior === 'swim') {
       const speed = menuTurtle.behavior === 'swim' ? 55 : 40;
       menuTurtle.x += menuTurtle.dir * speed * dt;
@@ -742,6 +758,18 @@
     }
   }
   function drawMenuTurtle(t) {
+    for (const r of menuRipples) {
+      const k = r.age / MENU_RIPPLE_LIFETIME;
+      ctx.save();
+      ctx.translate(r.x, r.y);
+      ctx.scale(1, 0.55);
+      ctx.beginPath();
+      ctx.arc(0, 0, 8 + 38 * k, 0, Math.PI * 2);
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = `rgba(210, 236, 245, ${0.6 * (1 - k)})`;
+      ctx.stroke();
+      ctx.restore();
+    }
     if (!menuSprite.complete || !menuSprite.naturalWidth) return;
     const fw = menuSprite.naturalWidth / 8, fh = menuSprite.naturalHeight / 5;
     const dh = 60, dw = dh * fw / fh;
@@ -775,7 +803,7 @@
     // Scale the title down on narrow (portrait phone) viewports so "TURTLE TIDES" never
     // runs past the screen edges; 96px is the size it was designed at, on a wide-enough view.
     const portrait = viewW < viewH * 0.8; // assumption: stack the title on two lines in portrait
-    const titleSize = portrait ? Math.min(96, viewW * 0.24) : Math.min(96, viewW * 0.15);
+    const titleSize = portrait ? Math.min(90, viewW * 0.225) : Math.min(90, viewW * 0.14);
     const subSize = titleSize * 42 / 96;
     const y0 = viewH * (portrait ? 0.22 : 0.3);
     ctx.font = `italic ${titleSize}px "Bradley Hand", "Comic Sans MS", cursive`;
