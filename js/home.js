@@ -40,7 +40,7 @@
   const INDOOR = [
     { id: 'bed',     name: 'Bed',            layer: '01_bed_192.png',              cost: 20, unlocks: ['sleep'],                  perk: 'Sleep',                      solids: [{ rect: [16, 44, 80, 108] }], hotspot: { rect: [16, 44, 80, 108], action: 'sleep' } },
     { id: 'chest',   name: 'Chest',          layer: '08_chest_192.png',            cost: 25, unlocks: ['closet'],                perk: 'Closet',                     solids: [{ rect: [137, 141, 177, 169] }], hotspot: { rect: [137, 141, 177, 169], action: 'closet' } },
-    { id: 'table',   name: 'Table & Stools', layer: '04_table_and_stools_192.png', cost: 30, unlocks: ['swimSpeed1', 'adventureZone'], perk: 'Swim Speed I + new area',solids: [{ circle: [152, 82, 18] }, { circle: [152, 112, 8] }, { circle: [128, 82, 8] }] },
+    { id: 'table',   name: 'Table & Stools', layer: '04_table_and_stools_192.png', cost: 30, unlocks: ['swimSpeed1', 'adventureZone'], perk: 'Swim Speed I + new area',solids: [{ circle: [152, 82, 18] }, { circle: [152, 112, 8] }, { circle: [128, 82, 8] }], hotspot: { rect: [134, 64, 170, 100], action: 'bible' } },
     { id: 'doormat', name: 'Doormat',        layer: '03_doormat_192.png',          cost: 40, unlocks: ['moveSpeed1'],             perk: 'Move Speed I',               solids: [] },
     { id: 'window',  name: 'Window',         layer: null,                          cost: 45, unlocks: ['dayNight'],             perk: 'Day/Night',                  solids: [], hotspot: { rect: [74, 10, 118, 36], action: 'daynight' } }, // art is in the base room image; no layer
     { id: 'shelf',   name: 'Shelf',          layer: '05_shelf_192.png',            cost: 60, unlocks: ['collectionBook'],         perk: 'Collection Book',            solids: [], hotspot: { rect: [130, 17, 178, 36], action: 'book' } },
@@ -78,6 +78,9 @@
   const hutImg = load('assets/home/hut_exterior_192.png');
   const fireUnlitImg = load('assets/home/campfire_unlit_64.png');
   const fireLitImg = load('assets/home/campfire_spritesheet.png'); // 6 frames of 64x64
+  const mapImg = load('assets/home/map_64.png');
+  const bibleClosedImg = load('assets/home/bible_closed_64.png');
+  const bibleOpenImg = load('assets/home/bible_open_64.png');
   const baseImg = load('assets/home/00_hut_interior_empty_192.png');
   const layerImgs = {};
   for (const u of INDOOR) if (u.layer) layerImgs[u.id] = load('assets/home/' + u.layer);
@@ -88,11 +91,29 @@
   const roomCanvas = document.createElement('canvas');
   roomCanvas.width = roomCanvas.height = ART;
   const roomCtx = roomCanvas.getContext('2d');
+  let bibleOpen = false; // table's Bible: tap opens it with a verse, next tap closes it
+  const tinyCache = new Map();
+  function tiny(img) {
+    if (tinyCache.has(img)) return tinyCache.get(img);
+    let src = img;
+    for (const n of [32, 16]) {
+      const c = document.createElement('canvas'); c.width = c.height = n;
+      const g = c.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(src, 0, 0, n, n); src = c;
+    }
+    tinyCache.set(img, src);
+    return src;
+  }
   function rebuildRoom() {
     roomCtx.clearRect(0, 0, ART, ART);
     if (baseImg.complete && baseImg.naturalWidth) roomCtx.drawImage(baseImg, 0, 0);
     drawLayer(DRAW_FIRST);
     for (const u of INDOOR) if (u.id !== DRAW_FIRST) drawLayer(u.id);
+    if (shown.table) { // map + bible on the table (art px); bible is open while its verse shows
+      // Halve 64 -> 32 -> 16 (exact 2:1 steps average cleanly), then draw 1:1 so the little props stay crisp.
+      const b = bibleOpen ? bibleOpenImg : bibleClosedImg;
+      if (mapImg.complete && mapImg.naturalWidth) roomCtx.drawImage(tiny(mapImg), 140, 71);
+      if (b.complete && b.naturalWidth) roomCtx.drawImage(tiny(b), 154, 74);
+    }
   }
   function drawLayer(id) {
     const img = layerImgs[id];
@@ -206,7 +227,7 @@
 
 
   // ---- Clickable furniture + sleeping ----
-  const ACTIONS = { sleep: startSleep, closet: openCloset, book: openBook, daynight: () => window.Progression.toggleDayNight() };
+  const ACTIONS = { sleep: startSleep, closet: openCloset, book: openBook, bible: () => { bibleOpen = true; rebuildRoom(); }, daynight: () => window.Progression.toggleDayNight() };
   const sleep = { phase: 0, t: 0, dim: 0, msg: '', full: false }; // phase: 0 none, 1 fading to dark, 2 asleep, 3 waking
   const hint = { text: '', timer: 0 };
   let lastSleepAt = -1;
@@ -253,6 +274,7 @@
   }
   function tapAt(cx, cy) {
     if (scene !== 'interior' || phase !== 0 || sleep.phase || modal) return;
+    if (bibleOpen) { bibleOpen = false; rebuildRoom(); return; } // any tap closes the Bible and its verse
     const u = hitSpot((cx - L.x0) / L.s, (cy - L.y0) / L.s);
     if (!u) return;
     const r = u.hotspot.rect, dx = room.x - clamp(room.x, r[0], r[2]), dy = room.y - clamp(room.y, r[1], r[3]);
@@ -331,7 +353,7 @@
   }
   function startFade(swap) { phase = 1; alpha = 0; pending = swap; }
   function enterSwap() {
-    scene = 'interior';
+    scene = 'interior'; bibleOpen = false;
     if (window.TT_SOUND) window.TT_SOUND.fire(0); // the campfire isn't heard indoors
     room.x = ROOM_SPAWN.x; room.y = ROOM_SPAWN.y; room.vx = room.vy = room.speed = 0; room.angle = -Math.PI / 2;
     if (onEnterInterior) onEnterInterior();
@@ -490,14 +512,14 @@
   }
   // Sleep result text ("Hearts restored!" / "Fully rested") and the "Come closer"/limit hints.
   function drawMessages(ctx, lay) {
-    const text = sleep.phase >= 2 ? sleep.msg : hint.timer > 0 ? hint.text : '';
+    const text = sleep.phase >= 2 ? sleep.msg : bibleOpen ? 'The Lord is my shepherd.\nPsalm 23:1' : hint.timer > 0 ? hint.text : '';
     if (!text) return;
     ctx.save();
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.font = `700 ${Math.max(15, Math.round(7 * lay.s))}px system-ui, sans-serif`;
     ctx.lineJoin = 'round'; ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(40,24,8,0.9)'; ctx.fillStyle = '#fff';
     const x = lay.x0 + ART * lay.s / 2, y = lay.y0 + (sleep.phase >= 2 ? 132 : 24) * lay.s;
-    ctx.strokeText(text, x, y); ctx.fillText(text, x, y);
+    text.split('\n').forEach((ln, i) => { const ly = y + i * 9 * lay.s; ctx.strokeText(ln, x, ly); ctx.fillText(ln, x, ly); });
     ctx.restore();
   }
   function drawFade(ctx, w, h) {
