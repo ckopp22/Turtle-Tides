@@ -445,6 +445,14 @@
     ctx.drawImage(hutImg, hutX - ANCHOR_X * s, hutY - ANCHOR_Y * s, ART * s, ART * s);
     ctx.imageSmoothingEnabled = true;
   }
+  // Night lights (world px): the hut and, once lit, the campfire. game.js cuts holes in the night overlay and adds a warm glow.
+  const lightList = [];
+  function lights() {
+    lightList.length = 0;
+    if (hutBuilt()) { const s = CONFIG.hutScale; lightList.push({ x: hutX + (ART / 2 - ANCHOR_X) * s, y: hutY + (ART / 2 - ANCHOR_Y) * s, r: 300, flicker: 0.03 }); }
+    if (fireStage() >= 2) lightList.push({ x: fireX, y: fireY, r: 240, flicker: 0.15 });
+    return lightList;
+  }
   // Flat ground-level pieces on the island, drawn under the turtle/scenery (so no depth sorting): the
   // outdoor campfire. `t` is real time in seconds (drives the flame animation).
   function drawGround(ctx, t) {
@@ -769,7 +777,7 @@
 
   window.Home = {
     syncFromSave: syncUnlocked, refreshInterior: () => { if (scene === 'interior' && builtLevel !== level()) startPops(); }, hasFeature, hutBuilt, UPGRADES,
-    init, tick, collideWorld, checkDoor, updateAmbient, layout, drawRoom, drawFade, drawGround, drawSleepDim, drawMessages, hutEntry, room,
+    init, tick, collideWorld, checkDoor, updateAmbient, layout, drawRoom, drawFade, drawGround, lights, drawSleepDim, drawMessages, hutEntry, room,
     TURTLE_SCALE: CONFIG.roomTurtleScale, SLEEP_SCALE: CONFIG.sleep.scale, bedSpot: BED_SPOT,
     isAsleep: () => sleep.phase === 2,
     isInterior: () => scene === 'interior',

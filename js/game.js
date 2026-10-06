@@ -1437,11 +1437,39 @@
     else if (nightAmount > target) nightAmount = Math.max(target, nightAmount - NIGHT_FADE_SPEED * dt);
   }
 
+  // Night overlay with light cut out around the hut and lit campfire (offscreen dark layer + destination-out
+  // gradients), then a soft warm additive glow on top. Everything screen-space, flickering a little with time.
+  const nightCv = document.createElement('canvas'), nightCtx = nightCv.getContext('2d');
   function drawNightSky() {
     if (nightAmount <= 0.001) return;
+    const lights = Home.lights();
+    if (nightCv.width !== canvas.width || nightCv.height !== canvas.height) { nightCv.width = canvas.width; nightCv.height = canvas.height; }
+    const g = nightCtx, tm = performance.now() / 1000;
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.globalCompositeOperation = 'source-over';
+    g.clearRect(0, 0, viewW, viewH);
+    g.fillStyle = `rgba(6, 14, 30, ${0.55 * nightAmount})`;
+    g.fillRect(0, 0, viewW, viewH);
+    g.globalCompositeOperation = 'destination-out';
+    const glows = [];
+    for (const L of lights) {
+      const sx = (L.x - camX) * ZOOM, sy = (L.y - camY) * ZOOM;
+      const r = L.r * ZOOM * (1 + L.flicker * (Math.sin(tm * 9 + L.x) * 0.5 + Math.sin(tm * 23 + L.y) * 0.5));
+      if (sx < -r || sy < -r || sx > viewW + r || sy > viewH + r) continue;
+      const k = g.createRadialGradient(sx, sy, r * 0.1, sx, sy, r);
+      k.addColorStop(0, `rgba(0,0,0,${0.95 * nightAmount})`); k.addColorStop(0.5, `rgba(0,0,0,${0.55 * nightAmount})`); k.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = k; g.fillRect(sx - r, sy - r, r * 2, r * 2);
+      glows.push(sx, sy, r);
+    }
+    ctx.drawImage(nightCv, 0, 0, viewW, viewH);
     ctx.save();
-    ctx.fillStyle = `rgba(6, 14, 30, ${0.55 * nightAmount})`;
-    ctx.fillRect(0, 0, viewW, viewH);
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < glows.length; i += 3) {
+      const sx = glows[i], sy = glows[i + 1], r = glows[i + 2];
+      const k = ctx.createRadialGradient(sx, sy, 0, sx, sy, r * 0.8);
+      k.addColorStop(0, `rgba(255,170,70,${0.32 * nightAmount})`); k.addColorStop(1, 'rgba(255,120,30,0)');
+      ctx.fillStyle = k; ctx.fillRect(sx - r, sy - r, r * 2, r * 2);
+    }
     ctx.restore();
   }
 
