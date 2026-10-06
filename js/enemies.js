@@ -35,6 +35,9 @@
     farScreens: 1,           // enemies farther than this many screen widths update at a lower rate (off-screen anyway)
     farTickSeconds: 0.1,     // ...once per this long, with the accumulated dt so they move at the same speed
     debugSpawnOffset: 150,   // world px: ?debug=1 spawn key puts the enemy this far from the turtle
+    cutLeadSeconds: 1.1,     // cut-off wolves aim this many seconds ahead of the turtle's velocity...
+    cutMinAhead: 150,        // ...but at least this many world px ahead
+    cutSpread: 130,          // world px: how far the flankers sit to either side of the lead spot
     spawnTickSeconds: 0.2,   // the spawner runs at most this often
     spawnsPerTick: 6,        // ...and places at most this many enemies per run (a big zone pool fills in over a few seconds)
     spawnFailsPerTick: 3,    // ...and gives up for spawnRetrySeconds after this many failed slots in one run
@@ -91,6 +94,7 @@
       wolf: {
         sheet: 'assets/enemies/wolf_spritesheet.png',
         biomes: ['forestOpen', 'deadTrees', 'forestThick', 'beach'], count: 4, // one pack slot per biome, so wolves are in all 4
+        cutOff: true,        // pack tactic: chasing wolves run ahead of the turtle's heading, each to a different spot, to cut it off
         nocturnal: true,     // only exists at night; the day/night toggle removes it, and it ignores the live-enemy caps
         speed: 0.9, detect: 6, attackRange: 1,
         damage: 1, windup: 0.35, attackTime: 0.7, cooldown: 1.4,
@@ -138,6 +142,37 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
   const nearList = []; // enemies close enough to simulate this frame (rebuilt each update, reused)
   let ctxRef = null;
 
+  // Turtle velocity (smoothed), measured from its position each update; the pack uses it to predict where it's heading.
+  let tvx = 0, tvy = 0, lastTx = null, lastTy = 0;
+  function trackTurtle(dt) {
+    const T = api.turtle;
+    if (lastTx !== null && dt > 0) {
+      const vx = (T.x - lastTx) / dt, vy = (T.y - lastTy) / dt;
+      if (vx * vx + vy * vy > 1e6 * 4) { tvx = tvy = 0; } // teleport (respawn / hut): reset
+      else { const k = Math.min(1, dt * 6); tvx += (vx - tvx) * k; tvy += (vy - tvy) * k; }
+    }
+    lastTx = T.x; lastTy = T.y;
+  }
+  // Each chasing cut-off wolf gets a role: 0 = straight ahead of the turtle, 1/2 = ahead to the left/right, then behind.
+  function assignRoles() {
+    let n = 0;
+    for (const e of pool) if (e.active && e.state === CHASE && e.cfg.cutOff) e.role = n++;
+    return n;
+  }
+  // Returns true and sets out.x/out.y to this wolf's intercept spot, or false when the turtle is (nearly) still.
+  const cutAim = { x: 0, y: 0 };
+  function cutOffAim(e) {
+    const T = api.turtle, sp = Math.hypot(tvx, tvy);
+    if (sp < 25) return false; // not moving: just surround it (the normal flank)
+    const ux = tvx / sp, uy = tvy / sp, px = -uy, py = ux;
+    const ahead = Math.max(CONFIG.cutMinAhead, sp * CONFIG.cutLeadSeconds);
+    const side = [0, 1, -1, 0.5, -0.5][e.role % 5] * CONFIG.cutSpread;
+    const back = e.role >= 3 ? -ahead * 1.5 : 0; // extra wolves close in from behind
+    const ax = T.x + ux * (ahead + back) + px * side, ay = T.y + uy * (ahead + back) + py * side;
+    if (!api.walkable(ax, ay) || api.blockedAt(ax, ay, e.cfg.bodyRadius)) return false; // spot unusable: fall back to the flank
+    cutAim.x = ax; cutAim.y = ay; return true;
+  }
+
   const rnd = (a, b) => a + Math.random() * (b - a);
 
   function makeSlot(type, respawnAt) {
@@ -145,7 +180,7 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
       type, cfg: type ? CONFIG.types[type] : null, active: false, respawnAt, debug: false, pool: 'home',
       x: 0, y: 0, sx: 0, sy: 0, biome: '', state: WANDER, t: 0, anim: 0, row: 0, frame: 0,
       tx: 0, ty: 0, hasTarget: false, pause: 0, flip: 1, angle: 0, cd: 0, giveUp: 0, steer: 0, steerT: 0, dodge: 0, dodgeT: 0, flank: 0, atkAngle: 0, acc: 0,
-      lose: 0, stuck: 0, unreach: 0, nightSleep: false, want: '', path: null, pi: 0, pathLen: 0, replans: 0, hiddenFor: 0, emergeToChase: false, hitDone: false,
+      role: 0, lose: 0, stuck: 0, unreach: 0, nightSleep: false, want: '', path: null, pi: 0, pathLen: 0, replans: 0, hiddenFor: 0, emergeToChase: false, hitDone: false,
       proxy: null,
     };
     // Depth-sort entry: game.js's scenery sort wants {x, y (ground contact), type:'custom', draw}.
@@ -540,8 +575,13 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
         // Far away, aim at this enemy's own spot around the turtle so a pack arrives from different sides;
         // once close, aim straight at the turtle.
         const fr = CONFIG.flankRadius, close = Math.sqrt(c.attack2) + fr + 20;
-        const aimX = d2 > close * close ? T.x + Math.cos(e.flank) * fr : T.x;
-        const aimY = d2 > close * close ? T.y + Math.sin(e.flank) * fr : T.y;
+        let aimX = d2 > close * close ? T.x + Math.cos(e.flank) * fr : T.x;
+        let aimY = d2 > close * close ? T.y + Math.sin(e.flank) * fr : T.y;
+        if (c.cutOff && d2 > (Math.sqrt(c.attack2) + 60) ** 2 && cutOffAim(e)) {
+          // Head for the intercept spot unless the turtle is already between this wolf and it (then just bite).
+          const tdx = cutAim.x - e.x, tdy = cutAim.y - e.y;
+          if (tdx * dx + tdy * dy > 0 || tdx * tdx + tdy * tdy > d2) { aimX = cutAim.x; aimY = cutAim.y; } else { aimX = T.x; aimY = T.y; }
+        }
         const progress = stepToward(e, aimX, aimY, chaseSpeed, dt, c.flies);
         e.stuck = progress < 0.3 ? e.stuck + dt : Math.max(0, e.stuck - dt);
         if (!c.flies && e.stuck > CONFIG.stuckSeconds) { giveUpChase(e); return; }
@@ -580,6 +620,7 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
     const far = CONFIG.farScreens * Math.max(v.w, v.h), far2 = far * far;
     const safe = api.isHomeIsland(T.x, T.y), alive = api.turtleAlive();
     const night = api.isNight();
+    trackTurtle(dt); assignRoles();
     let nn = 0;
     for (const e of pool) {
       if (!e.active) continue;
