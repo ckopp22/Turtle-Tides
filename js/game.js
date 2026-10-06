@@ -1853,6 +1853,8 @@
     window.Progression.addPlayTime(dt);
     // Inside the hut (or mid door-fade) the outside world is paused: no enemies, pickups, timers.
     if (Home.tick(dt, Home.isInterior() ? getDirection() : NO_DIR)) {
+      // Toggled at the hut window: snap the outside sky so there's no dim fade on exit.
+      if (Home.isInterior()) nightAmount = window.Progression.state.isNight ? 1 : 0;
       if (Home.isInterior()) updateInteriorAnim(dt);
       else if (window.TT_SOUND) { window.TT_SOUND.walking(false, 1); window.TT_SOUND.swimming(false, true); }
       return;
