@@ -34,6 +34,7 @@
     flankRadius: 70,         // world px: chasers aim at a personal spot this far around the turtle until they get close
     farScreens: 1,           // enemies farther than this many screen widths update at a lower rate (off-screen anyway)
     farTickSeconds: 0.1,     // ...once per this long, with the accumulated dt so they move at the same speed
+    pushBackMax: 5,          // world px per frame a pinned turtle can shove an enemy back
     swipeSize: 140,          // world px the attack swipe frame is drawn at (enemy sprite is 64)
     noticeSeconds: 0.9,      // how long the "!" shows above an enemy that just noticed the turtle
     debugSpawnOffset: 150,   // world px: ?debug=1 spawn key puts the enemy this far from the turtle
@@ -686,7 +687,11 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
       const d2 = dx * dx + dy * dy;
       if (d2 >= min * min) continue;
       const d = Math.sqrt(d2) || 0.001, k = (min - d) / d;
-      t.x += (d2 < 1e-6 ? 1 : dx) * k; t.y += (d2 < 1e-6 ? 0 : dy) * k;
+      const px = (d2 < 1e-6 ? 1 : dx) * k, py = (d2 < 1e-6 ? 0 : dy) * k;
+      if (!api.blockedAt(t.x + px, t.y + py, r)) { t.x += px; t.y += py; continue; }
+      // Pinned (the turtle can't back out: tree, rock, hut...): shove the enemy back a little instead.
+      const cap = CONFIG.pushBackMax, m = Math.hypot(px, py), f = m > cap ? cap / m : 1, bx = e.x - px * f, by = e.y - py * f;
+      if (open(e, bx, by)) { e.x = bx; e.y = by; }
     }
   }
 
