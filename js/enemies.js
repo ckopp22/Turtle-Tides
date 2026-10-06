@@ -144,7 +144,7 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
   const sheets = {};
   const SWIPE_FRAMES = 8, SWIPE_WINDUP_FRAMES = 3; // attack_swipe sheet: first frames = the '!' tell during wind-up, the rest = the swipe at the hit
   const exclaimImg = new Image(); exclaimImg.src = 'assets/enemies/notice_exclaim.png';
-  const swipeImg = new Image(); swipeImg.src = 'assets/enemies/attack_swipe_spritesheet.png';
+  const swipeImg = new Image(); swipeImg.src = 'assets/enemies/attack_swipe_spritesheet.png?v=2'; // ?v= busts the old cached sheet that still had the '!' baked in
   const pool = []; // fixed-size: one slot per configured enemy (home pool, then the Adventure Zone pool), plus a few extra for debug spawns
   const nearList = []; // enemies close enough to simulate this frame (rebuilt each update, reused)
   let ctxRef = null;
@@ -733,7 +733,7 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
     g.drawImage(img, e.frame * F, e.row * F, F, F, -D / 2, -D / 2, D, D);
     g.restore();
     const ox = e.x + lx, oy = (air ? e.y - 10 : e.y) + ly;
-    if (e.notice > 0 && exclaimImg.complete && exclaimImg.naturalWidth) { // "!" pops above an enemy that just noticed the turtle
+    if (e.notice > 0 && e.state !== ATTACK && exclaimImg.complete && exclaimImg.naturalWidth) { // "!" pops above an enemy that just noticed the turtle
       const u = 1 - e.notice / CONFIG.noticeSeconds, pop = u < 0.2 ? 0.5 + u / 0.2 * 0.7 : u < 0.35 ? 1.2 - (u - 0.2) / 0.15 * 0.2 : 1;
       const w = exclaimImg.naturalWidth * 3 * pop, h = exclaimImg.naturalHeight * 3 * pop;
       g.globalAlpha = Math.min(1, e.notice / 0.2);
