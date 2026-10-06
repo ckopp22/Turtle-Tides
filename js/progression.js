@@ -18,6 +18,7 @@
       // Fixed for the whole game now — no upgrade track (was `hungerLevel`/TRACKS.hunger).
       baseMax: 100,
       baseDrainPerSecond: 0.6,     // only drains away from the home island (MDD s4); halved from 1.2
+      gardenDrainMult: 0.7,        // hunger drain multiplier with the Garden Bed upgrade
       slowMultiplier: 0.55,        // movement speed multiplier while hunger is at 0
       graceSeconds: 8,             // time at 0 hunger before heart loss starts
       heartLossIntervalSeconds: 6, // one heart lost per this many seconds once past the grace period
@@ -62,7 +63,7 @@
       // about. Within one domain, tier II replaces tier I rather than multiplying on top of it
       // (index 1 is the full boost once both are unlocked, not I*II).
       swimSpeedTiers: [1.2, 1.4],  // [Swim Speed I, Swim Speed II]
-      moveSpeedTiers: [1.2, 1.4],  // [Move Speed I, Move Speed II]
+      moveSpeedTiers: [1.2, 1.4, 1.6], // [Move Speed I, II, III]
     },
     // Finds: the 25 collectibles scattered over the map (replacing the old shell pickup). Listed in
     // the sprite sheet's order (assets/collectibles/items25_spritesheet.png, 5x5 of 64px, row-major),
@@ -256,7 +257,7 @@
   function clampLevel(v, max) { v = Number.isFinite(v) ? v : 0; return Math.max(0, Math.min(max, v)); }
   function maxHearts() { return CONFIG.hearts.startMax + state.heartsLevel; }
   function hungerMax() { return CONFIG.hunger.baseMax; }
-  function hungerDrainRate() { return CONFIG.hunger.baseDrainPerSecond; }
+  function hungerDrainRate() { return CONFIG.hunger.baseDrainPerSecond * (hasSkill('slowHunger') ? CONFIG.hunger.gardenDrainMult : 1); } // garden bed upgrade slows it
   function hullCap() { return CONFIG.hull.capTiers[state.hullLevel]; }
   function carriedTotal() { return state.carried.coins + state.carried.coconuts + state.carriedFinds.length; }
 
@@ -300,6 +301,8 @@
     persist();
     return true;
   }
+  // Straight into the bank (mini game reward).
+  function grantBankedCoins(n) { state.banked.coins += n; state.stats.coins += n; persist(); }
   function addStat(key, n = 1) { if (key in state.stats) state.stats[key] += n; }
   function addPlayTime(dt) { state.stats.playSeconds += dt; }
   function bankCarried() {
@@ -469,6 +472,7 @@
     return 1;
   }
   function moveSpeedMultiplier() {
+    if (hasSkill('moveSpeed3')) return CONFIG.speed.moveSpeedTiers[2];
     if (hasSkill('moveSpeed2')) return CONFIG.speed.moveSpeedTiers[1];
     if (hasSkill('moveSpeed1')) return CONFIG.speed.moveSpeedTiers[0];
     return 1;
@@ -1069,7 +1073,7 @@
   window.Progression = {
     tryPickup, grantCarriedCoins, bankCarried, takeLostItems, takeHit, getStarveDim: () => starveDim, isInvulnerable, setRespawnHandler, setUpgradeHandler, setDeathHandler, respawnAtHome,
     update, restoreHearts, maxHearts, getHideConfig, swimSpeedMultiplier, moveSpeedMultiplier, toggleDayNight, drawHUD, setHomeButtonVisible, tryEatFromHud, getIconRow: ensureIconRow,
-    topInset, fullViewH, buyUpgrade, canUpgrade, addStat, addPlayTime, claimPageReward,
+    topInset, fullViewH, buyUpgrade, canUpgrade, addStat, addPlayTime, claimPageReward, grantBankedCoins,
     attachSlot, getSaveData, persist,
     hasSkill, FINDS: CONFIG.finds, randomFindIndex,
     SHOP_CATEGORIES, getShopItems: () => CONFIG.shop.items, buyCosmetic, equipCosmetic, unequipCategory, ownsCosmetic, equippedIn, getEquippedColorTint, drawEquippedCosmetics,

@@ -18,6 +18,11 @@
     // Outdoor campfire (upgrades 9 and 10): center in world px relative to the island center, drawn
     // size, collision radius, and the lit animation's speed (frames/sec; the sheet has 6 frames).
     campfire: { x: -135, y: 120, size: 72, radius: 18, fps: 8 },
+    // Other outdoor pieces (offsets from the island center; stones are offsets from the hut's wall base).
+    // stones: a path from the door south to the water. garden: right of the hut. onewheel: left of it.
+    stones: { size: 72, ys: [60, 120] },
+    garden: { x: 190, y: 20, size: 96, radius: 34 },
+    onewheel: { x: -165, y: 45, w: 90, radius: 20 },
     // Clickable furniture (tap/click). hitPad = art px added around each hit area for fingers.
     // The turtle must be within nearbyPx (art px) of an item to use it, else a "Come closer" hint
     // shows (the same distance shows the "Tap" prompt). A press only counts as a tap if it moves < tapMaxMovePx and ends
@@ -45,15 +50,18 @@
     { id: 'doormat', name: 'Doormat',        layer: '03_doormat_192.png',          cost: 40, unlocks: ['moveSpeed1'],             perk: 'Move Speed I',               solids: [] },
     { id: 'window',  name: 'Window',         layer: null,                          cost: 45, unlocks: ['dayNight'],             perk: 'Day/Night',                  solids: [], hotspot: { rect: [74, 10, 118, 36], action: 'daynight' } }, // art is in the base room image; no layer
     { id: 'shelf',   name: 'Shelf',          layer: '05_shelf_192.png',            cost: 60, unlocks: ['collectionBook'],         perk: 'Collection Book',            solids: [], hotspot: { rect: [130, 17, 178, 36], action: 'book' } },
-    { id: 'plant',   name: 'Plant',          layer: '06_plant_192.png',            cost: 75, unlocks: ['moveSpeed2'],             perk: 'Move Speed II',              solids: [{ circle: [30, 158, 9] }] },
-    { id: 'lantern', name: 'Lantern',        layer: '07_lantern_192.png',          cost: 95, unlocks: ['swimSpeed2'],             perk: 'Swim Speed II',               solids: [] },
-    { id: 'rug',     name: 'Rug',            layer: '02_rug_192.png',              cost: 120, unlocks: [],                       perk: 'Decor',                      solids: [] },
+    { id: 'plant',   name: 'Plant',          layer: '06_plant_192.png',            cost: 75, unlocks: ['minigame'],              perk: 'Mini game',                  solids: [{ circle: [30, 158, 9] }], hotspot: { rect: [18, 142, 42, 168], action: 'minigame' } },
+    { id: 'lantern', name: 'Lantern',        layer: '07_lantern_192.png',          cost: 95, unlocks: ['moveSpeed2'],             perk: 'Move Speed II',               solids: [] },
+    { id: 'rug',     name: 'Rug',            layer: '02_rug_192.png',              cost: 120, unlocks: ['swimSpeed2'],             perk: 'Swim Speed II',              solids: [] },
   ];
   // Outdoor upgrades come after the hut items (levels 9-10): the campfire next to the hut, first
   // unlit, then lit (animated) with Hide in Shell. Drawn on the island, not in the room.
   const OUTDOOR = [
     { id: 'campfireUnlit', name: 'Campfire Pit', cost: 150, unlocks: [],              perk: 'A place for a fire' },
     { id: 'campfireLit',   name: 'Campfire',     cost: 190, unlocks: ['hideInShell'], perk: 'Hide in Shell' },
+    { id: 'stones',        name: 'Stepping Stones', cost: 230, unlocks: [],            perk: 'A path to the water' },
+    { id: 'garden',        name: 'Garden Bed',   cost: 280, unlocks: ['slowHunger'],  perk: 'Slower hunger' },
+    { id: 'onewheel',      name: 'One Wheel',    cost: 340, unlocks: ['moveSpeed3'],  perk: 'Move Speed III' },
   ];
   const HUT = { id: 'hut', name: 'Hut', cost: 15, unlocks: [], perk: 'A home of your own' }; // level 1
   const UPGRADES = [HUT].concat(INDOOR, OUTDOOR); // everything the shop's Home row sells, in order
@@ -78,6 +86,9 @@
   function load(src) { const i = new Image(); i.onload = rebuildRoom; i.src = src; return i; }
   const hutImg = load('assets/home/hut_exterior_192.png');
   const fireUnlitImg = load('assets/home/campfire_unlit_64.png');
+  const stonesImg = load('assets/home/stepping_stones_64.png');
+  const gardenImg = load('assets/home/garden_bed_128.png');
+  const onewheelImg = load('assets/home/onewheel_128.png'); // photo cutout, drawn smoothed
   const fireLitImg = load('assets/home/campfire_spritesheet.png'); // 6 frames of 64x64
   const mapImg = load('assets/home/map_64.png');
   const bibleClosedImg = load('assets/home/bible_closed_64.png');
@@ -132,7 +143,8 @@
   const level = () => Math.min(window.Progression.state.homeLevel, UPGRADES.length);
   const hutBuilt = () => level() >= 1;
   const indoorCount = () => clamp(level() - 1, 0, INDOOR.length);              // INDOOR items unlocked
-  const fireStage = () => clamp(level() - 1 - INDOOR.length, 0, OUTDOOR.length); // 0 none, 1 pit, 2 lit
+  const outdoorCount = () => clamp(level() - 1 - INDOOR.length, 0, OUTDOOR.length); // OUTDOOR items unlocked, in order
+  const fireStage = () => Math.min(outdoorCount(), 2); // 0 none, 1 pit, 2 lit
   function syncUnlocked() {
     const n = indoorCount();
     roomSolids.length = 0;
@@ -230,7 +242,7 @@
 
 
   // ---- Clickable furniture + sleeping ----
-  const ACTIONS = { sleep: startSleep, closet: openCloset, book: openBook, bible: () => { bibleOpen = true; rebuildRoom(); }, daynight: () => window.Progression.toggleDayNight() };
+  const ACTIONS = { sleep: startSleep, closet: openCloset, book: openBook, bible: () => { bibleOpen = true; rebuildRoom(); }, daynight: () => window.Progression.toggleDayNight(), minigame: openMinigame };
   const sleep = { phase: 0, t: 0, dim: 0, msg: '', full: false }; // phase: 0 none, 1 fading to dark, 2 asleep, 3 waking
   const hint = { text: '', timer: 0 };
   let lastSleepAt = -1;
@@ -306,7 +318,7 @@
   let scene = 'world';   // 'world' | 'interior' — which one is drawn/simulated
   let phase = 0;         // 0 = none, 1 = fading to black, 2 = fading back in
   let alpha = 0, pending = null;
-  let fireX = 0, fireY = 0;
+  let fireX = 0, fireY = 0, gardenX = 0, gardenY = 0, wheelX = 0, wheelY = 0;
   const solids = [];     // world-space copies of HUT_SOLIDS
   const trigger = [0, 0, 0, 0];
   const room = { x: 0, y: 0, vx: 0, vy: 0, angle: -Math.PI / 2, speed: 0 }; // room (art px) coords
@@ -324,6 +336,8 @@
     trigger[2] = wx(DOOR_TRIGGER[2]); trigger[3] = wy(DOOR_TRIGGER[3]);
     bindPointer();
     fireX = o.center.x + CONFIG.campfire.x; fireY = o.center.y + CONFIG.campfire.y;
+    gardenX = o.center.x + CONFIG.garden.x; gardenY = o.center.y + CONFIG.garden.y;
+    wheelX = o.center.x + CONFIG.onewheel.x; wheelY = o.center.y + CONFIG.onewheel.y;
   }
 
   const clamp = (v, lo, hi) => v < lo ? lo : v > hi ? hi : v;
@@ -353,6 +367,8 @@
   function collideWorld(t, r) {
     if (hutBuilt()) for (const b of solids) pushOutRect(t, r, b[0], b[1], b[2], b[3]);
     if (fireStage() > 0) pushOutCircle(t, r, fireX, fireY, CONFIG.campfire.radius); // campfire (pit or lit)
+    if (outdoorCount() >= 4) pushOutCircle(t, r, gardenX, gardenY, CONFIG.garden.radius);
+    if (outdoorCount() >= 5) pushOutCircle(t, r, wheelX, wheelY, CONFIG.onewheel.radius);
   }
   function startFade(swap) { phase = 1; alpha = 0; pending = swap; }
   function enterSwap() {
@@ -434,10 +450,21 @@
   // Flat ground-level pieces on the island, drawn under the turtle/scenery (so no depth sorting): the
   // outdoor campfire. `t` is real time in seconds (drives the flame animation).
   function drawGround(ctx, t) {
-    const stage = fireStage();
-    if (stage === 0) return;
-    const c = CONFIG.campfire, x = fireX - c.size / 2, y = fireY - c.size / 2;
+    const stage = fireStage(), n = outdoorCount(), ok = i => i.complete && i.naturalWidth;
     ctx.imageSmoothingEnabled = false;
+    if (n >= 3 && ok(stonesImg)) { // stepping stones from the door down to the water
+      const c = CONFIG.stones;
+      for (const dy of c.ys) ctx.drawImage(stonesImg, hutX - c.size / 2, hutY + dy - c.size / 2, c.size, c.size);
+    }
+    if (n >= 4 && ok(gardenImg)) { const c = CONFIG.garden; ctx.drawImage(gardenImg, gardenX - c.size / 2, gardenY - c.size / 2, c.size, c.size); }
+    if (n >= 5 && ok(onewheelImg)) {
+      const c = CONFIG.onewheel, h = c.w * onewheelImg.naturalHeight / onewheelImg.naturalWidth;
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(onewheelImg, wheelX - c.w / 2, wheelY - h / 2, c.w, h);
+      ctx.imageSmoothingEnabled = false;
+    }
+    if (stage === 0) { ctx.imageSmoothingEnabled = true; return; }
+    const c = CONFIG.campfire, x = fireX - c.size / 2, y = fireY - c.size / 2;
     if (stage === 2) { // lit
       if (fireLitImg.complete && fireLitImg.naturalWidth) ctx.drawImage(fireLitImg, (Math.floor(t * c.fps) % 6) * 64, 0, 64, 64, x, y, c.size, c.size);
     } else if (fireUnlitImg.complete && fireUnlitImg.naturalWidth) ctx.drawImage(fireUnlitImg, x, y, c.size, c.size);
@@ -539,7 +566,7 @@
   // "Buy & wear" spends banked coins. Opening it pauses the room; Close, the backdrop, Escape and the
   // browser Back button all close it. ----
   const CLOSET_SLOTS = [['color', 'Shell color'], ['hat', 'Hats'], ['clothes', 'Clothes'], ['accessory', 'Accessories']];
-  let modal = false, closet = null, book = null, screenPushed = false, pick = null, bookPage = 0;
+  let modal = false, closet = null, book = null, minigame = null, screenPushed = false, pick = null, bookPage = 0;
   function closetTile(item, coins) {
     const P = window.Progression, owned = P.ownsCosmetic(item.id), on = P.equippedIn(item.category) === item.id;
     let art;
@@ -601,15 +628,37 @@
     try { history.pushState({ ttCloset: 1 }, ''); screenPushed = true; } catch { screenPushed = false; } // so Back closes it
   }
   function closeScreen(fromPop) { // closes whichever full-screen panel (closet / collection book) is open
-    if (!closet && !book) return;
+    if (!closet && !book && !minigame) return;
     if (closet) { closet.remove(); closet = null; if (window.TT_SOUND) window.TT_SOUND.door(); } // lid shuts
+    if (minigame) { minigame.remove(); minigame = null; } // closing returns to the hut (the room was only paused)
     if (book) { book.remove(); book = null; if (window.TT_SOUND) window.TT_SOUND.bookClose(); }
     modal = false;
     if (screenPushed && !fromPop) { screenPushed = false; try { history.back(); } catch {} }
     screenPushed = false;
   }
   window.addEventListener('popstate', () => closeScreen(true));
-  window.addEventListener('keydown', e => { if (e.key === 'Escape' && (closet || book)) closeScreen(); });
+  window.addEventListener('keydown', e => { if (e.key === 'Escape' && (closet || book || minigame)) closeScreen(); });
+
+  // ---- Plant mini game (PLACEHOLDER): tap the plant -> a stub screen; "Finish" pays a flat reward into the
+  // bank and returns to the hut. TODO: replace the stub body with the real mini game. ----
+  const MINIGAME_REWARD_COINS = 5; // placeholder payout
+  function openMinigame() {
+    closeScreen();
+    modal = true;
+    const wrap = document.createElement('div');
+    wrap.className = 'tt-name-prompt';
+    wrap.innerHTML = `<div class="tt-name-box tt-upgrade-box">
+      <h3>Mini game</h3><p>Placeholder: the real game goes here.</p>
+      <div class="tt-name-actions"><button type="button" class="tt-upgrade-buy tt-mg-done">Finish (+${MINIGAME_REWARD_COINS} coins)</button><button type="button" class="tt-cancel tt-closet-close">Quit</button></div>
+    </div>`;
+    document.body.appendChild(wrap);
+    minigame = wrap;
+    wrap.addEventListener('click', e => {
+      if (e.target.closest('.tt-mg-done')) { window.Progression.grantBankedCoins(MINIGAME_REWARD_COINS); if (window.TT_SOUND) window.TT_SOUND.coin(); closeScreen(); }
+      else if (e.target.closest('.tt-closet-close')) closeScreen();
+    });
+    try { history.pushState({ ttMinigame: 1 }, ''); screenPushed = true; } catch { screenPushed = false; }
+  }
 
   // ---- Collection book (shelf): the 25 finds as pages (Common / Rare / Very Rare) plus a stats page.
   // Found items show their picture, name and how many have been banked; the rest are dark silhouettes
