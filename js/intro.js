@@ -956,6 +956,10 @@
       drawButton(L.play, 'PLAY', true);
       drawMenuTurtle(t); // after the button so the turtle walks over it
       drawMuteIcon(L.mute, soundOn);
+      // TEMP diagnostic for the iOS bottom-bar bug — remove once fixed.
+      ctx.save(); ctx.font = '12px monospace'; ctx.fillStyle = '#000'; ctx.textAlign = 'left';
+      ctx.fillText(`inner ${innerWidth}x${innerHeight} screen ${screen.width}x${screen.height} view ${viewW}x${viewH} top ${window.Progression.topInset()} sa ${navigator.standalone} cvs ${canvas.clientHeight}`, 6, viewH * 0.3);
+      ctx.restore();
     },
   };
 
