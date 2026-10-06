@@ -1030,7 +1030,7 @@
     wrap.addEventListener('click', e => { if (e.target === wrap) closeUpgradePanel(); }); // click outside the box closes
   }
   function closeUpgradePanel() {
-    if (upgradePanel) { upgradePanel.remove(); upgradePanel = null; }
+    if (upgradePanel) { upgradePanel.remove(); upgradePanel = null; if (window.Home) window.Home.refreshInterior(); } // indoors: new hut items pop in as the shop closes
   }
 
   window.Progression = {

@@ -696,7 +696,7 @@
   });
 
   window.Home = {
-    syncFromSave: syncUnlocked, hasFeature, hutBuilt, UPGRADES,
+    syncFromSave: syncUnlocked, refreshInterior: () => { if (scene === 'interior' && builtLevel !== level()) startPops(); }, hasFeature, hutBuilt, UPGRADES,
     init, tick, collideWorld, checkDoor, updateAmbient, layout, drawRoom, drawFade, drawGround, drawSleepDim, drawMessages, hutEntry, room,
     TURTLE_SCALE: CONFIG.roomTurtleScale, SLEEP_SCALE: CONFIG.sleep.scale, bedSpot: BED_SPOT,
     isAsleep: () => sleep.phase === 2,
