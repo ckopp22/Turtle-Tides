@@ -237,17 +237,21 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
   // Returns the fraction (0..1) of the intended step actually travelled.
   function steerMove(e, ux, uy, step) {
     const look = e.cfg.bodyRadius * 1.2 + step;
-    let hx = ux, hy = uy, found = clearAhead(e, ux, uy, step, look);
+    // While committed to a steer (steerT > 0) skip the direct heading, so it doesn't flip between "blocked" and
+    // "clear" every frame at a wall edge (that was the shaking).
+    const committed = e.steerT > 0 && e.steer !== 0;
+    let hx = ux, hy = uy, found = !committed && clearAhead(e, ux, uy, step, look);
     if (!found) {
       const first = e.steer || (Math.random() < 0.5 ? 1 : -1);
       for (let i = 1; i < STEER_COS.length && !found; i++) {
         for (let k = 0; k < 2 && !found; k++) {
           const sg = k === 0 ? first : -first, c = STEER_COS[i], sn = STEER_SIN[i] * sg;
           hx = ux * c - uy * sn; hy = ux * sn + uy * c;
-          if (clearAhead(e, hx, hy, step, look)) { found = true; e.steer = sg; e.steerT = 0.8; }
+          if (clearAhead(e, hx, hy, step, look)) { found = true; e.steer = sg; if (!committed) e.steerT = 0.5; }
         }
       }
     }
+    if (!found && committed) { e.steerT = 0; return steerMove(e, ux, uy, step); } // nothing clear while committed: re-evaluate fresh
     if (!found) { const ox = e.x, oy = e.y; tryMove(e, ux * step, uy * step); return step > 0 ? Math.hypot(e.x - ox, e.y - oy) / step : 1; }
     e.x += hx * step; e.y += hy * step;
     if (e.cfg.flipsSideways) { if (Math.abs(hx) > 0.2) e.flip = hx > 0 ? 1 : -1; }
