@@ -4,15 +4,16 @@ html, body {
   height: 100vh;  /* fallback for browsers without dvh */
   height: 100dvh; /* tracks mobile address-bar collapse so nothing gaps/cuts off */
   overflow: hidden;
-  background: #0b3d4f;
+  background: #1f7fa0; /* water blue, so any sliver the canvas misses blends in */
   overscroll-behavior: none;
 }
 #game {
   display: block;
   position: fixed; /* inset:0 reaches the very bottom (home-indicator area) in iOS standalone, where innerHeight can fall short */
-  inset: 0;
+  top: 0; left: 0;
   width: 100%;
-  height: 100%;
+  height: 100vh;  /* fallbacks: 100vh / 100lvh are the full screen in iOS standalone, even when 100% (the layout viewport) stops short of the home indicator */
+  height: 100lvh;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
