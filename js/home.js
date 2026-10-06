@@ -87,7 +87,7 @@
   const hutImg = load('assets/home/hut_exterior_192.png');
   const fireUnlitImg = load('assets/home/campfire_unlit_64.png');
   const stonesImg = load('assets/home/stepping_stones_64.png');
-  const gardenImg = load('assets/home/garden_bed_128.png');
+  const gardenImg = load('assets/home/garden_bed_128.png?v=2');
   const onewheelImg = load('assets/home/onewheel_128.png'); // photo cutout, drawn smoothed
   const fireLitImg = load('assets/home/campfire_spritesheet.png'); // 6 frames of 64x64
   const mapImg = load('assets/home/map_64.png');
