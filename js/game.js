@@ -163,7 +163,7 @@
     turtle, center: CENTER, bodyRadius: TURTLE_BODY_RADIUS,
     maxSpeed: MAX_SPEED * LAND_SPEED_MULT, accel: ACCEL, decel: DECEL,
     onEnter: () => { if (window.Enemies) window.Enemies.resetAggro(); }, // chasers give up when the turtle goes inside
-    onEnterInterior: () => { window.Progression.setHomeButtonVisible(false); setCompassShown(false); }, // hide the island's shop buttons indoors (they reappear on the first outdoor frame)
+    onEnterInterior: () => { window.Progression.setHomeButtonVisible(true); setCompassShown(false); }, // shop (upgrades) icon stays available indoors; only the compass hides
   });
   // ---- Compass: DOM HUD element (in the shop icon's slot) whose turtle needle points at the hut door.
   // Heading is re-checked ~10x/s from update(); the DOM is only touched when the frame or visibility changes.
