@@ -195,7 +195,7 @@
   // Per-file WebAudio gain (default 0.6); the clip.volume values only apply to the <audio> fallback.
   const PICKUP_GAIN = { 'bag.m4a': 1.4, 'coin.mp3': 0.2, 'sand.mp3': 1.2, 'stomp.mp3': 1.2,
     'door.mp3': 0.8, 'creak.mp3': 0.5, 'snore.mp3': 0.7, 'book-open.mp3': 0.6, 'book-page.mp3': 0.6, 'book-close.mp3': 0.6,
-    'eagle.mp3': 0.7, 'snake.mp3': 0.7, 'bear.mp3': 0.8, 'stick-snap.mp3': 0.7 };
+    'eagle.mp3': 0.7, 'snake.mp3': 0.7, 'bear.mp3': 0.8, 'stick-snap.mp3': 0.7, 'wolf-howl.mp3': 0.7, 'wolf-bark.mp3': 0.7 };
   // maxLen (seconds, optional) plays only that much of the clip from its first audible sample, with a short fade-out.
   // gainMul (optional) scales the file's gain, e.g. for distance falloff on enemy cries.
   function playPickup(file, clip, maxLen, when, gainMul) {
@@ -339,11 +339,11 @@
   // Hut + creature SFX (assets/sfx): creak (the chest opening), door (the chest closing), snore (sleeping in
   // the bed), book-open/page/close (collection book), fire (campfire loop, volume by distance), eagle/snake/
   // bear (a seagull/snake/bear starts chasing), stick-snap (a crab attacks). Played as decoded buffers via playPickup.
-  const HUT_SFX = { door: 'door', creak: 'creak', snore: 'snore', bookOpen: 'book-open', bookPage: 'book-page', bookClose: 'book-close', eagle: 'eagle', snake: 'snake', bear: 'bear', stick: 'stick-snap' };
+  const HUT_SFX = { door: 'door', creak: 'creak', snore: 'snore', bookOpen: 'book-open', bookPage: 'book-page', bookClose: 'book-close', eagle: 'eagle', snake: 'snake', bear: 'bear', stick: 'stick-snap', wolfHowl: 'wolf-howl', wolfBark: 'wolf-bark' };
   const hutClips = {}; // <audio> fallbacks for before the decoded buffers are ready
   for (const k in HUT_SFX) { const a = gAudio(`assets/sfx/${HUT_SFX[k]}.mp3`); a.volume = 0.6; hutClips[k] = a; }
-  const ENEMY_SFX = { seagull: 'eagle', snake: 'snake', bear: 'bear' }; // enemy type -> sound when it starts chasing
-  const ENEMY_ATTACK_SFX = { crab: 'stick' };                              // enemy type -> sound when it attacks
+  const ENEMY_SFX = { seagull: 'eagle', snake: 'snake', bear: 'bear', wolf: 'wolfHowl' }; // enemy type -> sound when it starts chasing
+  const ENEMY_ATTACK_SFX = { crab: 'stick', wolf: 'wolfBark' };                              // enemy type -> sound when it attacks
   const enemyLast = {};  // enemy type -> last cry/attack sound time (ms), so a pack doesn't sound off at once
   const ENEMY_CRY_GAP_MS = 1500;
   const fireLoop = { buf: null, src: null, gain: null };

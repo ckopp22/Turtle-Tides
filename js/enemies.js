@@ -88,6 +88,16 @@
         rows: { idle: 0, walk: 1, attack: 2, fly: 3 }, // attack = peck
         debugKey: '8',
       },
+      wolf: {
+        sheet: 'assets/enemies/wolf_spritesheet.png',
+        biomes: ['forestOpen', 'deadTrees', 'forestThick', 'beach'], count: 4, // one pack slot per biome, so wolves are in all 4
+        nocturnal: true,     // only exists at night; the day/night toggle removes it, and it ignores the live-enemy caps
+        speed: 0.9, detect: 6, attackRange: 1,
+        damage: 1, windup: 0.35, attackTime: 0.7, cooldown: 1.4,
+        bodyRadius: 20,
+        rows: { idle: 0, walk: 1, attack: 2, sleep: 3 }, // howl on notice (TT_SOUND.enemy), bark on attack (TT_SOUND.enemyAttack)
+        debugKey: '9',
+      },
     },
   };
 
@@ -135,7 +145,7 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
       type, cfg: type ? CONFIG.types[type] : null, active: false, respawnAt, debug: false, pool: 'home',
       x: 0, y: 0, sx: 0, sy: 0, biome: '', state: WANDER, t: 0, anim: 0, row: 0, frame: 0,
       tx: 0, ty: 0, hasTarget: false, pause: 0, flip: 1, angle: 0, cd: 0, giveUp: 0, steer: 0, steerT: 0, dodge: 0, dodgeT: 0, flank: 0, atkAngle: 0, acc: 0,
-      lose: 0, stuck: 0, unreach: 0, path: null, pi: 0, pathLen: 0, replans: 0, hiddenFor: 0, emergeToChase: false, hitDone: false,
+      lose: 0, stuck: 0, unreach: 0, nightSleep: false, want: '', path: null, pi: 0, pathLen: 0, replans: 0, hiddenFor: 0, emergeToChase: false, hitDone: false,
       proxy: null,
     };
     // Depth-sort entry: game.js's scenery sort wants {x, y (ground contact), type:'custom', draw}.
@@ -148,16 +158,17 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
     playerSpeed = api.basePlayerSpeed;
     for (const k in CONFIG.types) {
       const img = new Image(); img.src = CONFIG.types[k].sheet; sheets[k] = img;
-      for (let i = 0; i < CONFIG.types[k].count && pool.length < CONFIG.maxTotal; i++) pool.push(makeSlot(k, CONFIG.graceSeconds));
+      for (let i = 0; i < CONFIG.types[k].count && (CONFIG.types[k].nocturnal || countPool('home') < CONFIG.maxTotal); i++) { const e = makeSlot(k, CONFIG.graceSeconds); e.want = pickBiome(k, i); pool.push(e); }
     }
     adv = a.adventure || null;
     if (adv) { // Adventure Zone pool: idle (never spawns, never simulated) until game.js calls setAdventure(true)
       buildAdventureTypes(adv);
-      for (const k in CONFIG.types) for (let i = 0; i < adv.countPerType && countPool('adv') < adv.maxTotal; i++) { const e = makeSlot(k, Infinity); e.pool = 'adv'; pool.push(e); }
+      for (const k in CONFIG.types) for (let i = 0; i < adv.countPerType && (CONFIG.types[k].nocturnal || countPool('adv') < adv.maxTotal); i++) { const e = makeSlot(k, Infinity); e.pool = 'adv'; e.want = pickBiome(k, i); pool.push(e); }
     }
     if (DEBUG) for (let i = 0; i < 4; i++) pool.push(makeSlot(null, 0));
     nearList.length = pool.length;
   }
+  const pickBiome = (k, i) => { const c = CONFIG.types[k]; return c.biomes ? c.biomes[i % c.biomes.length] : c.biome; }; // slot i's home biome
   function countPool(which) { let n = 0; for (const e of pool) if (e.pool === which) n++; return n; }
   // The zone opens (first spawns after the usual grace period) or closes (everything in it is removed, nothing simulated).
   function setAdventure(on) {
@@ -175,7 +186,7 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
     e.type = type; e.active = true;
     e.cfg = adv && !api.inHomeZone(x, y) ? ADV_TYPES[type] : CONFIG.types[type]; // stats follow where it spawned
     e.x = e.sx = x; e.y = e.sy = y; e.biome = biome;
-    e.state = WANDER; e.t = 0; e.anim = 0; e.hasTarget = false; e.pause = rnd(0.5, 2);
+    e.state = WANDER; e.t = 0; e.anim = 0; e.hasTarget = false; e.pause = rnd(0.5, 2); e.nightSleep = false;
     e.cd = 0; e.steer = 0; e.steerT = 0; e.dodge = 0; e.dodgeT = 0; e.giveUp = 0; e.lose = 0; e.stuck = 0; e.unreach = 0; e.flip = Math.random() < 0.5 ? 1 : -1;
   }
 
@@ -195,9 +206,10 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
       const tx = x - T.x, ty = y - T.y;
       if (tx * tx + ty * ty < minTurtle2) continue;
       if (!api.walkable(x, y) || api.inSandText(x, y)) continue;
-      if (api.biomeAt(x, y) !== c.biome) continue;
+      const want = e.want || c.biome;
+      if (api.biomeAt(x, y) !== want) continue;
       if (api.blockedAt(x, y, c.bodyRadius + 10)) continue;
-      placeEnemy(e, e.type, x, y, c.biome);
+      placeEnemy(e, e.type, x, y, want);
       return true;
     }
     return false;
@@ -206,14 +218,17 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
   function updateSpawner() {
     if (now < nextSpawnTry) return;
     nextSpawnTry = now + CONFIG.spawnTickSeconds;
+    const night = api.isNight();
     let liveHome = 0, liveAdv = 0;
-    for (const e of pool) if (e.active) { if (e.pool === 'adv') liveAdv++; else liveHome++; }
+    for (const e of pool) if (e.active && !e.cfg.nocturnal) { if (e.pool === 'adv') liveAdv++; else liveHome++; }
     let spawned = 0, failed = 0;
     for (const e of pool) {
       if (e.active || !e.type || e.debug || now < e.respawnAt) continue;
-      if (e.pool === 'adv') { if (!advOn || liveAdv >= adv.maxTotal) continue; }
-      else if (liveHome >= CONFIG.maxTotal) continue;
-      if (trySpawn(e)) { if (e.pool === 'adv') liveAdv++; else liveHome++; if (++spawned >= CONFIG.spawnsPerTick) return; }
+      const noct = e.cfg.nocturnal;
+      if (noct && !night) continue; // wolves only spawn at night
+      if (e.pool === 'adv') { if (!advOn || (!noct && liveAdv >= adv.maxTotal)) continue; }
+      else if (!noct && liveHome >= CONFIG.maxTotal) continue;
+      if (trySpawn(e)) { if (!noct) { if (e.pool === 'adv') liveAdv++; else liveHome++; } if (++spawned >= CONFIG.spawnsPerTick) return; }
       else if (++failed >= CONFIG.spawnFailsPerTick) { nextSpawnTry = now + CONFIG.spawnRetrySeconds; return; } // a few misses per pass, then wait
     }
   }
@@ -407,6 +422,15 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
     const dx = T.x - e.x, dy = T.y - e.y, d2 = dx * dx + dy * dy;
     // Enemies ignore the turtle on the home island (safe zone), while it's dying, and right after giving up.
     const canSee = alive && !safe && e.giveUp <= 0;
+    // Night: every animal but the wolf is asleep (burrowed crab) and never notices the turtle; at dawn they wake normally.
+    if (!c.nocturnal) {
+      if (api.isNight()) {
+        if (!e.nightSleep) {
+          e.nightSleep = true; e.emergeToChase = false; e.hiddenFor = Infinity;
+          if (c.burrowTime) { if (e.state !== HIDDEN && e.state !== BURROW) setState(e, BURROW); } else setState(e, SLEEP);
+        }
+      } else if (e.nightSleep) { e.nightSleep = false; e.hiddenFor = 0; }
+    }
     const chaseSpeed = c.speed * playerSpeed, wanderSpeed = chaseSpeed * CONFIG.wanderSpeedMult;
 
     switch (e.state) {
@@ -459,7 +483,7 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
       }
       case HIDDEN: { // ambush: only reacts when the turtle gets very close (after the minimum hide time)
         e.row = R.burrow; e.frame = FRAMES - 1; // last burrow frame = just the eyes
-        if (canSee && e.t >= c.cooldown && d2 < c.ambush2) { e.emergeToChase = true; setState(e, EMERGE); }
+        if (canSee && !e.nightSleep && e.t >= c.cooldown && d2 < c.ambush2) { e.emergeToChase = true; setState(e, EMERGE); }
         else if (e.t >= e.hiddenFor) { e.emergeToChase = false; setState(e, EMERGE); }
         return;
       }
@@ -472,15 +496,15 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
         return;
       }
       case SLEEP: { // bear: lies down; notices the turtle only at a reduced radius, then takes a moment to wake
-        e.row = R.sleep; e.frame = Math.floor(e.t * 3) % FRAMES;
-        if (canSee && d2 < c.sleepDetect2) { e.emergeToChase = true; setState(e, WAKE); }
+        e.row = R.sleep !== undefined ? R.sleep : R.idle; e.frame = R.sleep !== undefined ? Math.floor(e.t * 3) % FRAMES : 0; // seagull has no sleep row: stands still
+        if (canSee && !e.nightSleep && d2 < c.sleepDetect2) { e.emergeToChase = true; setState(e, WAKE); }
         else if (e.t >= e.hiddenFor) { e.emergeToChase = false; setState(e, WAKE); }
         return;
       }
       case WAKE: {
-        if (e.t < c.wakeTime * 0.5) { e.row = R.sleep; e.frame = Math.floor(e.t * 3) % FRAMES; }
+        if (e.t < c.wakeTime * 0.5 && R.sleep !== undefined) { e.row = R.sleep; e.frame = Math.floor(e.t * 3) % FRAMES; }
         else { e.row = R.idle; e.frame = Math.floor(e.anim * 5) % FRAMES; }
-        if (e.t >= c.wakeTime) {
+        if (e.t >= (c.wakeTime || 1)) {
           if (e.emergeToChase && canSee) startChase(e);
           else { setState(e, WANDER); e.pause = rnd(0.5, 1.5); }
         }
@@ -555,9 +579,11 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
     const act = CONFIG.activeScreens * Math.max(v.w, v.h), act2 = act * act;
     const far = CONFIG.farScreens * Math.max(v.w, v.h), far2 = far * far;
     const safe = api.isHomeIsland(T.x, T.y), alive = api.turtleAlive();
+    const night = api.isNight();
     let nn = 0;
     for (const e of pool) {
       if (!e.active) continue;
+      if (e.cfg.nocturnal && !night) { e.active = false; e.respawnAt = now + 2; continue; } // dawn: wolves vanish
       const dx = T.x - e.x, dy = T.y - e.y;
       if (dx * dx + dy * dy > act2) continue; // far away: frozen, costs nothing
       nearList[nn++] = e;

@@ -2411,6 +2411,7 @@
     biomeAt: (x, y) => dominantBiome(x, y).biome, // allocates; only called when spawning / picking wander targets
     view: () => { viewRect.x = camX; viewRect.y = camY; viewRect.w = viewW / ZOOM; viewRect.h = viewH / ZOOM; return viewRect; },
     turtleAlive: () => deathTimer < 0,
+    isNight: () => window.Progression.state.isNight, // wolves out, everything else asleep
     takeHit: n => {
       if (state === 'shell') return false; // a turtle tucked into its shell takes no enemy damage
       const r = window.Progression.takeHit(n);
