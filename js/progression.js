@@ -740,6 +740,7 @@
       const portrait = window.innerHeight >= window.innerWidth;
       h = Math.max(h, portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height));
     }
+    if (standalone) document.documentElement.style.setProperty('--full-h', h + 'px');
     canvas.style.height = standalone ? h + 'px' : '';
     return h;
   }

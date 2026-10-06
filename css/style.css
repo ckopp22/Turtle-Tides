@@ -18,7 +18,13 @@ html, body {
   -webkit-user-select: none;
   -webkit-touch-callout: none;
 }
-/* TODO: once HUD elements exist, inset them with env(safe-area-inset-*) to clear notches/rounded corners. */
+/* iOS home-screen app launches with a layout viewport ~one top-inset short (innerHeight 793 on an 852 screen)
+   and clips overflow:hidden content to it, leaving a bar at the bottom until a rotation. In standalone, make
+   the page exactly the real screen height (--full-h, set from JS) and let it overflow the short viewport. */
+@media (display-mode: standalone) {
+  html, body { height: var(--full-h, 100dvh); overflow: visible; }
+  #game { position: absolute; top: 0; left: 0; height: var(--full-h, 100%); }
+}
 
 /* Save-slot naming overlay (intro.js) — the only DOM UI in the game, used for text entry since a
    real <input> gets IME/mobile-keyboard support a canvas text field can't. */
