@@ -512,7 +512,7 @@
   function resize() {
     if (currentScene === SCENES.GAME_HANDOFF) return; // game.js owns the canvas size now (different dpr cap)
     dpr = window.devicePixelRatio || 1;
-    viewW = canvas.clientWidth || window.innerWidth; viewH = canvas.clientHeight || window.innerHeight;
+    viewW = canvas.clientWidth || window.innerWidth; viewH = window.Progression ? window.Progression.fullViewH(canvas) : window.innerHeight;
     canvas.width = Math.round(viewW * dpr);
     canvas.height = Math.round(viewH * dpr);
   }

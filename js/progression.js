@@ -731,6 +731,19 @@
     return insetProbe.offsetHeight;
   }
 
+  // Canvas height in CSS px. In an iOS home-screen app innerHeight / 100% stop short of the bottom
+  // (home-indicator area), so use the physical screen size there; in a browser tab use the real viewport.
+  function fullViewH(canvas) {
+    const standalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
+    let h = window.innerHeight;
+    if (standalone) {
+      const portrait = window.innerHeight >= window.innerWidth;
+      h = Math.max(h, portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height));
+    }
+    canvas.style.height = standalone ? h + 'px' : '';
+    return h;
+  }
+
   function drawHUD(ctx) {
     const pad = 14, innerPad = 12;
     // Panel widens once the "Turtle Master" badge replaces the "Lv N" home badge (that label is a
@@ -1049,7 +1062,7 @@
   window.Progression = {
     tryPickup, grantCarriedCoins, bankCarried, takeLostItems, takeHit, getStarveDim: () => starveDim, isInvulnerable, setRespawnHandler, setUpgradeHandler, setDeathHandler, respawnAtHome,
     update, restoreHearts, maxHearts, getHideConfig, swimSpeedMultiplier, moveSpeedMultiplier, toggleDayNight, drawHUD, setHomeButtonVisible, tryEatFromHud, getIconRow: ensureIconRow,
-    topInset, buyUpgrade, canUpgrade, addStat, addPlayTime, claimPageReward,
+    topInset, fullViewH, buyUpgrade, canUpgrade, addStat, addPlayTime, claimPageReward,
     attachSlot, getSaveData, persist,
     hasSkill, FINDS: CONFIG.finds, randomFindIndex,
     SHOP_CATEGORIES, getShopItems: () => CONFIG.shop.items, buyCosmetic, equipCosmetic, unequipCategory, ownsCosmetic, equippedIn, getEquippedColorTint, drawEquippedCosmetics,

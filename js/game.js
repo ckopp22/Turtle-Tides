@@ -2006,7 +2006,7 @@
     dpr = window.devicePixelRatio || 1;
     if (window.innerWidth <= 768 || Math.min(screen.width, screen.height) <= 768) dpr = Math.min(dpr, 1.5); // screen check: Chrome iOS can report a wide innerWidth // phones: 3x backing store made every full-screen blend ~9x costlier
     viewW = canvas.clientWidth || window.innerWidth;
-    viewH = canvas.clientHeight || window.innerHeight;
+    viewH = window.Progression.fullViewH(canvas);
     updateZoomForViewport();
     // Backing store scales up for retina sharpness; CSS size (set in style.css) stays at window size.
     canvas.width = Math.round(viewW * dpr);
