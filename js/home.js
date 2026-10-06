@@ -22,7 +22,7 @@
     // stones: a path from the door south to the water. garden: right of the hut. onewheel: left of it.
     stones: { size: 72, ys: [60, 120] },
     garden: { x: 190, y: 20, size: 96, radius: 34 },
-    onewheel: { x: -165, y: 45, w: 90, radius: 20 },
+    onewheel: { x: -165, y: 45, w: 75, radius: 20 },
     // Clickable furniture (tap/click). hitPad = art px added around each hit area for fingers.
     // The turtle must be within nearbyPx (art px) of an item to use it, else a "Come closer" hint
     // shows (the same distance shows the "Tap" prompt). A press only counts as a tap if it moves < tapMaxMovePx and ends
@@ -367,8 +367,6 @@
   function collideWorld(t, r) {
     if (hutBuilt()) for (const b of solids) pushOutRect(t, r, b[0], b[1], b[2], b[3]);
     if (fireStage() > 0) pushOutCircle(t, r, fireX, fireY, CONFIG.campfire.radius); // campfire (pit or lit)
-    if (outdoorCount() >= 4) pushOutCircle(t, r, gardenX, gardenY, CONFIG.garden.radius);
-    if (outdoorCount() >= 5) pushOutCircle(t, r, wheelX, wheelY, CONFIG.onewheel.radius);
   }
   function startFade(swap) { phase = 1; alpha = 0; pending = swap; }
   function enterSwap() {
