@@ -1969,7 +1969,7 @@
     if (turtle.y > bounds.y1 - m) { turtle.y = bounds.y1 - m; turtle.vy = 0; }
     if (!adventureUnlocked && hasInput && (turtle.x <= bounds.x0 + m + 0.5 || turtle.x >= bounds.x1 - m - 0.5 || turtle.y <= bounds.y0 + m + 0.5 || turtle.y >= bounds.y1 - m - 0.5) && gameTime - lastBumpHint > ADVENTURE.bumpHintSeconds) {
       lastBumpHint = gameTime; // pushing against the locked fence: say how to open the way
-      showToast('The way is fenced off. Buy the Table & Stools at home to open the new area.', 4200);
+      showToast('Lv 4 home unlocks the Adventure Woods', 4200);
     }
 
     // Re-check home status against this frame's final position (not the pre-movement one used
