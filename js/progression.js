@@ -738,9 +738,9 @@
     let h = window.innerHeight;
     if (standalone) {
       const portrait = window.innerHeight >= window.innerWidth;
-      h = Math.max(h, portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height), window.innerHeight + topInset());
+      h = Math.max(h, portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height));
     }
-    canvas.style.height = '';
+    canvas.style.height = standalone ? h + 'px' : '';
     return h;
   }
 
