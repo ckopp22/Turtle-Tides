@@ -1991,6 +1991,7 @@
     turtle.y += turtle.vy * dt;
     resolveObstacleCollisions();
     Home.collideWorld(turtle, TURTLE_BODY_RADIUS);
+    if (window.Enemies) window.Enemies.collideTurtle(turtle, TURTLE_BODY_RADIUS); // enemies are solid
 
     // World edge, or the fence while the Adventure Zone is locked.
     const m = adventureUnlocked ? TURTLE_RADIUS : FENCE_A;

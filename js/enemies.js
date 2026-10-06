@@ -676,6 +676,20 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
     }
   }
 
+  // Solid enemies: pushes the turtle out of any grounded enemy's body circle (burrowed crabs and airborne seagulls
+  // are skipped). game.js calls this each frame right after the obstacle/hut collisions.
+  function collideTurtle(t, r) {
+    for (const e of pool) {
+      if (!e.active || e.state === HIDDEN || e.state === BURROW || e.state === EMERGE || airborne(e)) continue;
+      const dx = t.x - e.x, dy = t.y - e.y, min = r + e.cfg.bodyRadius;
+      if (dx > min || dx < -min || dy > min || dy < -min) continue;
+      const d2 = dx * dx + dy * dy;
+      if (d2 >= min * min) continue;
+      const d = Math.sqrt(d2) || 0.001, k = (min - d) / d;
+      t.x += (d2 < 1e-6 ? 1 : dx) * k; t.y += (d2 < 1e-6 ? 0 : dy) * k;
+    }
+  }
+
   // After the turtle respawns at home, every chasing enemy goes back to wandering.
   function resetAggro() {
     for (const e of pool) {
@@ -813,5 +827,5 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
   }
   const statsBuf = { home: 0, adv: 0, near: 0 };
   function stats() { statsBuf.home = statsBuf.adv = 0; for (const e of pool) if (e.active) { if (e.pool === 'adv') statsBuf.adv++; else statsBuf.home++; } statsBuf.near = nearCount; return statsBuf; } // ?debug=1 overlay
-  window.Enemies = { init, update, setAdventure, stats, nearDen, resetAggro, collectVisible, drawSwipes, drawDebug, CONFIG, get pool() { return DEBUG ? pool : null; }, get api() { return DEBUG ? api : null; } }; // pool/api only exposed with ?debug=1, for console poking
+  window.Enemies = { init, update, setAdventure, stats, nearDen, resetAggro, collectVisible, collideTurtle, drawSwipes, drawDebug, CONFIG, get pool() { return DEBUG ? pool : null; }, get api() { return DEBUG ? api : null; } }; // pool/api only exposed with ?debug=1, for console poking
 })();
