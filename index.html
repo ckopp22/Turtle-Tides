@@ -24,7 +24,13 @@
 <script src="js/game.js?v=155"></script>
 <script src="js/intro.js?v=78"></script>
 <script>
-if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('service-worker.js').catch(() => {}));
+// Local dev: no service worker (it served stale files); remove any left over from earlier runs.
+if ('serviceWorker' in navigator) {
+  if (/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)) {
+    navigator.serviceWorker.getRegistrations().then((rs) => rs.forEach((r) => r.unregister()));
+    if (window.caches) caches.keys().then((ks) => ks.forEach((k) => caches.delete(k)));
+  } else window.addEventListener('load', () => navigator.serviceWorker.register('service-worker.js').catch(() => {}));
+}
 </script>
 </body>
 </html>
