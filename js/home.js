@@ -40,7 +40,8 @@
   const INDOOR = [
     { id: 'bed',     name: 'Bed',            layer: '01_bed_192.png',              cost: 20, unlocks: ['sleep'],                  perk: 'Sleep',                      solids: [{ rect: [16, 44, 80, 108] }], hotspot: { rect: [16, 44, 80, 108], action: 'sleep' } },
     { id: 'chest',   name: 'Chest',          layer: '08_chest_192.png',            cost: 25, unlocks: ['closet'],                perk: 'Closet',                     solids: [{ rect: [137, 141, 177, 169] }], hotspot: { rect: [137, 141, 177, 169], action: 'closet' } },
-    { id: 'table',   name: 'Table & Stools', layer: '04_table_and_stools_192.png', cost: 30, unlocks: ['swimSpeed1', 'adventureZone'], perk: 'Swim Speed I + new area',solids: [{ circle: [152, 82, 18] }, { circle: [152, 112, 8] }, { circle: [128, 82, 8] }], hotspot: { rect: [134, 64, 170, 100], action: 'bible' } },
+    { id: 'table',   name: 'Table & Stools', layer: '04_table_and_stools_192.png', cost: 30, unlocks: ['adventureZone'], perk: 'New area',solids: [{ circle: [152, 82, 18] }, { circle: [152, 112, 8] }, { circle: [128, 82, 8] }], hotspot: { rect: [134, 64, 170, 100], action: 'bible' } },
+    { id: 'goggles',  name: 'Goggles',        layer: null,                          cost: 35, unlocks: ['swimSpeed1'],             perk: 'Swim Speed I',               solids: [] }, // drawn in rebuildRoom, hanging on a stool
     { id: 'doormat', name: 'Doormat',        layer: '03_doormat_192.png',          cost: 40, unlocks: ['moveSpeed1'],             perk: 'Move Speed I',               solids: [] },
     { id: 'window',  name: 'Window',         layer: null,                          cost: 45, unlocks: ['dayNight'],             perk: 'Day/Night',                  solids: [], hotspot: { rect: [74, 10, 118, 36], action: 'daynight' } }, // art is in the base room image; no layer
     { id: 'shelf',   name: 'Shelf',          layer: '05_shelf_192.png',            cost: 60, unlocks: ['collectionBook'],         perk: 'Collection Book',            solids: [], hotspot: { rect: [130, 17, 178, 36], action: 'book' } },
@@ -80,6 +81,7 @@
   const fireLitImg = load('assets/home/campfire_spritesheet.png'); // 6 frames of 64x64
   const mapImg = load('assets/home/map_64.png');
   const bibleClosedImg = load('assets/home/bible_closed_64.png');
+  const gogglesImg = load('assets/items/accessory_goggles.png');
   const bibleOpenImg = load('assets/home/bible_open_64.png');
   const baseImg = load('assets/home/00_hut_interior_empty_192.png');
   const layerImgs = {};
@@ -108,6 +110,7 @@
     if (baseImg.complete && baseImg.naturalWidth) roomCtx.drawImage(baseImg, 0, 0);
     drawLayer(DRAW_FIRST);
     for (const u of INDOOR) if (u.id !== DRAW_FIRST) drawLayer(u.id);
+    if (shown.goggles && gogglesImg.complete && gogglesImg.naturalWidth) roomCtx.drawImage(tiny(gogglesImg), 120, 72); // hung on the left stool's back
     if (shown.table) { // map + bible on the table (art px); bible is open while its verse shows
       // Halve 64 -> 32 -> 16 (exact 2:1 steps average cleanly), then draw 1:1 so the little props stay crisp.
       const b = bibleOpen ? bibleOpenImg : bibleClosedImg;

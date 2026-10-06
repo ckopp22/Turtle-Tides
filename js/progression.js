@@ -545,6 +545,12 @@
       if (state.homeSeenLevel === 4 || state.homeSeenLevel === 5) state.homeSeenLevel = 3;
       state.homeSeenLevel = Math.min(state.homeSeenLevel, state.homeLevel);
     }
+    // homeVersion < 6 saves predate Goggles (inserted as upgrade 5, after the Table & Stools), so levels >= 4 move up by one.
+    if ((data.homeVersion || 0) < 6) {
+      const max = window.Home.UPGRADES.length;
+      if (state.homeLevel >= 4) state.homeLevel = Math.min(state.homeLevel + 1, max);
+      if (state.homeSeenLevel >= 4) state.homeSeenLevel = Math.min(state.homeSeenLevel + 1, state.homeLevel);
+    }
     // Finds banked so far (old saves' shell trophies are dropped: they had no types).
     state.bookRewards = {};
     for (const k in (data.bookRewards || {})) if (data.bookRewards[k] === true) state.bookRewards[k] = true;
@@ -614,7 +620,7 @@
       adventure: { v: 1, chest: state.adventure.chest ? { ...state.adventure.chest } : null },
       cosmetics: { owned: state.cosmetics.owned.slice(), equipped: { ...state.cosmetics.equipped } },
       turtleMaster: state.turtleMaster,
-      homeVersion: 5, // 5 = Table & Stools moved to upgrade 4 (opens the Adventure Zone); 4 = Window inserted at upgrade 5; 3 = homeLevel 0 is nothing, 1 is the hut, then its upgrades (2 = no hut step); bump if the save shape changes (loads tolerate it missing)
+      homeVersion: 6, // 6 = Goggles inserted at upgrade 5; 5 = Table & Stools moved to upgrade 4 (opens the Adventure Zone); 4 = Window inserted at upgrade 5; 3 = homeLevel 0 is nothing, 1 is the hut, then its upgrades (2 = no hut step); bump if the save shape changes (loads tolerate it missing)
       homeSeenLevel: state.homeSeenLevel,
       stats: { ...state.stats },
     };
