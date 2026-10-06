@@ -18,7 +18,13 @@ html, body {
   -webkit-user-select: none;
   -webkit-touch-callout: none;
 }
-/* TODO: once HUD elements exist, inset them with env(safe-area-inset-*) to clear notches/rounded corners. */
+/* iOS home-screen app with a translucent status bar: the layout viewport comes up one top-inset short
+   (the page is drawn under the status bar but sized as if it weren't), leaving a bar at the bottom.
+   Stretch the page by the top inset and use an absolute canvas so it reaches the real bottom edge. */
+@media (display-mode: standalone) {
+  html, body { height: calc(100vh + env(safe-area-inset-top)); }
+  #game { position: absolute; top: 0; left: 0; height: 100%; }
+}
 
 /* Save-slot naming overlay (intro.js) — the only DOM UI in the game, used for text entry since a
    real <input> gets IME/mobile-keyboard support a canvas text field can't. */
