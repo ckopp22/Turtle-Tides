@@ -100,7 +100,7 @@ html, body {
 #tt-congrats-banner {
   position: fixed;
   left: 50%;
-  top: 22%;
+  top: 40%; /* centered, raised above the turtle */
   transform: translate(-50%, -50%);
   z-index: 11;
   padding: 16px 24px;
@@ -329,8 +329,8 @@ button { touch-action: manipulation; }
   display: none;
   position: fixed;
   left: 50%;
-  top: 12%;
-  transform: translateX(-50%);
+  top: 40%; /* centered, raised above the turtle */
+  transform: translate(-50%, -50%);
   z-index: 11;
   max-width: min(420px, 88vw);
   padding: 12px 18px;
@@ -484,10 +484,10 @@ button { touch-action: manipulation; }
 
 /* Toast banner for first-time finds */
 .discovery-toast {
-  position: fixed; top: 64px; left: 50%; transform: translate(-50%, -20px);
+  position: fixed; top: 40%; left: 50%; transform: translate(-50%, -30%);
   padding: 8px 16px; border-radius: 999px;
   background: rgba(20, 60, 70, 0.9); color: #fff; font-weight: 700; font-size: 15px;
-  pointer-events: none; opacity: 0; z-index: 20; white-space: nowrap;
+  pointer-events: none; opacity: 0; z-index: 20; max-width: min(420px, 88vw); text-align: center;
   transition: opacity 0.3s, transform 0.3s;
 }
-.discovery-toast.show { opacity: 1; transform: translate(-50%, 0); }
+.discovery-toast.show { opacity: 1; transform: translate(-50%, -50%); }

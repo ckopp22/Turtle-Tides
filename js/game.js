@@ -1131,6 +1131,7 @@
       const dist = Math.hypot(x - CENTER.x, y - CENTER.y);
       if (dist <= WATER_OUTER_R + 20) return;               // never on the island or in the water
       if (dist > o.maxR) return;                            // keep the far fog fringe emptier
+      if (o.edge && (x < WORLD_MIN + o.edge || x > WORLD_MAX - o.edge || y < WORLD_MIN + o.edge || y > WORLD_MAX - o.edge)) return; // square worlds: fog margin instead of a circle
       if (inSandTextZone(x, y)) return;                     // keep the sand-text patch clear of scenery
       const { biome, weight } = dominantBiome(x, y);
       if (weight < 0.55) return; // blend zone between two biomes: leave it sparser/transitional
@@ -1191,7 +1192,7 @@
     const span = WORLD_MAX - WORLD_MIN;
     const placer = makeScenePlacer({
       rnd: () => (seed = (seed * 16807) % 2147483647) / 2147483647,
-      lo: WORLD_MIN, span, attempts: Math.round(30000 * (span / WORLD_SIZE) ** 2), maxR: span / 2 - EDGE_FOG_WIDTH * 0.4,
+      lo: WORLD_MIN, span, attempts: Math.round(30000 * (span / WORLD_SIZE) ** 2), maxR: Infinity, edge: EDGE_FOG_WIDTH * 0.4, // square world: fill the corners too
       skip: inHomeZone, seedNearHome: true,
     });
     (function step() { if (!placer.run(1500)) setTimeout(step, 0); })();
@@ -1603,7 +1604,6 @@
   // Home coin density: coins per px^2 of the land they're scattered over (the walkable circle minus the water ring).
   const HOME_COIN_R = WORLD_SIZE / 2 - EDGE_FOG_WIDTH * 0.4;
   const HOME_COIN_DENSITY = coinPickups.items.length / (Math.PI * (HOME_COIN_R * HOME_COIN_R - (WATER_OUTER_R * WATER_OUTER_R - ISLAND_R * ISLAND_R)));
-  const COIN_ZONE_R2 = ((WORLD_MAX - WORLD_MIN) / 2 - EDGE_FOG_WIDTH * 0.4) ** 2;
   let advCoinTimer = 0, advCoinWant = 0, advCoinLive = 0;
   function updateAdvCoins(dt) {
     if (!adventureUnlocked) return;
@@ -1628,8 +1628,7 @@
       const px = turtle.x - rOut + (gx + 0.5) * step, py = turtle.y - rOut + (gy + 0.5) * step;
       if ((px - turtle.x) ** 2 + (py - turtle.y) ** 2 > rOut2) continue;
       inDisc++;
-      if (!inHomeZone(px, py) && px > WORLD_MIN + C.edgeMargin && px < WORLD_MAX - C.edgeMargin && py > WORLD_MIN + C.edgeMargin && py < WORLD_MAX - C.edgeMargin &&
-        (px - CENTER.x) ** 2 + (py - CENTER.y) ** 2 <= COIN_ZONE_R2) valid++;
+      if (!inHomeZone(px, py) && px > WORLD_MIN + C.edgeMargin && px < WORLD_MAX - C.edgeMargin && py > WORLD_MIN + C.edgeMargin && py < WORLD_MAX - C.edgeMargin) valid++;
     }
     const want = inDisc ? Math.min(items.length, Math.round(HOME_COIN_DENSITY * C.densityMult * Math.PI * rOut2 * valid / inDisc)) : 0;
     advCoinWant = want;
@@ -1645,8 +1644,7 @@
           const ang = Math.random() * Math.PI * 2, r = Math.sqrt(lo2 + Math.random() * (rOut * rOut - lo2));
           const x = turtle.x + Math.cos(ang) * r, y = turtle.y + Math.sin(ang) * r;
           if (inHomeZone(x, y) || x < WORLD_MIN + C.edgeMargin || x > WORLD_MAX - C.edgeMargin || y < WORLD_MIN + C.edgeMargin || y > WORLD_MAX - C.edgeMargin) continue;
-          const cx = x - CENTER.x, cy = y - CENTER.y;
-          if (cx * cx + cy * cy > COIN_ZONE_R2 || blockedAt(x, y, 24)) continue; // not past the fog fringe, not inside a tree
+          if (blockedAt(x, y, 24)) continue; // not inside a tree
           it.x = x; it.y = y; it.active = true;
           live++; made++;
           break;
@@ -1682,8 +1680,7 @@
     for (let i = 0; i < 40; i++) {
       const x = WORLD_MIN + Math.random() * span, y = WORLD_MIN + Math.random() * span;
       if (inHomeZone(x, y)) continue;
-      const cx = x - CENTER.x, cy = y - CENTER.y;
-      if (cx * cx + cy * cy > COIN_ZONE_R2 || x < WORLD_MIN + 300 || x > WORLD_MAX - 300 || y < WORLD_MIN + 300 || y > WORLD_MAX - 300) continue; // not out in the fog fringe
+      if (x < WORLD_MIN + 300 || x > WORLD_MAX - 300 || y < WORLD_MIN + 300 || y > WORLD_MAX - 300) continue; // not out in the fog fringe
       const dx = x - turtle.x, dy = y - turtle.y;
       if (dx * dx + dy * dy < minD2) continue;
       if (blockedAt(x, y, 48) || (window.Enemies && window.Enemies.nearDen(x, y, C.denPad))) continue;
@@ -2395,15 +2392,17 @@
   }
   const viewRect = { x: 0, y: 0, w: 0, h: 0 };
   const ENEMY_WALK_R2 = (WORLD_SIZE / 2 - EDGE_FOG_WIDTH * 0.4) ** 2; // same fog margin pickups use (home zone)
-  const ENEMY_ZONE_R2 = ((WORLD_MAX - WORLD_MIN) / 2 - EDGE_FOG_WIDTH * 0.4) ** 2; // same margin around the enlarged world
+  const ENEMY_ZONE_M = 0; // enemies reach the whole square world, so they can get a turtle hugging the edge
   // Enemies may go anywhere inside the circle that fits the playable world: the old circle until the zone is
   // open (so a locked game plays exactly as before), the enlarged one after, so they can cross the old edge both ways.
-  const enemyRoom2 = () => adventureUnlocked ? ENEMY_ZONE_R2 : ENEMY_WALK_R2;
+  const enemyRoom = (x, y) => adventureUnlocked
+    ? x > WORLD_MIN + ENEMY_ZONE_M && x < WORLD_MAX - ENEMY_ZONE_M && y > WORLD_MIN + ENEMY_ZONE_M && y < WORLD_MAX - ENEMY_ZONE_M
+    : (x - CENTER.x) ** 2 + (y - CENTER.y) ** 2 <= ENEMY_WALK_R2;
   if (!TEST && window.Enemies && !skip.noenemies) window.Enemies.init({
     turtle, worldSize: WORLD_SIZE, center: CENTER,
     basePlayerSpeed: MAX_SPEED * LAND_SPEED_MULT, // enemy speeds are fractions of this (skill bonuses ignored)
-    walkable: (x, y) => { const dx = x - CENTER.x, dy = y - CENTER.y; return dx * dx + dy * dy <= enemyRoom2() && !isWater(x, y) && !isHomeIsland(x, y); },
-    flyable: (x, y) => { const dx = x - CENTER.x, dy = y - CENTER.y; return dx * dx + dy * dy <= enemyRoom2() && !isHomeIsland(x, y); }, // fliers cross water/obstacles, never the island
+    walkable: (x, y) => { return enemyRoom(x, y) && !isWater(x, y) && !isHomeIsland(x, y); },
+    flyable: (x, y) => { return enemyRoom(x, y) && !isHomeIsland(x, y); }, // fliers cross water/obstacles, never the island
     adventure: ADVENTURE.enemies, worldMin: WORLD_MIN, worldMax: WORLD_MAX, inHomeZone, homeSpawnR2: ENEMY_WALK_R2,
     isHomeIsland, inSandText: inSandTextZone, blockedAt,
     biomeAt: (x, y) => dominantBiome(x, y).biome, // allocates; only called when spawning / picking wander targets
