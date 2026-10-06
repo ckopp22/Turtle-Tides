@@ -720,6 +720,17 @@
     }
     ctx.restore();
   }
+  // Top safe-area inset in CSS px (0 on desktop / non-notched), measured via a hidden probe.
+  let insetProbe = null;
+  function topInset() {
+    if (!insetProbe) {
+      insetProbe = document.createElement('div');
+      insetProbe.style.cssText = 'position:fixed;top:0;left:0;visibility:hidden;pointer-events:none;padding-top:env(safe-area-inset-top)';
+      document.body.appendChild(insetProbe);
+    }
+    return insetProbe.offsetHeight;
+  }
+
   function drawHUD(ctx) {
     const pad = 14, innerPad = 12;
     // Panel widens once the "Turtle Master" badge replaces the "Lv N" home badge (that label is a
@@ -735,14 +746,16 @@
     if (state.lastLostMessage) contentH += 20;
     contentH += innerPad;
 
+    const safeTop = topInset();
     ctx.save();
+    ctx.translate(0, safeTop); // app runs under the status bar/notch; keep the HUD below it
     ctx.textBaseline = 'middle';
 
     ctx.fillStyle = 'rgba(9, 46, 61, 0.82)';
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
     ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.roundRect(pad, pad, panelW, contentH, 16); ctx.fill(); ctx.stroke();
-    hudPanelRect = { x: pad, y: pad, w: panelW, h: contentH };
+    hudPanelRect = { x: pad, y: pad + safeTop, w: panelW, h: contentH };
 
     const x = pad + innerPad;
     let y = pad + innerPad;
@@ -1036,7 +1049,7 @@
   window.Progression = {
     tryPickup, grantCarriedCoins, bankCarried, takeLostItems, takeHit, getStarveDim: () => starveDim, isInvulnerable, setRespawnHandler, setUpgradeHandler, setDeathHandler, respawnAtHome,
     update, restoreHearts, maxHearts, getHideConfig, swimSpeedMultiplier, moveSpeedMultiplier, toggleDayNight, drawHUD, setHomeButtonVisible, tryEatFromHud, getIconRow: ensureIconRow,
-    buyUpgrade, canUpgrade, addStat, addPlayTime, claimPageReward,
+    topInset, buyUpgrade, canUpgrade, addStat, addPlayTime, claimPageReward,
     attachSlot, getSaveData, persist,
     hasSkill, FINDS: CONFIG.finds, randomFindIndex,
     SHOP_CATEGORIES, getShopItems: () => CONFIG.shop.items, buyCosmetic, equipCosmetic, unequipCategory, ownsCosmetic, equippedIn, getEquippedColorTint, drawEquippedCosmetics,

@@ -125,7 +125,7 @@ html, body {
 #tt-icon-row {
   position: fixed;
   left: 14px;
-  top: 130px;
+  top: calc(130px + env(safe-area-inset-top));
   z-index: 9;
   display: flex;
   gap: 8px;
@@ -163,7 +163,7 @@ html, body {
 #tt-sound-btn {
   position: fixed;
   right: 56px;
-  top: 14px;
+  top: calc(14px + env(safe-area-inset-top));
   z-index: 9;
   width: 34px;
   height: 34px;
@@ -182,7 +182,7 @@ html, body {
 #tt-music-btn {
   position: fixed;
   right: 98px;
-  top: 14px;
+  top: calc(14px + env(safe-area-inset-top));
   z-index: 9;
   width: 34px;
   height: 34px;
@@ -201,7 +201,7 @@ html, body {
 #tt-leave-btn {
   position: fixed;
   right: 14px;
-  top: 14px;
+  top: calc(14px + env(safe-area-inset-top));
   z-index: 9;
   width: 34px;
   height: 34px;
@@ -221,8 +221,8 @@ html, body {
 /* Narrow (portrait phone) screens: the Turtle Master HUD panel (280px) runs under the top-right buttons,
    so stack them in a column down the right edge instead of a row. */
 @media (max-width: 480px) {
-  #tt-sound-btn { right: 14px; top: 56px; }
-  #tt-music-btn { right: 14px; top: 98px; }
+  #tt-sound-btn { right: 14px; top: calc(56px + env(safe-area-inset-top)); }
+  #tt-music-btn { right: 14px; top: calc(98px + env(safe-area-inset-top)); }
 }
 
 .tt-upgrade-box {

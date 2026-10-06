@@ -933,7 +933,7 @@
     const playW = portrait ? Math.min(240, viewW * 0.6) : 200, playH = portrait ? 72 : 64;
     return {
       play: { x: viewW / 2 - playW / 2, y: viewH * (portrait ? 0.46 : 0.58), w: playW, h: playH },
-      mute: { x: viewW - 64, y: 20, w: 44, h: 44 },
+      mute: { x: viewW - 64, y: 20 + (window.Progression ? window.Progression.topInset() : 0), w: 44, h: 44 },
     };
   }
   function onMenuTap(e) {
