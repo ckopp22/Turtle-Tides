@@ -34,6 +34,8 @@
     flankRadius: 70,         // world px: chasers aim at a personal spot this far around the turtle until they get close
     farScreens: 1,           // enemies farther than this many screen widths update at a lower rate (off-screen anyway)
     farTickSeconds: 0.1,     // ...once per this long, with the accumulated dt so they move at the same speed
+    swipeSize: 140,          // world px the attack swipe frame is drawn at (enemy sprite is 64)
+    noticeSeconds: 0.9,      // how long the "!" shows above an enemy that just noticed the turtle
     debugSpawnOffset: 150,   // world px: ?debug=1 spawn key puts the enemy this far from the turtle
     cutLeadSeconds: 1.1,     // cut-off wolves aim this many seconds ahead of the turtle's velocity...
     cutMinAhead: 150,        // ...but at least this many world px ahead
@@ -139,6 +141,7 @@
 let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; advOn = zone unlocked
   const sheets = {};
   const SWIPE_FRAMES = 8, SWIPE_WINDUP_FRAMES = 3; // attack_swipe sheet: first frames = the '!' tell during wind-up, the rest = the swipe at the hit
+  const exclaimImg = new Image(); exclaimImg.src = 'assets/enemies/notice_exclaim.png';
   const swipeImg = new Image(); swipeImg.src = 'assets/enemies/attack_swipe_spritesheet.png';
   const pool = []; // fixed-size: one slot per configured enemy (home pool, then the Adventure Zone pool), plus a few extra for debug spawns
   const nearList = []; // enemies close enough to simulate this frame (rebuilt each update, reused)
@@ -182,7 +185,7 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
       type, cfg: type ? CONFIG.types[type] : null, active: false, respawnAt, debug: false, pool: 'home',
       x: 0, y: 0, sx: 0, sy: 0, biome: '', state: WANDER, t: 0, anim: 0, row: 0, frame: 0,
       tx: 0, ty: 0, hasTarget: false, pause: 0, flip: 1, angle: 0, cd: 0, giveUp: 0, steer: 0, steerT: 0, dodge: 0, dodgeT: 0, flank: 0, atkAngle: 0, acc: 0,
-      role: 0, lose: 0, stuck: 0, unreach: 0, nightSleep: false, want: '', path: null, pi: 0, pathLen: 0, replans: 0, hiddenFor: 0, emergeToChase: false, hitDone: false,
+      role: 0, notice: 0, lose: 0, stuck: 0, unreach: 0, nightSleep: false, want: '', path: null, pi: 0, pathLen: 0, replans: 0, hiddenFor: 0, emergeToChase: false, hitDone: false,
       proxy: null,
     };
     // Depth-sort entry: game.js's scenery sort wants {x, y (ground contact), type:'custom', draw}.
@@ -223,7 +226,7 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
     e.type = type; e.active = true;
     e.cfg = adv && !api.inHomeZone(x, y) ? ADV_TYPES[type] : CONFIG.types[type]; // stats follow where it spawned
     e.x = e.sx = x; e.y = e.sy = y; e.biome = biome;
-    e.state = WANDER; e.t = 0; e.anim = 0; e.hasTarget = false; e.pause = rnd(0.5, 2); e.nightSleep = false;
+    e.state = WANDER; e.t = 0; e.anim = 0; e.hasTarget = false; e.pause = rnd(0.5, 2); e.nightSleep = false; e.notice = 0;
     e.cd = 0; e.steer = 0; e.steerT = 0; e.dodge = 0; e.dodgeT = 0; e.giveUp = 0; e.lose = 0; e.stuck = 0; e.unreach = 0; e.flip = Math.random() < 0.5 ? 1 : -1;
   }
 
@@ -439,6 +442,7 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
   }
   function startChase(e) {
     if (window.TT_SOUND && window.TT_SOUND.enemy) window.TT_SOUND.enemy(e.type, Math.hypot(api.turtle.x - e.x, api.turtle.y - e.y)); // its cry, quieter when far
+    e.notice = CONFIG.noticeSeconds;
     e.flank = Math.random() * Math.PI * 2; e.lose = 0; e.stuck = 0; e.unreach = 0; e.hasTarget = false; setState(e, CHASE); }
   function giveUpChase(e) {
     e.giveUp = CONFIG.giveUpCooldown; e.lose = 0; e.stuck = 0; e.unreach = 0;
@@ -454,6 +458,7 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
     e.t += dt; e.anim += dt;
     if (e.giveUp > 0) e.giveUp -= dt;
     if (e.cd > 0) e.cd -= dt;
+    if (e.notice > 0) e.notice -= dt;
     if (e.steerT > 0) e.steerT -= dt;
     if (e.dodgeT > 0) e.dodgeT -= dt;
     const dx = T.x - e.x, dy = T.y - e.y, d2 = dx * dx + dy * dy;
@@ -702,14 +707,26 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
     if (e.cfg.flipsSideways) { if (e.flip < 0) g.scale(-1, 1); }
     else g.rotate(Math.round((e.angle + Math.PI / 2) / (Math.PI / 4)) * (Math.PI / 4)); // art faces up; snap to 8 directions
     g.drawImage(img, e.frame * F, e.row * F, F, F, -D / 2, -D / 2, D, D);
-    if (e.state === ATTACK && swipeImg.complete && swipeImg.naturalWidth) { // attack swipe over the sprite, so the player can see the hit coming
-      const c = e.cfg, W = swipeImg.naturalWidth / SWIPE_FRAMES;
+    g.restore();
+    const ox = e.x + lx, oy = (air ? e.y - 10 : e.y) + ly;
+    if (e.state === ATTACK && swipeImg.complete && swipeImg.naturalWidth) { // swipe aimed at the turtle: wind-up arcs, then the slash at the hit
+      const c = e.cfg, W = swipeImg.naturalWidth / SWIPE_FRAMES, S = CONFIG.swipeSize;
       const f = e.t < c.windup
         ? Math.min(SWIPE_WINDUP_FRAMES - 1, Math.floor(e.t / c.windup * SWIPE_WINDUP_FRAMES))
         : Math.min(SWIPE_FRAMES - 1, SWIPE_WINDUP_FRAMES + Math.floor((e.t - c.windup) / (c.attackTime - c.windup) * (SWIPE_FRAMES - SWIPE_WINDUP_FRAMES)));
-      g.drawImage(swipeImg, f * W, 0, W, swipeImg.naturalHeight, -D / 2, -D / 2, D, D);
+      g.save();
+      g.translate(ox, oy);
+      g.rotate(Math.atan2(api.turtle.y - e.y, api.turtle.x - e.x) + Math.PI / 2); // art points up
+      g.drawImage(swipeImg, f * W, 0, W, swipeImg.naturalHeight, -S / 2, -S / 2, S, S);
+      g.restore();
     }
-    g.restore();
+    if (e.notice > 0 && exclaimImg.complete && exclaimImg.naturalWidth) { // "!" pops above an enemy that just noticed the turtle
+      const u = 1 - e.notice / CONFIG.noticeSeconds, pop = u < 0.2 ? 0.5 + u / 0.2 * 0.7 : u < 0.35 ? 1.2 - (u - 0.2) / 0.15 * 0.2 : 1;
+      const w = exclaimImg.naturalWidth * 3 * pop, h = exclaimImg.naturalHeight * 3 * pop;
+      g.globalAlpha = Math.min(1, e.notice / 0.2);
+      g.drawImage(exclaimImg, ox - w / 2, oy - D / 2 - 6 - h, w, h);
+      g.globalAlpha = 1;
+    }
   }
 
   // Pushes each on-screen enemy's depth-sort proxy into game.js's visible list (reused buffer, no allocation).
