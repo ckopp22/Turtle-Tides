@@ -997,7 +997,7 @@
   }
 
   function openUpgradePanel() {
-    closeUpgradePanel();
+    if (upgradePanel) { upgradePanel.remove(); upgradePanel = null; } // re-render (e.g. after a purchase) must not count as closing the shop
     const rows = Object.keys(TRACKS).map(key => {
       const t = TRACKS[key];
       const maxed = t.level() >= t.maxLevel();
