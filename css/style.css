@@ -9,6 +9,8 @@ html, body {
 }
 #game {
   display: block;
+  position: fixed; /* inset:0 reaches the very bottom (home-indicator area) in iOS standalone, where innerHeight can fall short */
+  inset: 0;
   width: 100%;
   height: 100%;
   touch-action: none;

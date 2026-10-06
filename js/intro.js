@@ -512,7 +512,7 @@
   function resize() {
     if (currentScene === SCENES.GAME_HANDOFF) return; // game.js owns the canvas size now (different dpr cap)
     dpr = window.devicePixelRatio || 1;
-    viewW = window.innerWidth; viewH = window.innerHeight;
+    viewW = canvas.clientWidth || window.innerWidth; viewH = canvas.clientHeight || window.innerHeight;
     canvas.width = Math.round(viewW * dpr);
     canvas.height = Math.round(viewH * dpr);
   }
@@ -770,7 +770,7 @@
     const portrait = viewW < viewH * 0.8; // assumption: stack the title on two lines in portrait
     const titleSize = portrait ? Math.min(96, viewW * 0.24) : Math.min(96, viewW * 0.15);
     const subSize = titleSize * 42 / 96;
-    const y0 = viewH * (portrait ? 0.14 : 0.22);
+    const y0 = viewH * (portrait ? 0.22 : 0.3);
     ctx.font = `italic ${titleSize}px "Bradley Hand", "Comic Sans MS", cursive`;
     let subY = y0 + subSize * 74 / 42;
     if (portrait) {
@@ -932,7 +932,7 @@
     const portrait = viewW < viewH * 0.8;
     const playW = portrait ? Math.min(240, viewW * 0.6) : 200, playH = portrait ? 72 : 64;
     return {
-      play: { x: viewW / 2 - playW / 2, y: viewH * (portrait ? 0.46 : 0.58), w: playW, h: playH },
+      play: { x: viewW / 2 - playW / 2, y: Math.min(viewH * 0.78, viewH - playH - 24), w: playW, h: playH },
       mute: { x: viewW - 64, y: 20 + (window.Progression ? window.Progression.topInset() : 0), w: 44, h: 44 },
     };
   }
