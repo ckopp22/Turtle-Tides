@@ -34,7 +34,8 @@
     flankRadius: 70,         // world px: chasers aim at a personal spot this far around the turtle until they get close
     farScreens: 1,           // enemies farther than this many screen widths update at a lower rate (off-screen anyway)
     farTickSeconds: 0.1,     // ...once per this long, with the accumulated dt so they move at the same speed
-    pushBackMax: 5,          // world px per frame a pinned turtle can shove an enemy back
+    pushBackMax: 5,          // world px per frame the turtle can shove an enemy back
+    pushShare: 0.5,          // fraction of an overlap the enemy yields (the turtle takes the rest)
     swipeSize: 140,          // world px the attack swipe frame is drawn at (enemy sprite is 64)
     noticeSeconds: 0.9,      // how long the "!" shows above an enemy that just noticed the turtle
     debugSpawnOffset: 150,   // world px: ?debug=1 spawn key puts the enemy this far from the turtle
@@ -688,10 +689,14 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
       if (d2 >= min * min) continue;
       const d = Math.sqrt(d2) || 0.001, k = (min - d) / d;
       const px = (d2 < 1e-6 ? 1 : dx) * k, py = (d2 < 1e-6 ? 0 : dy) * k;
-      if (!api.blockedAt(t.x + px, t.y + py, r)) { t.x += px; t.y += py; continue; }
-      // Pinned (the turtle can't back out: tree, rock, hut...): shove the enemy back a little instead.
-      const cap = CONFIG.pushBackMax, m = Math.hypot(px, py), f = m > cap ? cap / m : 1, bx = e.x - px * f, by = e.y - py * f;
-      if (open(e, bx, by)) { e.x = bx; e.y = by; }
+      // The overlap is shared: the enemy gives way by pushShare (capped per frame) if there's room behind it, the turtle
+      // takes the rest; if the turtle can't back out (tree, rock, hut...) the enemy gives way instead.
+      const cap = CONFIG.pushBackMax, m = Math.hypot(px, py);
+      const turtleFree = !api.blockedAt(t.x + px, t.y + py, r);
+      const share = turtleFree ? CONFIG.pushShare : 1, ef = Math.min(share, m > 0 ? cap / m : 1);
+      const bx = e.x - px * ef, by = e.y - py * ef, moved = open(e, bx, by);
+      if (moved) { e.x = bx; e.y = by; }
+      if (turtleFree) { const tf = moved ? 1 - ef : 1; t.x += px * tf; t.y += py * tf; }
     }
   }
 
