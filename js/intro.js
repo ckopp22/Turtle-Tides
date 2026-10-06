@@ -239,6 +239,13 @@
     }
   }
   ['pointerdown', 'keydown'].forEach(t => window.addEventListener(t, syncBeach, { passive: true }));
+  // iOS only counts touchend/click (not pointerdown) as a gesture that may start audio, and the menu's pointerdown
+  // handlers preventDefault (no synthesized click) — so also unlock + retry on touchend and click.
+  ['touchend', 'click'].forEach(t => window.addEventListener(t, () => {
+    unlockAudio();
+    if (audioCtx && audioCtx.state !== 'running') audioCtx.resume().catch(() => {});
+    syncBeach();
+  }, { passive: true }));
   // Gameplay background music, in two sets that each cycle through their own tracks, quietly: the normal set
   // (assets/sfx/music1-3.mp3) and the Adventure Zone set (files given by game.js's ADVENTURE.music through
   // TT_SOUND.musicPrepareAdventure, created only once the zone is unlocked so a locked game never downloads them).
