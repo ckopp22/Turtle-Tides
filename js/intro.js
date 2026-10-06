@@ -966,14 +966,15 @@
     for (let i = 1; i <= CONFIG.slotCount; i++) slotsCache.push(readSlot(i));
   }
   function layoutSlots() {
-    const pad = 20, top = viewH * 0.16;
+    const inset = window.Progression.topInset(); // keep clear of the status bar / Dynamic Island
+    const pad = 20, top = inset + viewH * 0.16;
     const cardH = Math.min(90, (viewH * 0.76) / CONFIG.slotCount - 14);
     const cardW = Math.min(420, viewW - pad * 2);
     const cards = [];
     for (let i = 0; i < CONFIG.slotCount; i++) {
       cards.push({ x: viewW / 2 - cardW / 2, y: top + i * (cardH +14), w: cardW, h: cardH, slot: i + 1 });
     }
-    return { cards, back: { x: 20, y: 20, w: 90, h: 40 } };
+    return { cards, back: { x: 20, y: 20 + inset, w: 90, h: 40 } };
   }
   function formatDate(iso) { try { return new Date(iso).toLocaleDateString(); } catch { return ''; } }
   // Same HUD art/badge style as progression.js's in-game panel (coin_hud.png/coconut.png icons,
@@ -1060,7 +1061,7 @@
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.font = '700 26px system-ui, sans-serif';
-      ctx.fillText('Your Game', viewW / 2, viewH * 0.08);
+      ctx.fillText('Your Game', viewW / 2, window.Progression.topInset() + viewH * 0.08);
       const L = layoutSlots();
       L.cards.forEach(c => drawSlotCard(c, slotsCache[c.slot - 1]));
       drawButton(L.back, 'Back', false);
