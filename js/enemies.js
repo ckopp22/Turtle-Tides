@@ -93,10 +93,10 @@
       },
       wolf: {
         sheet: 'assets/enemies/wolf_spritesheet.png',
-        biomes: ['forestOpen', 'deadTrees', 'forestThick', 'beach'], count: 4, // one pack slot per biome, so wolves are in all 4
+        biomes: ['forestOpen', 'deadTrees', 'forestThick', 'beach'], count: 12, advCount: 32, // slots cycle through the biomes, so every biome gets a pack
         cutOff: true,        // pack tactic: chasing wolves run ahead of the turtle's heading, each to a different spot, to cut it off
         nocturnal: true,     // only exists at night; the day/night toggle removes it, and it ignores the live-enemy caps
-        speed: 0.9, detect: 6, attackRange: 1,
+        speed: 1.3, detect: 6, attackRange: 1, // faster than the turtle: it can run around it, but only bites from in front / beside (see CHASE)
         damage: 1, windup: 0.35, attackTime: 0.7, cooldown: 1.4,
         bodyRadius: 20,
         rows: { idle: 0, walk: 1, attack: 2, sleep: 3 }, // howl on notice (TT_SOUND.enemy), bark on attack (TT_SOUND.enemyAttack)
@@ -198,7 +198,7 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
     adv = a.adventure || null;
     if (adv) { // Adventure Zone pool: idle (never spawns, never simulated) until game.js calls setAdventure(true)
       buildAdventureTypes(adv);
-      for (const k in CONFIG.types) for (let i = 0; i < adv.countPerType && (CONFIG.types[k].nocturnal || countPool('adv') < adv.maxTotal); i++) { const e = makeSlot(k, Infinity); e.pool = 'adv'; e.want = pickBiome(k, i); pool.push(e); }
+      for (const k in CONFIG.types) for (let i = 0; i < (CONFIG.types[k].advCount || adv.countPerType) && (CONFIG.types[k].nocturnal || countPool('adv') < adv.maxTotal); i++) { const e = makeSlot(k, Infinity); e.pool = 'adv'; e.want = pickBiome(k, i); pool.push(e); }
     }
     if (DEBUG) for (let i = 0; i < 4; i++) pool.push(makeSlot(null, 0));
     nearList.length = pool.length;
@@ -519,7 +519,7 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
       case HIDDEN: { // ambush: only reacts when the turtle gets very close (after the minimum hide time)
         e.row = R.burrow; e.frame = FRAMES - 1; // last burrow frame = just the eyes
         if (canSee && !e.nightSleep && e.t >= c.cooldown && d2 < c.ambush2) { e.emergeToChase = true; setState(e, EMERGE); }
-        else if (e.t >= e.hiddenFor) { e.emergeToChase = false; setState(e, EMERGE); }
+        else if (!e.nightSleep && e.t >= e.hiddenFor) { e.emergeToChase = false; setState(e, EMERGE); } // stays buried all night
         return;
       }
       case EMERGE: { // burrow row in reverse
@@ -547,7 +547,13 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
       }
       case CHASE: {
         if (chaseChecks(e, dt, d2, safe, alive)) return;
-        if (d2 <= c.attack2) {
+        // Cut-off wolves can't bite from behind a moving turtle: they keep running around it to its front or side first.
+        let behind = false;
+        if (c.cutOff) {
+          const sp = Math.hypot(tvx, tvy);
+          if (sp >= 25 && (e.x - T.x) * tvx + (e.y - T.y) * tvy < -0.2 * Math.sqrt(d2) * sp && cutOffAim(e)) behind = true;
+        }
+        if (d2 <= c.attack2 && !behind) {
           face(e, dx, dy);
           if (e.cd <= 0) { e.hitDone = false; e.atkAngle = Math.atan2(dy, dx); setState(e, ATTACK);
             if (window.TT_SOUND && window.TT_SOUND.enemyAttack) window.TT_SOUND.enemyAttack(e.type, Math.hypot(dx, dy)); // crab: stick snap
@@ -577,7 +583,7 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
         const fr = CONFIG.flankRadius, close = Math.sqrt(c.attack2) + fr + 20;
         let aimX = d2 > close * close ? T.x + Math.cos(e.flank) * fr : T.x;
         let aimY = d2 > close * close ? T.y + Math.sin(e.flank) * fr : T.y;
-        if (c.cutOff && d2 > (Math.sqrt(c.attack2) + 60) ** 2 && cutOffAim(e)) {
+        if (c.cutOff && (behind || d2 > (Math.sqrt(c.attack2) + 60) ** 2) && cutOffAim(e)) {
           // Head for the intercept spot unless the turtle is already between this wolf and it (then just bite).
           const tdx = cutAim.x - e.x, tdy = cutAim.y - e.y;
           if (tdx * dx + tdy * dy > 0 || tdx * tdx + tdy * tdy > d2) { aimX = cutAim.x; aimY = cutAim.y; } else { aimX = T.x; aimY = T.y; }
