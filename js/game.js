@@ -1897,7 +1897,7 @@
     const hasInput = dir.x !== 0 || dir.y !== 0;
     const rate = (hasInput ? ACCEL : DECEL) * dt;
 
-    if (hideOn && state === 'normal' && dir.x === 0 && dir.y === 0 && Math.hypot(turtle.vx, turtle.vy) < 5) {
+    if (hideOn && state === 'normal' && dir.x === 0 && dir.y === 0) { // no velocity check: hide the instant input stops
       hideIdleTimer += dt;
       if (hideIdleTimer >= window.Progression.getHideConfig().idleSeconds) {
         state = 'shell'; stateTime = 0; shellFromToggle = true; hideIdleTimer = 0;

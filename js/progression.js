@@ -101,7 +101,7 @@
       ],
     },
     hideInShell: {
-      idleSeconds: 0.5, // standing still this long (toggle on) pulls the turtle into its shell
+      idleSeconds: 0, // standing still this long (toggle on) pulls the turtle into its shell
     },
     invulnSeconds: 1.2,           // blink window after a heart is lost
     hullFullFlashSeconds: 1.4,
