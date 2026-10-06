@@ -47,6 +47,14 @@
       cooldownMult: 0.9,     // attack cooldown; damage is unchanged
       maxSpeedFrac: 0.95,    // clamp: a type slower than the player can never get past this fraction of the player's speed (snake is exempt)
     },
+    coins: {                 // zone coin pickups: a small pool kept topped up around the turtle (home coins are untouched)
+      densityMult: 2,        // x the home zone's coin density (home coins per land area)
+      maxActive: 120,        // pool size = hard cap on live zone coins
+      ringWidth: 900,        // coins are kept within this many px beyond the screen edge, new ones appear just off-screen
+      tickSeconds: 0.25,     // how often the pool is topped up / trimmed (collection is still checked every frame)
+      spawnsPerTick: 3,      // new coins per top-up (the first fill on entering the zone is done in one go)
+      edgeMargin: 150,       // keep this far from the outer world edge
+    },
     music: {
       files: ['assets/sfx/adventure1.mp3', 'assets/sfx/adventure2.mp3', 'assets/sfx/adventure3.mp3'], // cycled like the normal music; drop-in: a missing file just keeps the normal music
       fadeSeconds: 2,        // crossfade length between the normal and adventure music
@@ -838,6 +846,7 @@
     const inside = (b, x0, y0) => x0 >= b.x0 + EDGE_FOG_WIDTH && y0 >= b.y0 + EDGE_FOG_WIDTH && x0 + CHUNK <= b.x1 - EDGE_FOG_WIDTH && y0 + CHUNK <= b.y1 - EDGE_FOG_WIDTH;
     for (const [key, ch] of chunks) if (!inside(old, ch.cx * CHUNK, ch.cy * CHUNK) || !inside(bounds, ch.cx * CHUNK, ch.cy * CHUNK)) dropChunk(key, ch);
     if (window.Enemies) window.Enemies.setAdventure(on);
+    if (!on) clearAdvCoins();
     if (on) { startAdventureScenery(); if (window.TT_SOUND) window.TT_SOUND.musicPrepareAdventure(ADVENTURE.music.files); } // fetch the zone's first track once, now
     else if (inAdventure) { inAdventure = false; if (window.TT_SOUND) window.TT_SOUND.musicZone(false, ADVENTURE.music.fadeSeconds); }
     clampToWorld();
@@ -1457,6 +1466,8 @@
       it.x = p.x; it.y = p.y; it.active = true;
       if (opts.pickKind) it.kind = opts.pickKind();
     }
+    // opts.pool: that many idle slots instead of randomly placed ones (they're filled and recycled by game code, see updateAdvCoins)
+    for (let i = 0; i < (opts.pool || 0); i++) items.push({ x: 0, y: 0, active: false, respawnAt: Infinity, bobSeed: i * 0.7, kind: 0 });
     for (let i = 0; i < opts.count; i++) {
       const p = randomLandSpot();
       items.push({ x: p.x, y: p.y, active: true, respawnAt: 0, bobSeed: rand() * Math.PI * 2, kind: opts.pickKind ? opts.pickKind() : 0 });
@@ -1474,7 +1485,7 @@
       return 0;
     }
     function update() {
-      const pickupDist = TURTLE_BODY_RADIUS + opts.pickupRadius;
+      const pickupDist = TURTLE_BODY_RADIUS + opts.pickupRadius, pickupDist2 = pickupDist * pickupDist;
       for (let i = items.length - 1; i >= 0; i--) {
         const it = items[i];
         if (!it.active) {
@@ -1482,7 +1493,8 @@
           continue;
         }
         if (it.popAt !== undefined && popHeight(it) > 0) continue; // can't grab it mid-hop
-        if (Math.hypot(turtle.x - it.x, turtle.y - it.y) < pickupDist) {
+        const dx = turtle.x - it.x, dy = turtle.y - it.y;
+        if (dx * dx + dy * dy < pickupDist2) {
           const P = window.Progression;
           // First-ever find of this kind = not banked in the collection and not already carried this trip.
           const foundItem = key === 'finds' ? P.FINDS.items[it.kind] : null;
@@ -1521,14 +1533,15 @@
 
   const coinImg = new Image();
   coinImg.src = 'assets/items/coin.png';
-  const coinPickups = makePickupType('coins', {
+  const COIN_OPTS = {
     count: 60, pickupRadius: 26, respawnSeconds: 20, drawH: 30, bobSpeed: 2.4, bobAmplitude: 6,
     drawItem(cx, cy) {
       if (!coinImg.complete || !coinImg.naturalWidth) return;
       const dw = 30 * coinImg.naturalWidth / coinImg.naturalHeight;
       ctx.drawImage(coinImg, cx - dw / 2, cy - 15, dw, 30);
     },
-  });
+  };
+  const coinPickups = makePickupType('coins', COIN_OPTS);
   const coconutImg = new Image();
   coconutImg.src = 'assets/items/coconut.png';
   const coconutPickups = makePickupType('coconuts', {
@@ -1556,6 +1569,56 @@
       ctx.imageSmoothingEnabled = true;
     },
   });
+
+  // ---- Adventure Zone coins: the same coin pickup (same art, pickup rules and hull gate), but as a fixed pool that is
+  // kept topped up around the turtle instead of one coin per spot forever: only coins near the turtle exist, and
+  // they're recycled once it has moved on. Target count = the home zone's coin density x ADVENTURE.coins.densityMult
+  // over the area being kept populated; nothing exists while the zone is locked.
+  const advCoins = makePickupType('coins', Object.assign({}, COIN_OPTS, { count: 0, pool: ADVENTURE.coins.maxActive, respawnSeconds: Infinity }));
+  // Home coin density: coins per px^2 of the land they're scattered over (the walkable circle minus the water ring).
+  const HOME_COIN_R = WORLD_SIZE / 2 - EDGE_FOG_WIDTH * 0.4;
+  const HOME_COIN_DENSITY = coinPickups.items.length / (Math.PI * (HOME_COIN_R * HOME_COIN_R - (WATER_OUTER_R * WATER_OUTER_R - ISLAND_R * ISLAND_R)));
+  const COIN_ZONE_R2 = ((WORLD_MAX - WORLD_MIN) / 2 - EDGE_FOG_WIDTH * 0.4) ** 2;
+  let advCoinTimer = 0, advCoinWant = 0, advCoinLive = 0;
+  function updateAdvCoins(dt) {
+    if (!adventureUnlocked) return;
+    advCoinTimer += dt;
+    if (advCoinTimer < ADVENTURE.coins.tickSeconds) return;
+    advCoinTimer = 0;
+    const C = ADVENTURE.coins, items = advCoins.items;
+    const rIn = Math.hypot(viewW, viewH) / ZOOM / 2 + 60, rOut = rIn + C.ringWidth, drop2 = (rOut * 1.15) ** 2; // just off-screen .. kept-populated radius
+    let live = 0;
+    for (let i = 0; i < items.length; i++) { // trim coins the turtle has left far behind (frees their slots)
+      const it = items[i];
+      if (!it.active) continue;
+      const dx = it.x - turtle.x, dy = it.y - turtle.y;
+      if (dx * dx + dy * dy > drop2) it.active = false; else live++;
+    }
+    const want = Math.min(items.length, Math.round(HOME_COIN_DENSITY * C.densityMult * Math.PI * rOut * rOut));
+    advCoinWant = want;
+    if (live < want) {
+      // Empty pool (just entered / warped): fill the whole area in one go, on-screen included. Otherwise new coins
+      // appear only in the off-screen ring, a few per tick, so nothing pops in view.
+      const fresh = live === 0, budget = fresh ? want : C.spawnsPerTick, lo2 = fresh ? 0 : rIn * rIn;
+      let made = 0;
+      for (let i = 0; i < items.length && made < budget && live < want; i++) {
+        const it = items[i];
+        if (it.active) continue;
+        for (let a = 0; a < 8; a++) {
+          const ang = Math.random() * Math.PI * 2, r = Math.sqrt(lo2 + Math.random() * (rOut * rOut - lo2));
+          const x = turtle.x + Math.cos(ang) * r, y = turtle.y + Math.sin(ang) * r;
+          if (inHomeZone(x, y) || x < WORLD_MIN + C.edgeMargin || x > WORLD_MAX - C.edgeMargin || y < WORLD_MIN + C.edgeMargin || y > WORLD_MAX - C.edgeMargin) continue;
+          const cx = x - CENTER.x, cy = y - CENTER.y;
+          if (cx * cx + cy * cy > COIN_ZONE_R2 || blockedAt(x, y, 24)) continue; // not past the fog fringe, not inside a tree
+          it.x = x; it.y = y; it.active = true;
+          live++; made++;
+          break;
+        }
+      }
+    }
+    advCoinLive = live;
+  }
+  function clearAdvCoins() { for (const it of advCoins.items) it.active = false; advCoinLive = 0; }
 
   // ---- Water ripples: purely decorative wake while swimming. Spawned in update() (throttled so
   // movement doesn't spam them), aged/pruned each frame, drawn in render() between the water and
@@ -1652,6 +1715,7 @@
     coinPickups.update();
     coconutPickups.update();
     findPickups.update();
+    if (adventureUnlocked) { advCoins.update(); updateAdvCoins(dt); }
 
     const atHome = isHomeIsland(turtle.x, turtle.y);
     const hungerSpeedMult = window.Progression.update(dt, !atHome);
@@ -2071,7 +2135,7 @@
     drawFence(viewW / ZOOM, viewH / ZOOM);
     ctx.drawImage(islandDetail.canvas, islandDetail.worldX, islandDetail.worldY);
     Home.drawGround(ctx, t); // outdoor campfire
-    if (!skip.pickups) { coinPickups.draw(); coconutPickups.draw(); findPickups.draw(); }
+    if (!skip.pickups) { coinPickups.draw(); coconutPickups.draw(); findPickups.draw(); if (adventureUnlocked) advCoins.draw(); }
 
     // Cull scenery to the visible world rect (plus a small margin) so a big world with lots of
     // trees still draws only a couple dozen-to-hundred objects per frame.
@@ -2118,7 +2182,7 @@
       take() { const c = calls; calls = 0; return c; },
       show(fps, avg, worst, c) {
         const mem = performance.memory ? `${(performance.memory.usedJSHeapSize / 1048576).toFixed(1)} MB` : 'n/a';
-        el.textContent = `fps ${fps.toFixed(0)}\nframe ${avg.toFixed(1)}ms (worst ${worst.toFixed(1)})\nwork ${p.ms.toFixed(1)}ms\nvisible ${p.visible} / ${scenery.length}\ndraws/frame ${c.toFixed(0)}\nadventure ${adventureUnlocked ? 'unlocked' : 'locked'}${inAdventure ? ' (in zone)' : ''}  chunks ${chunks.size}\nenemies ${window.Enemies ? (st => `home ${st.home} zone ${st.adv} active ${st.near}`)(window.Enemies.stats()) : '-'}\nmusic ${window.TT_SOUND && window.TT_SOUND.musicInfo ? window.TT_SOUND.musicInfo() : '-'}\nheap ${mem}\ndpr ${dpr}\n${loadedVer} skip:${Object.keys(skip).join(',') || '-'}`;
+        el.textContent = `fps ${fps.toFixed(0)}\nframe ${avg.toFixed(1)}ms (worst ${worst.toFixed(1)})\nwork ${p.ms.toFixed(1)}ms\nvisible ${p.visible} / ${scenery.length}\ndraws/frame ${c.toFixed(0)}\nadventure ${adventureUnlocked ? 'unlocked' : 'locked'}${inAdventure ? ' (in zone)' : ''}  chunks ${chunks.size}\nzone coins ${advCoinLive}/${advCoinWant}\nenemies ${window.Enemies ? (st => `home ${st.home} zone ${st.adv} active ${st.near}`)(window.Enemies.stats()) : '-'}\nmusic ${window.TT_SOUND && window.TT_SOUND.musicInfo ? window.TT_SOUND.musicInfo() : '-'}\nheap ${mem}\ndpr ${dpr}\n${loadedVer} skip:${Object.keys(skip).join(',') || '-'}`;
       } };
     return p;
   })() : null;
