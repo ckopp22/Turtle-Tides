@@ -138,6 +138,8 @@
   let now = 0, nextSpawnTry = 0, playerSpeed = 160;
 let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; advOn = zone unlocked
   const sheets = {};
+  const SWIPE_FRAMES = 8, SWIPE_WINDUP_FRAMES = 3; // attack_swipe sheet: first frames = the '!' tell during wind-up, the rest = the swipe at the hit
+  const swipeImg = new Image(); swipeImg.src = 'assets/enemies/attack_swipe_spritesheet.png';
   const pool = []; // fixed-size: one slot per configured enemy (home pool, then the Adventure Zone pool), plus a few extra for debug spawns
   const nearList = []; // enemies close enough to simulate this frame (rebuilt each update, reused)
   let ctxRef = null;
@@ -700,6 +702,13 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
     if (e.cfg.flipsSideways) { if (e.flip < 0) g.scale(-1, 1); }
     else g.rotate(Math.round((e.angle + Math.PI / 2) / (Math.PI / 4)) * (Math.PI / 4)); // art faces up; snap to 8 directions
     g.drawImage(img, e.frame * F, e.row * F, F, F, -D / 2, -D / 2, D, D);
+    if (e.state === ATTACK && swipeImg.complete && swipeImg.naturalWidth) { // attack swipe over the sprite, so the player can see the hit coming
+      const c = e.cfg, W = swipeImg.naturalWidth / SWIPE_FRAMES;
+      const f = e.t < c.windup
+        ? Math.min(SWIPE_WINDUP_FRAMES - 1, Math.floor(e.t / c.windup * SWIPE_WINDUP_FRAMES))
+        : Math.min(SWIPE_FRAMES - 1, SWIPE_WINDUP_FRAMES + Math.floor((e.t - c.windup) / (c.attackTime - c.windup) * (SWIPE_FRAMES - SWIPE_WINDUP_FRAMES)));
+      g.drawImage(swipeImg, f * W, 0, W, swipeImg.naturalHeight, -D / 2, -D / 2, D, D);
+    }
     g.restore();
   }
 
