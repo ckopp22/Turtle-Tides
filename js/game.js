@@ -1594,7 +1594,19 @@
       const dx = it.x - turtle.x, dy = it.y - turtle.y;
       if (dx * dx + dy * dy > drop2) it.active = false; else live++;
     }
-    const want = Math.min(items.length, Math.round(HOME_COIN_DENSITY * C.densityMult * Math.PI * rOut * rOut));
+    // Only the part of the kept-populated circle where coins can actually appear counts toward the target (not the home
+    // zone half of it when the turtle is at the border, nor the fog fringe), so density stays the same everywhere. The
+    // share is estimated from a coarse grid of points, a few hundred cheap checks per top-up.
+    let inDisc = 0, valid = 0;
+    const GRID = 16, step = rOut * 2 / GRID, rOut2 = rOut * rOut;
+    for (let gy = 0; gy < GRID; gy++) for (let gx = 0; gx < GRID; gx++) {
+      const px = turtle.x - rOut + (gx + 0.5) * step, py = turtle.y - rOut + (gy + 0.5) * step;
+      if ((px - turtle.x) ** 2 + (py - turtle.y) ** 2 > rOut2) continue;
+      inDisc++;
+      if (!inHomeZone(px, py) && px > WORLD_MIN + C.edgeMargin && px < WORLD_MAX - C.edgeMargin && py > WORLD_MIN + C.edgeMargin && py < WORLD_MAX - C.edgeMargin &&
+        (px - CENTER.x) ** 2 + (py - CENTER.y) ** 2 <= COIN_ZONE_R2) valid++;
+    }
+    const want = inDisc ? Math.min(items.length, Math.round(HOME_COIN_DENSITY * C.densityMult * Math.PI * rOut2 * valid / inDisc)) : 0;
     advCoinWant = want;
     if (live < want) {
       // Empty pool (just entered / warped): fill the whole area in one go, on-screen included. Otherwise new coins
