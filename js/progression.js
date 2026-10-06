@@ -122,12 +122,17 @@
   function shopItemsByCategory(category) { return CONFIG.shop.items.filter(i => i.category === category); }
   function ownsCosmetic(id) { return state.cosmetics.owned.includes(id); }
   function equippedIn(category) { return state.cosmetics.equipped[category] || null; }
+  // Light haptic tick (Android/Chrome only; iOS Safari has no vibrate API, so this is a silent no-op there).
+  function haptic() { try { if (navigator.vibrate) navigator.vibrate(15); } catch (e) {} }
+  window.TT_HAPTIC = haptic;
+
   function buyCosmetic(id) {
     const item = shopItem(id);
     if (!item || ownsCosmetic(id) || state.banked.coins < item.cost) return false;
     state.banked.coins -= item.cost;
     state.cosmetics.owned.push(id);
     persist();
+    haptic();
     if (window.TT_SOUND) window.TT_SOUND.purchase();
     return true;
   }
@@ -313,6 +318,7 @@
     state.carriedFinds = [];
     state.carried = { coins: 0, coconuts: 0 };
     persist();
+    haptic();
     if (window.TT_SOUND) window.TT_SOUND.bank();
     return true;
   }
@@ -517,6 +523,7 @@
       showCongratsBanner();
     }
     persist();
+    haptic();
     if (window.TT_SOUND) window.TT_SOUND.purchase();
     return true;
   }

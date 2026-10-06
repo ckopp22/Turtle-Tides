@@ -1530,6 +1530,7 @@
             if (key === 'coconuts' && window.TT_SOUND) window.TT_SOUND.coconut();
             if (key === 'coins' && window.TT_SOUND) window.TT_SOUND.coin();
             if (key === 'finds' && window.TT_SOUND) window.TT_SOUND.shell();
+            if (window.TT_HAPTIC) window.TT_HAPTIC();
             it.active = false;
             it.respawnAt = gameTime + opts.respawnSeconds;
             if (it.temp) items.splice(i, 1);
@@ -2408,7 +2409,12 @@
     biomeAt: (x, y) => dominantBiome(x, y).biome, // allocates; only called when spawning / picking wander targets
     view: () => { viewRect.x = camX; viewRect.y = camY; viewRect.w = viewW / ZOOM; viewRect.h = viewH / ZOOM; return viewRect; },
     turtleAlive: () => deathTimer < 0,
-    takeHit: n => state === 'shell' ? false : window.Progression.takeHit(n), // a turtle tucked into its shell takes no enemy damage
+    takeHit: n => {
+      if (state === 'shell') return false; // a turtle tucked into its shell takes no enemy damage
+      const r = window.Progression.takeHit(n);
+      if (r !== false && window.TT_HAPTIC) window.TT_HAPTIC(); // skip while invulnerable
+      return r;
+    },
   });
   window.TurtleGame = { start, renderCosmeticPreview, setAdventureUnlocked, isAdventureUnlocked: () => adventureUnlocked, debugFinds: () => findPickups.items }; // debugFinds: console poking only
 
