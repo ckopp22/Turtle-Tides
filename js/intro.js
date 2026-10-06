@@ -517,17 +517,6 @@
     canvas.height = Math.round(viewH * dpr);
   }
   window.addEventListener('resize', resize);
-  // iOS home-screen app launches with a stale viewport (innerHeight ~one top-inset short, fixed by a rotation).
-  // Wiggling the viewport meta makes WebKit re-measure it, same as a rotation would.
-  function nudgeViewport() {
-    const m = document.querySelector('meta[name=viewport]');
-    if (!m || !(window.navigator.standalone || matchMedia('(display-mode: standalone)').matches)) return;
-    if (window.innerHeight >= Math.max(screen.width, screen.height) || window.innerHeight < window.innerWidth) return;
-    const orig = m.content;
-    m.content = orig.replace('initial-scale=1', 'initial-scale=1.001');
-    setTimeout(() => { m.content = orig; resize(); }, 60);
-  }
-  [0, 250, 700, 1500].forEach(ms => setTimeout(nudgeViewport, ms));
   // iOS reports stale innerWidth/innerHeight right after a rotation (canvas then looks zoomed), so re-measure as it settles.
   window.addEventListener('orientationchange', () => { resize(); [100, 300, 600].forEach(ms => setTimeout(resize, ms)); });
   if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
@@ -967,10 +956,6 @@
       drawButton(L.play, 'PLAY', true);
       drawMenuTurtle(t); // after the button so the turtle walks over it
       drawMuteIcon(L.mute, soundOn);
-      // TEMP diagnostic for the iOS bottom-bar bug — remove once fixed.
-      ctx.save(); ctx.font = '12px monospace'; ctx.fillStyle = '#000'; ctx.textAlign = 'left';
-      ctx.fillText(`inner ${innerWidth}x${innerHeight} screen ${screen.width}x${screen.height} view ${viewW}x${viewH} top ${window.Progression.topInset()} sa ${navigator.standalone} cvs ${canvas.clientHeight}`, 6, viewH * 0.3);
-      ctx.restore();
     },
   };
 
