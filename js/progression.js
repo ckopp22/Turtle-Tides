@@ -602,7 +602,9 @@
     // (loadFromSave above already set heartsLevel/hullLevel/homeLevel) so it isn't lost.
     state.turtleMaster = typeof data.turtleMaster === 'boolean' ? data.turtleMaster : allUpgradesMaxed();
     // Test shortcut: ?master=1 maxes every upgrade (saved with the slot on the next persist).
-    if (new URLSearchParams(location.search).get('master') === '1') {
+    // On localhost it's on by default; ?master=0 turns it off there.
+    const masterParam = new URLSearchParams(location.search).get('master');
+    if (masterParam === '1' || (masterParam !== '0' && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname))) {
       state.heartsLevel = CONFIG.hearts.upgradeCosts.length;
       state.hullLevel = CONFIG.hull.capTiers.length - 1;
       state.homeLevel = window.Home.UPGRADES.length;
