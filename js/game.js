@@ -2329,6 +2329,7 @@
     const visible = visibleBuf;
     if (perf) perf.visible = visible.length;
     drawSceneryWithTurtle(visible);
+    if (window.Enemies && !skip.enemies) window.Enemies.drawSwipes(ctx, camX, camY, vw, vh); // attack swipes over the turtle
     drawBurst();
     if (DEBUG_HITBOXES) drawDebugHitboxes(visible);
     if (DEBUG) { ctx.strokeStyle = 'magenta'; ctx.lineWidth = 4; ctx.strokeRect(0, 0, WORLD_SIZE, WORLD_SIZE); } // Adventure Zone boundary (= the home zone's edge)

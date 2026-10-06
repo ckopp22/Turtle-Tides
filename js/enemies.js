@@ -709,7 +709,30 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
     g.drawImage(img, e.frame * F, e.row * F, F, F, -D / 2, -D / 2, D, D);
     g.restore();
     const ox = e.x + lx, oy = (air ? e.y - 10 : e.y) + ly;
-    if (e.state === ATTACK && swipeImg.complete && swipeImg.naturalWidth) { // swipe aimed at the turtle: wind-up arcs, then the slash at the hit
+    if (e.notice > 0 && exclaimImg.complete && exclaimImg.naturalWidth) { // "!" pops above an enemy that just noticed the turtle
+      const u = 1 - e.notice / CONFIG.noticeSeconds, pop = u < 0.2 ? 0.5 + u / 0.2 * 0.7 : u < 0.35 ? 1.2 - (u - 0.2) / 0.15 * 0.2 : 1;
+      const w = exclaimImg.naturalWidth * 3 * pop, h = exclaimImg.naturalHeight * 3 * pop;
+      g.globalAlpha = Math.min(1, e.notice / 0.2);
+      g.drawImage(exclaimImg, ox - w / 2, oy - D / 2 - 6 - h, w, h);
+      g.globalAlpha = 1;
+    }
+  }
+
+  // Attack swipes are drawn after the depth-sorted scene (game.js calls this once per frame), so they layer over the turtle.
+  // Aimed at the turtle: wind-up arcs, then the slash at the hit.
+  function drawSwipes(g, camX, camY, vw, vh) {
+    if (!swipeImg.complete || !swipeImg.naturalWidth) return;
+    const m = CONFIG.swipeSize;
+    for (const e of pool) {
+      if (!e.active || e.state !== ATTACK) continue;
+      if (e.x < camX - m || e.x > camX + vw + m || e.y < camY - m || e.y > camY + vh + m) continue;
+      const air = e.cfg.flies, lunge = e.cfg.lunge;
+      let lx = 0, ly = 0;
+      if (lunge) {
+        const u = Math.max(0, Math.min(1, (e.t - (e.cfg.windup - 0.12)) / 0.24));
+        lx = Math.cos(e.atkAngle) * Math.sin(u * Math.PI) * lunge; ly = Math.sin(e.atkAngle) * Math.sin(u * Math.PI) * lunge;
+      }
+      const ox = e.x + lx, oy = (air ? e.y - 10 : e.y) + ly;
       const c = e.cfg, W = swipeImg.naturalWidth / SWIPE_FRAMES, S = CONFIG.swipeSize;
       const f = e.t < c.windup
         ? Math.min(SWIPE_WINDUP_FRAMES - 1, Math.floor(e.t / c.windup * SWIPE_WINDUP_FRAMES))
@@ -719,13 +742,6 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
       g.rotate(Math.atan2(api.turtle.y - e.y, api.turtle.x - e.x) + Math.PI / 2); // art points up
       g.drawImage(swipeImg, f * W, 0, W, swipeImg.naturalHeight, -S / 2, -S / 2, S, S);
       g.restore();
-    }
-    if (e.notice > 0 && exclaimImg.complete && exclaimImg.naturalWidth) { // "!" pops above an enemy that just noticed the turtle
-      const u = 1 - e.notice / CONFIG.noticeSeconds, pop = u < 0.2 ? 0.5 + u / 0.2 * 0.7 : u < 0.35 ? 1.2 - (u - 0.2) / 0.15 * 0.2 : 1;
-      const w = exclaimImg.naturalWidth * 3 * pop, h = exclaimImg.naturalHeight * 3 * pop;
-      g.globalAlpha = Math.min(1, e.notice / 0.2);
-      g.drawImage(exclaimImg, ox - w / 2, oy - D / 2 - 6 - h, w, h);
-      g.globalAlpha = 1;
     }
   }
 
@@ -797,5 +813,5 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
   }
   const statsBuf = { home: 0, adv: 0, near: 0 };
   function stats() { statsBuf.home = statsBuf.adv = 0; for (const e of pool) if (e.active) { if (e.pool === 'adv') statsBuf.adv++; else statsBuf.home++; } statsBuf.near = nearCount; return statsBuf; } // ?debug=1 overlay
-  window.Enemies = { init, update, setAdventure, stats, nearDen, resetAggro, collectVisible, drawDebug, CONFIG, get pool() { return DEBUG ? pool : null; }, get api() { return DEBUG ? api : null; } }; // pool/api only exposed with ?debug=1, for console poking
+  window.Enemies = { init, update, setAdventure, stats, nearDen, resetAggro, collectVisible, drawSwipes, drawDebug, CONFIG, get pool() { return DEBUG ? pool : null; }, get api() { return DEBUG ? api : null; } }; // pool/api only exposed with ?debug=1, for console poking
 })();
