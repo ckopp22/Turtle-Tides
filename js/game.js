@@ -34,8 +34,10 @@
   const WORLD_SIZE = 5200;
   const ADVENTURE = {
     worldMult: 2,            // world side = this x the original map's side (2 = 4x the area); the one knob for world size
-    fenceInset: 110,         // locked: world px in from the home zone's edge where the fence stands and the turtle stops
-    fencePostGap: 96,        // world px between fence posts
+    fenceInset: 110,         // locked: about this many world px in from the home zone's edge the fence stands and the turtle stops (nudged so whole fence tiles fit)
+    fenceTile: 64,           // world px per fence art tile (the art is 64px)
+    bumpHintSeconds: 12,     // locked: at most one "fenced off" hint this often when the turtle pushes against the fence
+    enterHintSeconds: 20,    // at most one "Entering the Adventure Zone" toast this often
     fogBand: 300,            // locked: world px of fog thickening toward the edge (the baked edge fog hides under the grass)
     fogAlpha: 0.85,          // fog opacity at the very edge
     seed: 7351,              // seeds the zone's scenery, so it's the same every load
@@ -73,6 +75,10 @@
       hysteresis: 150,       // world px past the border before the music switches to adventure, and back inside it before switching back
     },
   };
+  // The locked fence is a closed rectangle of whole tiles centered on the home zone: FENCE_N tiles per side, posts on the
+  // line FENCE_A px in from each edge (this is also how far the turtle can go while the zone is locked).
+  const FENCE_N = Math.round((WORLD_SIZE - 2 * ADVENTURE.fenceInset) / ADVENTURE.fenceTile);
+  const FENCE_A = (WORLD_SIZE - FENCE_N * ADVENTURE.fenceTile) / 2;
   const WORLD_PAD = WORLD_SIZE * (ADVENTURE.worldMult - 1) / 2; // new land on each side of the home zone
   const WORLD_MIN = -WORLD_PAD, WORLD_MAX = WORLD_SIZE + WORLD_PAD;
   const CENTER = { x: WORLD_SIZE / 2, y: WORLD_SIZE / 2 };
@@ -843,11 +849,12 @@
     if (now === inAdventure) return;
     inAdventure = now;
     if (window.TT_SOUND) window.TT_SOUND.musicZone(now, ADVENTURE.music.fadeSeconds);
+    if (now && gameTime - lastEnterHint > ADVENTURE.enterHintSeconds) { lastEnterHint = gameTime; showToast('Entering the Adventure Zone', 2400); }
   }
   function syncAdventureUnlock(announce) {
     if (adventureUnlocked || !Home.hasFeature('adventureZone')) return;
     setAdventureUnlocked(true);
-    if (announce) showToast('A new area has opened!', 4000); // TODO: polish (effect/sound) in the polish step
+    if (announce) { showToast('A new area has opened!', 4000); burstConfetti(turtle.x, turtle.y - 10); } // purchase.mp3 already plays with the buy
   }
   window.Progression.setUpgradeHandler(() => syncAdventureUnlock(true));
 
@@ -1443,7 +1450,7 @@
   // through window.Progression.tryPickup(), which gates them on hull capacity (MDD s4) — an item
   // stays on the ground (not consumed) if the hull is full. Each find pickup rolls which of the 25 it is
   // (by rarity, see progression.js CONFIG.finds) when placed and again each time it respawns.
-  let gameTime = 0;
+  let gameTime = 0, lastBumpHint = -1e9, lastEnterHint = -1e9;
 
   // Picks a random spot that's not in water and not on the sand-text patch. Shared by every pickup
   // type for both initial placement and respawning.
@@ -1691,14 +1698,14 @@
   for (let i = 0; i < ADVENTURE.chest.confettiCount; i++) confetti.push({ on: false, x: 0, y: 0, vx: 0, vy: 0, age: 0, spin: 0, w: 0, h: 0, c: 0 });
   const plusText = { on: false, x: 0, y: 0, age: 0, text: '' };
   let confettiLive = 0;
-  function burstConfetti(x, y) {
+  function burstConfetti(x, y, text) {
     for (const p of confetti) {
       const a = Math.random() * Math.PI * 2, sp = 120 + Math.random() * 340;
       p.on = true; p.x = x; p.y = y - 20; p.vx = Math.cos(a) * sp; p.vy = Math.sin(a) * sp * 0.6 - 260 - Math.random() * 200;
       p.age = Math.random() * 0.2; p.spin = Math.random() * 6; p.w = 5 + Math.random() * 5; p.h = 8 + Math.random() * 6; p.c = Math.floor(Math.random() * CONFETTI_COLORS.length);
     }
     confettiLive = confetti.length;
-    plusText.on = true; plusText.x = x; plusText.y = y - 50; plusText.age = 0; plusText.text = '+' + ADVENTURE.chest.value;
+    if (text) { plusText.on = true; plusText.x = x; plusText.y = y - 50; plusText.age = 0; plusText.text = text; }
   }
   function updateBurst(dt) {
     if (plusText.on && (plusText.age += dt) > 1.6) plusText.on = false;
@@ -1743,7 +1750,7 @@
       if ((chest.saveTimer += dt) >= C.saveEverySeconds) saveChest();
       if (chest.left <= 0) {
         if ((chest.retry -= dt) > 0) return;
-        if (pickChestSpot()) { chest.on = true; chest.left = 0; saveChest(); }
+        if (pickChestSpot()) { chest.on = true; chest.left = 0; saveChest(); if (inAdventure) showToast('A treasure chest has appeared!', 2600); }
         else chest.retry = C.spawnRetrySeconds;
       }
       return;
@@ -1752,7 +1759,7 @@
     if (dx * dx + dy * dy < r * r && state !== 'dying') {
       chest.on = false; chest.left = C.respawnSeconds;
       window.Progression.grantCarriedCoins(C.value);
-      burstConfetti(chest.x, chest.y);
+      burstConfetti(chest.x, chest.y, '+' + C.value);
       if (window.TT_SOUND) { window.TT_SOUND.purchase(); window.TT_SOUND.coin(); }
       saveChest();
     }
@@ -1958,11 +1965,15 @@
     Home.collideWorld(turtle, TURTLE_BODY_RADIUS);
 
     // World edge, or the fence while the Adventure Zone is locked.
-    const m = adventureUnlocked ? TURTLE_RADIUS : ADVENTURE.fenceInset;
+    const m = adventureUnlocked ? TURTLE_RADIUS : FENCE_A;
     if (turtle.x < bounds.x0 + m) { turtle.x = bounds.x0 + m; turtle.vx = 0; }
     if (turtle.x > bounds.x1 - m) { turtle.x = bounds.x1 - m; turtle.vx = 0; }
     if (turtle.y < bounds.y0 + m) { turtle.y = bounds.y0 + m; turtle.vy = 0; }
     if (turtle.y > bounds.y1 - m) { turtle.y = bounds.y1 - m; turtle.vy = 0; }
+    if (!adventureUnlocked && hasInput && (turtle.x <= bounds.x0 + m + 0.5 || turtle.x >= bounds.x1 - m - 0.5 || turtle.y <= bounds.y0 + m + 0.5 || turtle.y >= bounds.y1 - m - 0.5) && gameTime - lastBumpHint > ADVENTURE.bumpHintSeconds) {
+      lastBumpHint = gameTime; // pushing against the locked fence: say how to open the way
+      showToast('The way is fenced off. Buy the Table & Stools at home to open the new area.', 4200);
+    }
 
     // Re-check home status against this frame's final position (not the pre-movement one used
     // above for the hunger-penalty speed calc) so the Upgrades button/panel react the instant the
@@ -1989,7 +2000,7 @@
   let dpr = 1, viewW = 0, viewH = 0;
 
   function clampToWorld() {
-    const m = adventureUnlocked ? TURTLE_RADIUS : ADVENTURE.fenceInset;
+    const m = adventureUnlocked ? TURTLE_RADIUS : FENCE_A;
     turtle.x = Math.max(bounds.x0 + m, Math.min(bounds.x1 - m, turtle.x));
     turtle.y = Math.max(bounds.y0 + m, Math.min(bounds.y1 - m, turtle.y));
   }
@@ -2199,56 +2210,44 @@
       if (arr) for (const s of arr) if (inView(s, vw, vh, margin)) visibleBuf.push(s);
     }
   }
-  // Rope fence along the home zone's edge while the Adventure Zone is locked: posts every fencePostGap with a
-  // sagging rope between them, drawn only for the stretch in view. The turtle stops at it (see update()).
+  // Fence art (64px top-down tiles with the post in the middle): a straight run piece for the top/bottom edges, one for the
+  // sides, and four corners named for the way their ropes point. A closed rectangle of FENCE_N tiles per side.
+  const FENCE_IMG = {};
+  for (const n of ['post_rope', 'vertical', 'corner_up_left', 'corner_up_right', 'corner_down_left', 'corner_down_right']) {
+    const img = new Image(); img.src = `assets/scenery/fence_${n}_64.png`; FENCE_IMG[n] = img;
+  }
   let fenceFog = null;
+  // While the Adventure Zone is locked: fog rolling in toward the home zone's edge, and the fence along FENCE_A. Only the
+  // tiles in view are drawn (at most a couple dozen per edge). The turtle stops at the fence (see update()).
   function drawFence(vw, vh) {
     if (adventureUnlocked) return;
-    const a = ADVENTURE.fenceInset, G = ADVENTURE.fencePostGap, far = WORLD_SIZE - a, pad = 80;
-    const fb = ADVENTURE.fogBand, top = camY < fb, bottom = camY + vh > WORLD_SIZE - fb, left = camX < fb, right = camX + vw > WORLD_SIZE - fb;
+    const W = WORLD_SIZE, fb = ADVENTURE.fogBand, T = ADVENTURE.fenceTile, A = FENCE_A, N = FENCE_N, far = A + N * T;
+    const top = camY < fb, bottom = camY + vh > W - fb, left = camX < fb, right = camX + vw > W - fb;
     if (!(top || bottom || left || right)) return;
     ctx.save();
-    // Fog rolling in toward the edge (gradients are built once; they live in world space).
+    // Fog (gradients are built once; they live in world space).
     if (!fenceFog) {
-      const W = WORLD_SIZE, B = ADVENTURE.fogBand, mk = (x0, y0, x1, y1) => {
+      const mk = (x0, y0, x1, y1) => {
         const g = ctx.createLinearGradient(x0, y0, x1, y1);
         g.addColorStop(0, 'rgba(8, 28, 36, 0)'); g.addColorStop(1, `rgba(8, 28, 36, ${ADVENTURE.fogAlpha})`);
         return g;
       };
-      fenceFog = { top: mk(0, B, 0, 0), left: mk(B, 0, 0, 0), bottom: mk(0, W - B, 0, W), right: mk(W - B, 0, W, 0) };
+      fenceFog = { top: mk(0, fb, 0, 0), left: mk(fb, 0, 0, 0), bottom: mk(0, W - fb, 0, W), right: mk(W - fb, 0, W, 0) };
     }
-    const B = ADVENTURE.fogBand, W = WORLD_SIZE;
-    if (top) { ctx.fillStyle = fenceFog.top; ctx.fillRect(camX, 0, vw, B); }
-    if (bottom) { ctx.fillStyle = fenceFog.bottom; ctx.fillRect(camX, W - B, vw, B); }
-    if (left) { ctx.fillStyle = fenceFog.left; ctx.fillRect(0, camY, B, vh); }
-    if (right) { ctx.fillStyle = fenceFog.right; ctx.fillRect(W - B, camY, B, vh); }
-    ctx.lineCap = 'round';
-    const run = (horizontal, fixed, lo, hi) => { // one edge: posts along [lo, hi] on the fixed coordinate
-      const from = Math.max(a, lo - pad), to = Math.min(far, hi + pad);
-      const k0 = Math.ceil((from - a) / G), k1 = Math.floor((to - a) / G);
-      if (k1 < k0) return;
-      ctx.beginPath();
-      for (let k = k0; k <= k1; k++) {
-        const t = a + k * G, x = horizontal ? t : fixed, y = horizontal ? fixed : t;
-        if (k > k0) { // rope from the previous post's top to this one's, sagging in the middle
-          const pt = t - G, px = horizontal ? pt : fixed, py = horizontal ? fixed : pt;
-          ctx.moveTo(px, py - 24); ctx.quadraticCurveTo((px + x) / 2, (py + y) / 2 - 24 + 9, x, y - 24);
-        }
-      }
-      ctx.strokeStyle = 'rgba(70, 48, 24, 0.8)'; ctx.lineWidth = 5; ctx.stroke(); // rope shadow
-      ctx.save(); ctx.translate(0, -2); ctx.strokeStyle = '#dcc590'; ctx.lineWidth = 3; ctx.stroke(); ctx.restore();
-      for (let k = k0; k <= k1; k++) {
-        const t = a + k * G, x = horizontal ? t : fixed, y = horizontal ? fixed : t;
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.3)'; ctx.fillRect(x - 6, y - 2, 14, 7);
-        ctx.fillStyle = '#6b4a2b'; ctx.fillRect(x - 5, y - 34, 10, 38);
-        ctx.fillStyle = '#8f6a3f'; ctx.fillRect(x - 5, y - 34, 4, 38);
-        ctx.fillStyle = '#5a3d22'; ctx.fillRect(x - 6, y - 36, 12, 4);
-      }
-    };
-    if (top) run(true, a, camX, camX + vw);
-    if (bottom) run(true, far, camX, camX + vw);
-    if (left) run(false, a, camY, camY + vh);
-    if (right) run(false, far, camY, camY + vh);
+    if (top) { ctx.fillStyle = fenceFog.top; ctx.fillRect(camX, 0, vw, fb); }
+    if (bottom) { ctx.fillStyle = fenceFog.bottom; ctx.fillRect(camX, W - fb, vw, fb); }
+    if (left) { ctx.fillStyle = fenceFog.left; ctx.fillRect(0, camY, fb, vh); }
+    if (right) { ctx.fillStyle = fenceFog.right; ctx.fillRect(W - fb, camY, fb, vh); }
+    ctx.imageSmoothingEnabled = false; // pixel art
+    const F = FENCE_IMG, h = T / 2;
+    const tile = (img, cx, cy) => { if (img.complete && img.naturalWidth) ctx.drawImage(img, cx - h, cy - h, T, T); };
+    // Index range of the tiles in view along one axis (0..N), padded by one tile.
+    const k0x = Math.max(0, Math.floor((camX - A) / T) - 1), k1x = Math.min(N, Math.ceil((camX + vw - A) / T) + 1);
+    const k0y = Math.max(0, Math.floor((camY - A) / T) - 1), k1y = Math.min(N, Math.ceil((camY + vh - A) / T) + 1);
+    if (top) for (let k = k0x; k <= k1x; k++) tile(k === 0 ? F.corner_down_right : k === N ? F.corner_down_left : F.post_rope, A + k * T, A);
+    if (bottom) for (let k = k0x; k <= k1x; k++) tile(k === 0 ? F.corner_up_right : k === N ? F.corner_up_left : F.post_rope, A + k * T, far);
+    if (left) for (let k = Math.max(1, k0y); k <= Math.min(N - 1, k1y); k++) tile(F.vertical, A, A + k * T);
+    if (right) for (let k = Math.max(1, k0y); k <= Math.min(N - 1, k1y); k++) tile(F.vertical, far, A + k * T);
     ctx.restore();
   }
   function inView(s, vw, vh, margin) {
