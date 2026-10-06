@@ -2210,10 +2210,10 @@
       if (arr) for (const s of arr) if (inView(s, vw, vh, margin)) visibleBuf.push(s);
     }
   }
-  // Fence art (64px top-down tiles with the post in the middle): a straight run piece for the top/bottom edges, one for the
+  // Fence art (64px top-down tiles with the post in the middle): a straight run piece with the post's front face and sagging rope for the top/bottom edges, one for the
   // sides, and four corners named for the way their ropes point. A closed rectangle of FENCE_N tiles per side.
   const FENCE_IMG = {};
-  for (const n of ['post_rope', 'vertical', 'corner_up_left', 'corner_up_right', 'corner_down_left', 'corner_down_right']) {
+  for (const n of ['horizontal_depth', 'vertical', 'corner_up_left', 'corner_up_right', 'corner_down_left', 'corner_down_right']) {
     const img = new Image(); img.src = `assets/scenery/fence_${n}_64.png`; FENCE_IMG[n] = img;
   }
   let fenceFog = null;
@@ -2244,8 +2244,8 @@
     // Index range of the tiles in view along one axis (0..N), padded by one tile.
     const k0x = Math.max(0, Math.floor((camX - A) / T) - 1), k1x = Math.min(N, Math.ceil((camX + vw - A) / T) + 1);
     const k0y = Math.max(0, Math.floor((camY - A) / T) - 1), k1y = Math.min(N, Math.ceil((camY + vh - A) / T) + 1);
-    if (top) for (let k = k0x; k <= k1x; k++) tile(k === 0 ? F.corner_down_right : k === N ? F.corner_down_left : F.post_rope, A + k * T, A);
-    if (bottom) for (let k = k0x; k <= k1x; k++) tile(k === 0 ? F.corner_up_right : k === N ? F.corner_up_left : F.post_rope, A + k * T, far);
+    if (top) for (let k = k0x; k <= k1x; k++) tile(k === 0 ? F.corner_down_right : k === N ? F.corner_down_left : F.horizontal_depth, A + k * T, A);
+    if (bottom) for (let k = k0x; k <= k1x; k++) tile(k === 0 ? F.corner_up_right : k === N ? F.corner_up_left : F.horizontal_depth, A + k * T, far);
     if (left) for (let k = Math.max(1, k0y); k <= Math.min(N - 1, k1y); k++) tile(F.vertical, A, A + k * T);
     if (right) for (let k = Math.max(1, k0y); k <= Math.min(N - 1, k1y); k++) tile(F.vertical, far, A + k * T);
     ctx.restore();

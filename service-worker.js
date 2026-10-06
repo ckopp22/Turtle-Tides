@@ -1,7 +1,7 @@
 // Offline support. Shell (index.html, css, js) is network-first so deploys show up right away online;
 // assets/** are cache-first. Bump CACHE on every deploy that adds/changes an asset file (the shell
 // URLs are read from index.html at install, so its ?v= bumps are picked up automatically).
-const CACHE = 'tt-v4';
+const CACHE = 'tt-v5';
 
 // Critical art: install fails if any of these can't be fetched.
 const ART = [
@@ -81,7 +81,7 @@ const ART = [
   'assets/scenery/fence_corner_down_right_64.png',
   'assets/scenery/fence_corner_up_left_64.png',
   'assets/scenery/fence_corner_up_right_64.png',
-  'assets/scenery/fence_post_rope_64.png',
+  'assets/scenery/fence_horizontal_depth_64.png',
   'assets/scenery/fence_vertical_64.png',
   'assets/scenery/oak_tree.png',
   'assets/scenery/pine_sapling.png',
