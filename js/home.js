@@ -48,7 +48,7 @@
     { id: 'table',   name: 'Table & Stools', layer: '04_table_and_stools_192.png', cost: 30, unlocks: ['adventureZone'], perk: 'New area',solids: [{ circle: [152, 82, 18] }, { circle: [152, 112, 8] }, { circle: [128, 82, 8] }], hotspot: { rect: [134, 64, 170, 100], action: 'bible' } },
     { id: 'goggles',  name: 'Goggles',        layer: null,                          cost: 35, unlocks: ['swimSpeed1'],             perk: 'Swim Speed I',               solids: [] }, // drawn in rebuildRoom, hanging on a stool
     { id: 'doormat', name: 'Doormat',        layer: '03_doormat_192.png',          cost: 40, unlocks: ['moveSpeed1'],             perk: 'Move Speed I',               solids: [] },
-    { id: 'window',  name: 'Window',         layer: null,                          cost: 45, unlocks: ['dayNight'],             perk: 'Day/Night',                  solids: [], hotspot: { rect: [74, 10, 118, 36], action: 'daynight' } }, // art is in the base room image; no layer
+    { id: 'window',  name: 'Window',         layer: null,                          cost: 45, unlocks: ['hideInShell'],             perk: 'Hide in Shell',            solids: [], hotspot: { rect: [74, 10, 118, 36], action: 'daynight' } }, // art is in the base room image; no layer
     { id: 'shelf',   name: 'Shelf',          layer: '05_shelf_192.png',            cost: 60, unlocks: ['collectionBook'],         perk: 'Collection Book',            solids: [], hotspot: { rect: [130, 17, 178, 36], action: 'book' } },
     { id: 'plant',   name: 'Plant',          layer: '06_plant_192.png',            cost: 75, unlocks: ['minigame'],              perk: 'Mini game',                  solids: [{ circle: [30, 158, 9] }], hotspot: { rect: [18, 142, 42, 168], action: 'minigame' } },
     { id: 'lantern', name: 'Lantern',        layer: '07_lantern_192.png',          cost: 95, unlocks: ['moveSpeed2'],             perk: 'Move Speed II',               solids: [] },
@@ -58,7 +58,7 @@
   // unlit, then lit (animated) with Hide in Shell. Drawn on the island, not in the room.
   const OUTDOOR = [
     { id: 'campfireUnlit', name: 'Campfire Pit', cost: 150, unlocks: [],              perk: 'A place for a fire' },
-    { id: 'campfireLit',   name: 'Campfire',     cost: 190, unlocks: ['hideInShell'], perk: 'Hide in Shell' },
+    { id: 'campfireLit',   name: 'Campfire',     cost: 190, unlocks: ['dayNight'], perk: 'Day/Night' },
     { id: 'stones',        name: 'Stepping Stones', cost: 230, unlocks: [],            perk: 'A path to the water' },
     { id: 'garden',        name: 'Garden Bed',   cost: 280, unlocks: ['slowHunger'],  perk: 'Slower hunger' },
     { id: 'onewheel',      name: 'One Wheel',    cost: 340, unlocks: ['moveSpeed3'],  perk: 'Move Speed III' },
@@ -277,7 +277,7 @@
     }
   }
   // Furniture with a hotspot that is unlocked and has an action wired up.
-  function spotActive(i) { const u = INDOOR[i]; return !!u.hotspot && !!ACTIONS[u.hotspot.action] && i < indoorCount(); }
+  function spotActive(i) { const u = INDOOR[i]; return !!u.hotspot && !!ACTIONS[u.hotspot.action] && i < indoorCount() && (u.hotspot.action !== 'daynight' || hasFeature('dayNight')); } // the window toggle waits for Day/Night (the lit campfire)
   function hitSpot(rx, ry) {
     const pad = CONFIG.hitPad;
     for (let i = 0; i < INDOOR.length; i++) {
