@@ -93,7 +93,7 @@
       },
       wolf: {
         sheet: 'assets/enemies/wolf_spritesheet.png',
-        biomes: ['forestOpen', 'deadTrees', 'forestThick', 'beach'], count: 12, advCount: 32, // slots cycle through the biomes, so every biome gets a pack
+        biomes: ['forestOpen', 'deadTrees', 'forestThick', 'beach'], count: 6, advCount: 32, // slots cycle through the biomes, so every biome gets a pack
         cutOff: true,        // pack tactic: chasing wolves run ahead of the turtle's heading, each to a different spot, to cut it off
         nocturnal: true,     // only exists at night; the day/night toggle removes it, and it ignores the live-enemy caps
         speed: 1.3, detect: 6, attackRange: 1, // faster than the turtle: it can run around it, but only bites from in front / beside (see CHASE)
