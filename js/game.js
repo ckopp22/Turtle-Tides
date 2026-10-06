@@ -2210,12 +2210,12 @@
       if (arr) for (const s of arr) if (inView(s, vw, vh, margin)) visibleBuf.push(s);
     }
   }
-  // Fence art (64px top-down tiles with the post in the middle): a straight run piece with the post's front face and sagging rope for the top/bottom edges, one for the
+  // Fence art (64px top-down tiles with the post in the middle): a straight run piece for the top/bottom edges (all pieces are the "depth" art: the post's front face and sagging rope), one for the
   // sides, and four corners named for the way their ropes point. A closed rectangle of FENCE_N tiles per side.
   const FENCE_IMG = {};
-  for (const n of ['horizontal_depth', 'vertical', 'corner_up_left', 'corner_up_right', 'corner_down_left', 'corner_down_right']) {
-    const img = new Image(); img.src = `assets/scenery/fence_${n}_64.png`; FENCE_IMG[n] = img;
-  }
+  const FENCE_FILES = { horizontal_depth: 'fence_horizontal_depth_64', vertical: 'fence_depth_vertical_64', corner_up_left: 'fence_depth_corner_up_left_64',
+    corner_up_right: 'fence_depth_corner_up_right_64', corner_down_left: 'fence_depth_corner_down_left_64', corner_down_right: 'fence_depth_corner_down_right_64' };
+  for (const k in FENCE_FILES) { const img = new Image(); img.src = `assets/scenery/${FENCE_FILES[k]}.png`; FENCE_IMG[k] = img; }
   let fenceFog = null;
   // While the Adventure Zone is locked: fog rolling in toward the home zone's edge, and the fence along FENCE_A. Only the
   // tiles in view are drawn (at most a couple dozen per edge). The turtle stops at the fence (see update()).
