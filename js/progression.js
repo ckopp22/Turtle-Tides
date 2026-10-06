@@ -243,6 +243,7 @@
       owned: ['color_default'],
       equipped: { color: 'color_default', hat: null, clothes: null, accessory: null },
     },
+    adventure: { v: 1, chest: null }, // Adventure Zone save block (game.js owns the contents: the treasure chest's spot and respawn timer)
     homeSeenLevel: 0, // home level the player last saw inside the hut (higher = new items to pop in)
     // Lifetime counters for the future collection book's stats page; saved with the slot.
     stats: { coconuts: 0, coins: 0, castles: 0, deaths: 0, playSeconds: 0 },
@@ -287,6 +288,9 @@
     if (type === 'coins' || type === 'coconuts') state.stats[type]++;
     return true;
   }
+  // Treasure-chest reward: coins go straight into the carried stash even past the hull limit (they still have to be
+  // carried home and banked, and are lost like any carried item if the turtle is caught).
+  function grantCarriedCoins(n) { state.carried.coins += n; state.stats.coins += n; }
   // ---- Stats (lifetime counters for the future collection book) ----
   // Collection-book page reward: pays `coins` into the bank once per page; false if already paid.
   function claimPageReward(pageId, coins) {
@@ -547,6 +551,11 @@
     state.collection = {};
     const col = data.collection || {};
     for (const it of CONFIG.finds.items) if (Number.isFinite(col[it.id]) && col[it.id] > 0) state.collection[it.id] = Math.floor(col[it.id]);
+    // Adventure Zone block (v1): { chest: { on, x, y, left } } — absent on older saves.
+    const adv = data.adventure && typeof data.adventure === 'object' ? data.adventure : {}, ch = adv.chest;
+    state.adventure = { v: 1, chest: ch && typeof ch === 'object' && Number.isFinite(ch.left) ? {
+      on: ch.on === true && Number.isFinite(ch.x) && Number.isFinite(ch.y), x: Number(ch.x) || 0, y: Number(ch.y) || 0, left: Math.max(0, Math.min(3600, ch.left)),
+    } : null };
     state.hideOn = data.hideOn === true;
     state.isNight = typeof data.isNight === 'boolean' ? data.isNight : false; // missing on old saves -> default day
     if (migratedHome) state.isNight = false; // the Window (Day/Night) was refunded by the home-order migration
@@ -602,6 +611,7 @@
       bookRewards: { ...state.bookRewards },
       isNight: state.isNight,
       hideOn: state.hideOn,
+      adventure: { v: 1, chest: state.adventure.chest ? { ...state.adventure.chest } : null },
       cosmetics: { owned: state.cosmetics.owned.slice(), equipped: { ...state.cosmetics.equipped } },
       turtleMaster: state.turtleMaster,
       homeVersion: 5, // 5 = Table & Stools moved to upgrade 4 (opens the Adventure Zone); 4 = Window inserted at upgrade 5; 3 = homeLevel 0 is nothing, 1 is the hut, then its upgrades (2 = no hut step); bump if the save shape changes (loads tolerate it missing)
@@ -1024,7 +1034,7 @@
   }
 
   window.Progression = {
-    tryPickup, bankCarried, takeLostItems, takeHit, getStarveDim: () => starveDim, isInvulnerable, setRespawnHandler, setUpgradeHandler, setDeathHandler, respawnAtHome,
+    tryPickup, grantCarriedCoins, bankCarried, takeLostItems, takeHit, getStarveDim: () => starveDim, isInvulnerable, setRespawnHandler, setUpgradeHandler, setDeathHandler, respawnAtHome,
     update, restoreHearts, maxHearts, getHideConfig, swimSpeedMultiplier, moveSpeedMultiplier, toggleDayNight, drawHUD, setHomeButtonVisible, tryEatFromHud, getIconRow: ensureIconRow,
     buyUpgrade, canUpgrade, addStat, addPlayTime, claimPageReward,
     attachSlot, getSaveData, persist,

@@ -55,6 +55,18 @@
       spawnsPerTick: 3,      // new coins per top-up (the first fill on entering the zone is done in one go)
       edgeMargin: 150,       // keep this far from the outer world edge
     },
+    chest: {                 // the zone's treasure chest: one at a time, a pickup like a coin (walk over it)
+      value: 50,             // coins added to the carried stash (hull limit ignored; must be carried home and banked)
+      firstSpawnSeconds: 10, // first chest this long (game time) after the zone is first open
+      respawnSeconds: 60,    // game time (paused while inside the hut) from pickup to the next chest; saved with the slot
+      minPlayerScreens: 1.2, // a new chest appears at least this many screens (of the larger side) from the turtle
+      denPad: 80,            // ...and at least this far outside any live enemy's den (wander/leash area)
+      pickupRadius: 34,      // + the turtle's body radius
+      drawSize: 72,          // world px
+      spawnRetrySeconds: 0.5,// wait between failed spawn searches
+      saveEverySeconds: 5,   // how often the respawn countdown is written to the save while it runs
+      confettiCount: 70, confettiSeconds: 1.8,
+    },
     music: {
       files: ['assets/sfx/adventure1.mp3', 'assets/sfx/adventure2.mp3', 'assets/sfx/adventure3.mp3'], // cycled like the normal music; drop-in: a missing file just keeps the normal music
       fadeSeconds: 2,        // crossfade length between the normal and adventure music
@@ -262,12 +274,17 @@
   function debugAction(name) {
     if (name === 'c') { window.Progression.state.banked.coins += 1000; window.Progression.persist(); }
     else if (name === 'u') setAdventureUnlocked(!adventureUnlocked);
+    else if (name === 'k' && spawned && !Home.isInterior()) { // chest right here, ahead of the turtle (bypasses the timer and the distance rules)
+      setAdventureUnlocked(true);
+      for (let i = 0; i < 12; i++) { const a = i * Math.PI / 6, x = turtle.x + Math.cos(a) * 260, y = turtle.y + Math.sin(a) * 260; if (!blockedAt(x, y, 48)) { chest.x = x; chest.y = y; chest.on = true; chest.left = 0; break; } }
+      saveChest();
+    }
     else if (name === 't' && spawned && !Home.isInterior()) { setAdventureUnlocked(true); turtle.x = WORLD_SIZE + 700; turtle.y = CENTER.y; turtle.vx = turtle.vy = 0; }
   }
   if (DEBUG) {
     const bar = document.createElement('div');
     bar.style.cssText = 'position:fixed;right:6px;bottom:calc(6px + env(safe-area-inset-bottom));z-index:99;display:flex;gap:6px;opacity:.85';
-    for (const [name, label] of [['u', 'Lock/Unlock'], ['t', 'Warp to zone'], ['c', '+1000 coins']]) {
+    for (const [name, label] of [['u', 'Lock/Unlock'], ['t', 'Warp to zone'], ['c', '+1000 coins'], ['k', 'Chest here']]) {
       const b = document.createElement('button');
       b.type = 'button'; b.textContent = label;
       b.style.cssText = 'font:600 12px system-ui,sans-serif;padding:8px 10px;border-radius:10px;border:1px solid rgba(0,0,0,.4);background:#fff3c4;color:#222;touch-action:manipulation';
@@ -279,7 +296,7 @@
   window.addEventListener('keydown', e => {
     if (typingInField()) return;
     if (DEBUG_STATES[e.key]) { state = DEBUG_STATES[e.key]; stateTime = 0; return; }
-    if (DEBUG && (e.key === 'c' || e.key === 'u' || e.key === 't')) { debugAction(e.key); return; } // ?debug=1: c = +1000 banked coins, u = lock/unlock the Adventure Zone, t = teleport into it (unlocking it first)
+    if (DEBUG && (e.key === 'c' || e.key === 'u' || e.key === 't' || e.key === 'k')) { debugAction(e.key); return; } // ?debug=1: c = +1000 banked coins, u = lock/unlock the Adventure Zone, t = teleport into it (unlocking it first)
     const k = KEY_MAP[e.key.toLowerCase()];
     if (k) { wakeUp(); keys.add(k); e.preventDefault(); }
   });
@@ -847,6 +864,7 @@
     for (const [key, ch] of chunks) if (!inside(old, ch.cx * CHUNK, ch.cy * CHUNK) || !inside(bounds, ch.cx * CHUNK, ch.cy * CHUNK)) dropChunk(key, ch);
     if (window.Enemies) window.Enemies.setAdventure(on);
     if (!on) clearAdvCoins();
+    if (!on && chest.on) { chest.on = false; chest.left = ADVENTURE.chest.firstSpawnSeconds; } // locked: no chest (debug lock only; the table can't be un-bought)
     if (on) { startAdventureScenery(); if (window.TT_SOUND) window.TT_SOUND.musicPrepareAdventure(ADVENTURE.music.files); } // fetch the zone's first track once, now
     else if (inAdventure) { inAdventure = false; if (window.TT_SOUND) window.TT_SOUND.musicZone(false, ADVENTURE.music.fadeSeconds); }
     clampToWorld();
@@ -1632,6 +1650,129 @@
   }
   function clearAdvCoins() { for (const it of advCoins.items) it.active = false; advCoinLive = 0; }
 
+  // ---- Adventure Zone treasure chest. Exactly one exists at a time, only while the zone is open. Picking it up gives
+  // ADVENTURE.chest.value carried coins (hull limit ignored) with a confetti burst and a floating "+N"; the next chest
+  // appears respawnSeconds of game time later (not counted inside the hut) at a random valid spot in the zone. The
+  // spot and the countdown are saved with the slot so a reload can't skip the wait.
+  const chestImg = new Image();
+  chestImg.src = 'assets/items/chest_closed_64.png';
+  const chest = { on: false, x: 0, y: 0, left: ADVENTURE.chest.firstSpawnSeconds, retry: 0, saveTimer: 0 };
+  function saveChest() {
+    const P = window.Progression;
+    P.state.adventure.chest = { on: chest.on, x: chest.x, y: chest.y, left: Math.max(0, chest.left) };
+    chest.saveTimer = 0;
+    P.persist();
+  }
+  function loadChest() {
+    const c = window.Progression.state.adventure.chest;
+    chest.on = false; chest.left = ADVENTURE.chest.firstSpawnSeconds; chest.retry = 0; chest.saveTimer = 0;
+    if (c) { chest.on = c.on; chest.x = c.x; chest.y = c.y; chest.left = c.left; }
+  }
+  // A random spot the chest may appear at: in the zone, on land inside the world circle, clear of obstacles, far from the
+  // turtle (out of view) and outside every live enemy's den. Returns true and sets chest.x/y on success.
+  function pickChestSpot() {
+    const C = ADVENTURE.chest, span = WORLD_MAX - WORLD_MIN, minD = C.minPlayerScreens * Math.max(viewW, viewH) / ZOOM, minD2 = minD * minD;
+    for (let i = 0; i < 40; i++) {
+      const x = WORLD_MIN + Math.random() * span, y = WORLD_MIN + Math.random() * span;
+      if (inHomeZone(x, y)) continue;
+      const cx = x - CENTER.x, cy = y - CENTER.y;
+      if (cx * cx + cy * cy > COIN_ZONE_R2 || x < WORLD_MIN + 300 || x > WORLD_MAX - 300 || y < WORLD_MIN + 300 || y > WORLD_MAX - 300) continue; // not out in the fog fringe
+      const dx = x - turtle.x, dy = y - turtle.y;
+      if (dx * dx + dy * dy < minD2) continue;
+      if (blockedAt(x, y, 48) || (window.Enemies && window.Enemies.nearDen(x, y, C.denPad))) continue;
+      chest.x = x; chest.y = y;
+      return true;
+    }
+    return false;
+  }
+  // Confetti burst + floating "+N" at the pickup spot: fixed pools, drawn in world space for ~confettiSeconds.
+  const CONFETTI_COLORS = ['#ff5a6e', '#ffd23f', '#4cc9f0', '#80ed99', '#f78fb3', '#ffffff', '#ffb347'];
+  const confetti = [];
+  for (let i = 0; i < ADVENTURE.chest.confettiCount; i++) confetti.push({ on: false, x: 0, y: 0, vx: 0, vy: 0, age: 0, spin: 0, w: 0, h: 0, c: 0 });
+  const plusText = { on: false, x: 0, y: 0, age: 0, text: '' };
+  let confettiLive = 0;
+  function burstConfetti(x, y) {
+    for (const p of confetti) {
+      const a = Math.random() * Math.PI * 2, sp = 120 + Math.random() * 340;
+      p.on = true; p.x = x; p.y = y - 20; p.vx = Math.cos(a) * sp; p.vy = Math.sin(a) * sp * 0.6 - 260 - Math.random() * 200;
+      p.age = Math.random() * 0.2; p.spin = Math.random() * 6; p.w = 5 + Math.random() * 5; p.h = 8 + Math.random() * 6; p.c = Math.floor(Math.random() * CONFETTI_COLORS.length);
+    }
+    confettiLive = confetti.length;
+    plusText.on = true; plusText.x = x; plusText.y = y - 50; plusText.age = 0; plusText.text = '+' + ADVENTURE.chest.value;
+  }
+  function updateBurst(dt) {
+    if (plusText.on && (plusText.age += dt) > 1.6) plusText.on = false;
+    if (!confettiLive) return;
+    const life = ADVENTURE.chest.confettiSeconds;
+    confettiLive = 0;
+    for (const p of confetti) {
+      if (!p.on) continue;
+      p.age += dt;
+      if (p.age > life) { p.on = false; continue; }
+      p.vy += 700 * dt; p.vx *= 1 - 1.5 * dt;
+      p.x += p.vx * dt; p.y += p.vy * dt; p.spin += dt * 9;
+      confettiLive++;
+    }
+  }
+  function drawBurst() {
+    if (confettiLive) {
+      const life = ADVENTURE.chest.confettiSeconds;
+      for (const p of confetti) {
+        if (!p.on) continue;
+        ctx.globalAlpha = Math.min(1, (life - p.age) / 0.5);
+        ctx.fillStyle = CONFETTI_COLORS[p.c];
+        ctx.fillRect(p.x, p.y, p.w * Math.abs(Math.cos(p.spin)) + 1, p.h); // width flutters with the spin: no per-piece rotation needed
+      }
+      ctx.globalAlpha = 1;
+    }
+    if (plusText.on) {
+      const k = plusText.age / 1.6;
+      ctx.globalAlpha = Math.min(1, (1 - k) * 2);
+      ctx.font = '800 34px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.lineWidth = 6; ctx.strokeStyle = 'rgba(60, 35, 5, 0.85)'; ctx.fillStyle = '#ffd23f';
+      const y = plusText.y - k * 70;
+      ctx.strokeText(plusText.text, plusText.x, y); ctx.fillText(plusText.text, plusText.x, y);
+      ctx.globalAlpha = 1; ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
+    }
+  }
+  function updateChest(dt) {
+    if (!adventureUnlocked) return; // locked: no chest exists, nothing counts down
+    const C = ADVENTURE.chest;
+    if (!chest.on) {
+      chest.left -= dt;
+      if ((chest.saveTimer += dt) >= C.saveEverySeconds) saveChest();
+      if (chest.left <= 0) {
+        if ((chest.retry -= dt) > 0) return;
+        if (pickChestSpot()) { chest.on = true; chest.left = 0; saveChest(); }
+        else chest.retry = C.spawnRetrySeconds;
+      }
+      return;
+    }
+    const dx = turtle.x - chest.x, dy = turtle.y - chest.y, r = TURTLE_BODY_RADIUS + C.pickupRadius;
+    if (dx * dx + dy * dy < r * r && state !== 'dying') {
+      chest.on = false; chest.left = C.respawnSeconds;
+      window.Progression.grantCarriedCoins(C.value);
+      burstConfetti(chest.x, chest.y);
+      if (window.TT_SOUND) { window.TT_SOUND.purchase(); window.TT_SOUND.coin(); }
+      saveChest();
+    }
+  }
+  function drawChest() {
+    if (!adventureUnlocked || !chest.on) return;
+    const D = ADVENTURE.chest.drawSize, vw = viewW / ZOOM, vh = viewH / ZOOM;
+    if (chest.x < camX - D || chest.x > camX + vw + D || chest.y < camY - D || chest.y > camY + vh + D) return;
+    if (!chestImg.complete || !chestImg.naturalWidth) return;
+    const bob = Math.sin(gameTime * 2.2) * 3;
+    ctx.globalAlpha = 0.4; ctx.fillStyle = '#000';
+    ctx.beginPath(); ctx.ellipse(chest.x, chest.y + D * 0.32, D * 0.4, D * 0.13, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.imageSmoothingEnabled = false; // pixel art
+    ctx.drawImage(chestImg, chest.x - D / 2, chest.y - D / 2 + bob, D, D);
+    ctx.imageSmoothingEnabled = true;
+  }
+  // The timer only advances while the game runs outdoors; make sure the latest countdown is in the save when the tab goes away.
+  document.addEventListener('visibilitychange', () => { if (document.hidden && adventureUnlocked && spawned) saveChest(); });
+
   // ---- Water ripples: purely decorative wake while swimming. Spawned in update() (throttled so
   // movement doesn't spam them), aged/pruned each frame, drawn in render() between the water and
   // the turtle/scenery pass. Capped at RIPPLE_MAX so a long swim on mobile stays cheap.
@@ -1728,6 +1869,8 @@
     coconutPickups.update();
     findPickups.update();
     if (adventureUnlocked) { advCoins.update(); updateAdvCoins(dt); }
+    updateChest(dt);
+    updateBurst(dt);
 
     const atHome = isHomeIsland(turtle.x, turtle.y);
     const hungerSpeedMult = window.Progression.update(dt, !atHome);
@@ -2147,7 +2290,7 @@
     drawFence(viewW / ZOOM, viewH / ZOOM);
     ctx.drawImage(islandDetail.canvas, islandDetail.worldX, islandDetail.worldY);
     Home.drawGround(ctx, t); // outdoor campfire
-    if (!skip.pickups) { coinPickups.draw(); coconutPickups.draw(); findPickups.draw(); if (adventureUnlocked) advCoins.draw(); }
+    if (!skip.pickups) { coinPickups.draw(); coconutPickups.draw(); findPickups.draw(); if (adventureUnlocked) { advCoins.draw(); drawChest(); } }
 
     // Cull scenery to the visible world rect (plus a small margin) so a big world with lots of
     // trees still draws only a couple dozen-to-hundred objects per frame.
@@ -2159,6 +2302,7 @@
     const visible = visibleBuf;
     if (perf) perf.visible = visible.length;
     drawSceneryWithTurtle(visible);
+    drawBurst();
     if (DEBUG_HITBOXES) drawDebugHitboxes(visible);
     if (DEBUG) { ctx.strokeStyle = 'magenta'; ctx.lineWidth = 4; ctx.strokeRect(0, 0, WORLD_SIZE, WORLD_SIZE); } // Adventure Zone boundary (= the home zone's edge)
     if (window.Enemies) window.Enemies.drawDebug(ctx, camX, camY, vw, vh);
@@ -2194,7 +2338,7 @@
       take() { const c = calls; calls = 0; return c; },
       show(fps, avg, worst, c) {
         const mem = performance.memory ? `${(performance.memory.usedJSHeapSize / 1048576).toFixed(1)} MB` : 'n/a';
-        el.textContent = `fps ${fps.toFixed(0)}\nframe ${avg.toFixed(1)}ms (worst ${worst.toFixed(1)})\nwork ${p.ms.toFixed(1)}ms\nvisible ${p.visible} / ${scenery.length}\ndraws/frame ${c.toFixed(0)}\nadventure ${adventureUnlocked ? 'unlocked' : 'locked'}${inAdventure ? ' (in zone)' : ''}  chunks ${chunks.size}\nzone coins ${advCoinLive}/${advCoinWant}\nenemies ${window.Enemies ? (st => `home ${st.home} zone ${st.adv} active ${st.near}`)(window.Enemies.stats()) : '-'}\nmusic ${window.TT_SOUND && window.TT_SOUND.musicInfo ? window.TT_SOUND.musicInfo() : '-'}\nheap ${mem}\ndpr ${dpr}\n${loadedVer} skip:${Object.keys(skip).join(',') || '-'}`;
+        el.textContent = `fps ${fps.toFixed(0)}\nframe ${avg.toFixed(1)}ms (worst ${worst.toFixed(1)})\nwork ${p.ms.toFixed(1)}ms\nvisible ${p.visible} / ${scenery.length}\ndraws/frame ${c.toFixed(0)}\nadventure ${adventureUnlocked ? 'unlocked' : 'locked'}${inAdventure ? ' (in zone)' : ''}  chunks ${chunks.size}\nzone coins ${advCoinLive}/${advCoinWant}  chest ${chest.on ? 'at ' + Math.round(chest.x) + ',' + Math.round(chest.y) : 'respawn in ' + Math.max(0, chest.left).toFixed(0) + 's'}\nenemies ${window.Enemies ? (st => `home ${st.home} zone ${st.adv} active ${st.near}`)(window.Enemies.stats()) : '-'}\nmusic ${window.TT_SOUND && window.TT_SOUND.musicInfo ? window.TT_SOUND.musicInfo() : '-'}\nheap ${mem}\ndpr ${dpr}\n${loadedVer} skip:${Object.keys(skip).join(',') || '-'}`;
       } };
     return p;
   })() : null;
@@ -2243,6 +2387,7 @@
     if (!shore) { started = false; requestAnimationFrame(() => start(slotId, saveData)); return; } // wait for Shore.js's sand/water tiles too
     window.Progression.attachSlot(slotId, saveData);
     Home.syncFromSave();
+    loadChest();
     syncAdventureUnlock(false);
     spawnTurtle();
     ensureGroundAt(turtle.x, turtle.y);

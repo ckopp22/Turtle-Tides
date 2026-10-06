@@ -682,7 +682,17 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
     });
   }
 
+  // True if (x, y) is within `pad` px of any live enemy's den (its wander/leash area around its spawn point).
+  function nearDen(x, y, pad) {
+    const r = CONFIG.leash * U + pad, r2 = r * r;
+    for (const e of pool) {
+      if (!e.active) continue;
+      const dx = x - e.sx, dy = y - e.sy;
+      if (dx * dx + dy * dy < r2) return true;
+    }
+    return false;
+  }
   const statsBuf = { home: 0, adv: 0, near: 0 };
   function stats() { statsBuf.home = statsBuf.adv = 0; for (const e of pool) if (e.active) { if (e.pool === 'adv') statsBuf.adv++; else statsBuf.home++; } statsBuf.near = nearCount; return statsBuf; } // ?debug=1 overlay
-  window.Enemies = { init, update, setAdventure, stats, resetAggro, collectVisible, drawDebug, CONFIG, get pool() { return DEBUG ? pool : null; }, get api() { return DEBUG ? api : null; } }; // pool/api only exposed with ?debug=1, for console poking
+  window.Enemies = { init, update, setAdventure, stats, nearDen, resetAggro, collectVisible, drawDebug, CONFIG, get pool() { return DEBUG ? pool : null; }, get api() { return DEBUG ? api : null; } }; // pool/api only exposed with ?debug=1, for console poking
 })();
