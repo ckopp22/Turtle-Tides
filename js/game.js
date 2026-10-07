@@ -2152,7 +2152,7 @@
   // Turtle on the one wheel: 4 top-down frames (head up, board sideways), rotated so the board follows the heading.
   const wheelSprite = new Image();
   wheelSprite.src = 'assets/turtle-onewheel.png';
-  const WHEEL_DRAW = 108; // drawn size of one frame in world px (sized so the shell matches the walking turtle)
+  const WHEEL_DRAW = 92; // drawn size of one frame in world px (shell measured against the walking sprite: ~49x56 world px)
   // TODO: hats/clothes/shell tint aren't drawn on the one wheel sprite yet.
   function drawTurtleOnWheel() {
     const fw = wheelSprite.naturalWidth / 4, fh = wheelSprite.naturalHeight;
