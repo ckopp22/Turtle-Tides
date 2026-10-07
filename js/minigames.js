@@ -42,7 +42,8 @@
       crabLen: [140, 260], personLen: [260, 600], // patrol path lengths (people are clamped to the beach)
       dogLeash: 130,              // wander radius around its home spot
       dogLoseMult: 1.7, dogLoseSeconds: 2,   // gives up once the turtle is this x detect away for this long
-      gullLockSeconds: 0.55, gullSwoopSeconds: 0.28, gullSnatchR: 34, gullTrackSpeed: 85, gullDive: 420,
+      gullLockSeconds: 0.75, gullSwoopSeconds: 0.75, gullSnatchR: 54, gullTrackSpeed: 70, gullDive: 420, // swoop = how long the dive takes (slower = easier to dodge); snatchR = the red circle
+      gullLeaveSeconds: 0.45, gullCarrySeconds: 1.4, // a gull that missed flies off in leave seconds; one that grabbed the turtle carries it away for carry seconds, then the results show
       hitR: { crab: 17, dog: 19 },            // hazard body radius added to the turtle's
       personFeet: { rx: 20, ry: 11 },        // a person's feet ellipse: the turtle's centre inside it is a hit
       // Coins at the end of each completed round: base + perRound * (round - 1), capped, plus a speed bonus.
@@ -336,14 +337,14 @@
     const m = DC.maxObstacleCircles;
     return {
       round: 1, rounds: 0, coinsRun: 0, bestAtStart: P().state.minigames.dashBest,
-      t: 0, grace: 0, bannerT: 0, clock: 0, walk: 0,
+      t: 0, grace: 0, bannerT: 0, clock: 0, walk: 0, snatcher: null,
       vw: 0, vh: 0, s: 1, W: 0, H: 0, goalX: 0, nestX: 0, nestY: 0, bgScale: 1,
       bg: document.createElement('canvas'), cols: 0, rows: 0, grid: new Uint8Array(1), queue: new Int32Array(1),
       v: { crabSpeed: 0, personSpeed: 0, dogWander: 0, dogChase: 0, dogDetect: 0, gullInterval: 0, gullTrack: 0 }, // this round's ramp values
       on: 0, ox: new Float32Array(m), oy: new Float32Array(m), or: new Float32Array(m), ok: new Uint8Array(m), oa: new Float32Array(m), // static circles; ok: kind
       crabs: pool(DC.pools.crabs, makePatroller), people: pool(DC.pools.people, makePatroller),
       dogs: pool(DC.pools.dogs, () => ({ on: false, x: 0, y: 0, hx: 0, hy: 0, tx: 0, ty: 0, chasing: false, hasT: false, pause: 0, lose: 0, ang: 0, notice: 0 })),
-      gulls: pool(DC.pools.gulls, () => ({ on: false, st: 0, timer: 0, sx: 0, sy: 0, tx: 0, ty: 0, ex: 0, ey: 0, ang: 0, u: 0, snatch: false })),
+      gulls: pool(DC.pools.gulls, () => ({ on: false, st: 0, timer: 0, sx: 0, sy: 0, tx: 0, ty: 0, ex: 0, ey: 0, ang: 0, u: 0, snatch: false, dur: 0.45 })),
     };
   }
   function makePatroller() { return { on: false, x0: 0, y0: 0, x1: 0, y1: 0, len: 1, u: 0, dir: 1, speed: 0, x: 0, y: 0, flip: 1, pause: 0 }; }
@@ -366,7 +367,7 @@
   // Lays out a fresh, winnable beach for `round`, resets every hazard, and puts the turtle back in the nest. No allocation: all pools are reused.
   function startRound(round) {
     const m = api(), sz = m.size(), tt = m.turtle;
-    D.round = round; D.t = 0; D.grace = DC.startGraceSeconds; D.bannerT = 0;
+    D.round = round; D.snatcher = null; D.t = 0; D.grace = DC.startGraceSeconds; D.bannerT = 0;
     D.vw = sz.w; D.vh = sz.h;
     D.s = clamp(sz.w / DC.targetViewW, DC.minScale, DC.maxScale);
     D.W = sz.w / D.s; D.H = sz.h / D.s;
@@ -542,6 +543,13 @@
   // ---- per-frame ----
   function updateDash(dt) {
     if (phase === 'banner') { D.bannerT -= dt; if (D.bannerT <= 0) startRound(D.round + 1); return; }
+    if (phase === 'carry') { // the turtle hangs from the gull until it's gone
+      const tt = api().turtle, gl = D.snatcher;
+      D.walk += dt; D.clock += dt; updateHazards(dt, tt);
+      if (gl.st !== 4) { finishRun(true); return; }
+      gullPos(gl); tt.x = gx; tt.y = gy + 16; tt.angle += dt * 6;
+      return;
+    }
     if (phase !== 'play') return;
     const m = api(), tt = m.turtle, sz = m.size();
     if (Math.abs(sz.w - D.vw) > 1 || Math.abs(sz.h - D.vh) > 1) { startRound(D.round); return; } // window resized / phone rotated: re-lay this round to fit
@@ -558,7 +566,14 @@
     tt.x = clamp(tt.x, R, D.W - R); tt.y = clamp(tt.y, R, D.H - R);
     if (speed > 5) D.walk += dt; // the placeholder walk cycle only runs while moving
     updateHazards(dt, tt);
-    if (D.grace <= 0 && hitTest(tt)) { finishRun(true); return; }
+    if (D.grace <= 0 && hitTest(tt)) {
+      if (D.snatcher) { // a gull got it: it flies off with the turtle, then "Oh no!"
+        phase = 'carry'; D.snatcher.dur = DC.gullCarrySeconds; D.snatcher.timer = DC.gullCarrySeconds; D.snatcher.u = 0; tt.vx = tt.vy = 0;
+        if (window.TT_SOUND) window.TT_SOUND.gameover();
+        return;
+      }
+      finishRun(true); return;
+    }
     if (tt.x >= D.goalX) roundComplete();
   }
 
@@ -626,12 +641,20 @@
         if (g.timer <= 0) { g.st = 3; g.timer = DC.gullSwoopSeconds; g.ang = Math.atan2(DC.gullDive, 300); }
       } else if (g.st === 3) { // swoop in
         g.u = 1 - Math.max(0, g.timer) / DC.gullSwoopSeconds;
-        if (g.timer <= 0) { g.st = 4; g.timer = 0.45; g.snatch = true; }
+        if (g.timer <= 0) { g.st = 4; g.timer = DC.gullLeaveSeconds; g.dur = DC.gullLeaveSeconds; g.snatch = true; }
       } else { // leaving
-        g.u = 1 - Math.max(0, g.timer) / 0.45;
+        g.u = 1 - Math.max(0, g.timer) / g.dur;
         if (g.timer <= 0) { g.st = 0; g.timer = rand(0.6, 1) * v.gullInterval; g.snatch = false; }
       }
     }
+  }
+
+  // Where a flying gull is right now (swoop in from up-left, then on past the target up to the right) -> gx, gy, gang.
+  let gx = 0, gy = 0, gang = 0;
+  function gullPos(gl) {
+    const u = gl.u, dive = DC.gullDive;
+    if (gl.st === 3) { gx = gl.tx - 300 * (1 - u); gy = gl.ty - dive * (1 - u); gang = Math.atan2(dive, 300); }
+    else { gx = gl.tx + 300 * u; gy = gl.ty - dive * u; gang = Math.atan2(-dive, 300); }
   }
 
   // One hit ends the run. Returns true if the turtle is caught this frame.
@@ -644,7 +667,7 @@
     for (const g of D.gulls) if (g.on && g.st === 4 && g.snatch) { // the swoop just landed: snatch if the turtle is under it
       g.snatch = false;
       const m = DC.gullSnatchR + R, dx = tt.x - g.tx, dy = tt.y - g.ty;
-      if (dx * dx + dy * dy < m * m) return true;
+      if (dx * dx + dy * dy < m * m) { D.snatcher = g; return true; }
     }
     return false;
   }
@@ -692,11 +715,9 @@
     for (let i = 0; i < D.people.length; i++) { const p = D.people[i]; if (p.on && p.y > tt.y) drawArt(g, i & 1 ? 'person2' : 'person', p.x, p.y, 0, 1, 1, Math.floor(clock * 6) % 4, 'idle', clock); }
     for (const gl of D.gulls) { // gulls in the air, above everything
       if (!gl.on || (gl.st !== 3 && gl.st !== 4)) continue;
-      const u = gl.u, dive = DC.gullDive;
-      // swoop: from up-left of the target down onto it; leave: on past it, up to the right
-      const x = gl.st === 3 ? gl.tx - 300 * (1 - u) : gl.tx + 300 * u, y = gl.st === 3 ? gl.ty - dive * (1 - u) : gl.ty - dive * u;
-      const ang = gl.st === 3 ? Math.atan2(dive, 300) : Math.atan2(-dive, 300);
-      g.globalAlpha = gl.st === 4 ? 1 - u * 0.5 : 1;
+      gullPos(gl);
+      const x = gx, y = gy, ang = gang;
+      g.globalAlpha = gl.st === 4 && gl !== D.snatcher ? 1 - gl.u * 0.5 : 1;
       drawArt(g, 'seagull', x, y, ang, 1, 1, Math.floor(clock * 10) % 6, gl.st === 3 ? 'attack' : 'fly', clock);
       g.globalAlpha = 1;
     }
