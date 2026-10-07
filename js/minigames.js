@@ -79,20 +79,22 @@
   // it draws centred on (0,0) facing +x, `size` px across. To swap in real art: set `src` (+ cols/rows/faces) and nothing else changes.
   // ---------------------------------------------------------------------------------------------------------------
   const ASSETS = {
-    babyTurtle: { src: null, size: 40, faces: 'right', draw: drawBabyTurtle },       // TODO art: 64x64 baby turtle, 4-frame walk
+    babyTurtle: { src: 'assets/minigames/baby_turtle_walk_4f.png', cols: 4, rows: {}, size: 44, faces: 'right', draw: drawBabyTurtle },
     seagull:    { src: 'assets/enemies/seagull_spritesheet.png', cols: 6, rows: { fly: 3, attack: 2 }, size: 64, faces: 'up' }, // existing
     crab:       { src: 'assets/enemies/crab_spritesheet.png', cols: 6, rows: { walk: 1 }, size: 56, faces: 'side' },              // existing
-    dog:        { src: null, size: 60, faces: 'right', draw: drawDog },              // TODO art: 64x64 dog, walk + run
-    person:     { src: null, size: 64, faces: 'right', draw: drawPerson },           // TODO art: 64x64 beach walker, 4-frame walk
-    rock:       { src: null, size: 64, faces: 'right', draw: drawRock },             // TODO art: 64x64 rock
-    driftwood:  { src: null, size: 64, faces: 'right', draw: drawDriftwood },        // TODO art: 64x64 driftwood log (drawn stretched along its length)
-    shell:      { src: null, size: 64, faces: 'right', draw: drawShell },            // TODO art: 64x64 big beach shell
-    tidepool:   { src: null, size: 64, faces: 'right', draw: drawTidePool },         // TODO art: 64x64 tide pool
-    nest:       { src: null, size: 128, faces: 'right', draw: drawNest },            // TODO art: ~128x128 sand nest with eggshells
+    dog:        { src: 'assets/minigames/dog_walk_4f.png', cols: 4, rows: {}, size: 64, faces: 'right', draw: drawDog },
+    dogRun:     { src: 'assets/minigames/dog_run_4f.png', cols: 4, rows: {}, size: 64, faces: 'right', draw: drawDog }, // used while chasing
+    person:     { src: 'assets/minigames/person_walk_4f.png', cols: 4, rows: {}, size: 60, faces: 'right', draw: drawPerson },  // top-down, centred on the person (feet ellipse = the hit area)
+    person2:    { src: 'assets/minigames/person2_walk_4f.png', cols: 4, rows: {}, size: 60, faces: 'right', draw: drawPerson },
+    rock: { src: 'assets/minigames/rock.png', cols: 1, rows: {}, size: 64, faces: 'right', draw: drawRock },
+    driftwood: { src: 'assets/minigames/driftwood.png', cols: 1, rows: {}, size: 64, faces: 'right', draw: drawDriftwood },
+    shell: { src: 'assets/minigames/big_shell.png', cols: 1, rows: {}, size: 64, faces: 'right', draw: drawShell },
+    tidepool: { src: 'assets/minigames/tide_pool.png', cols: 1, rows: {}, size: 64, faces: 'right', draw: drawTidePool },
+    nest: { src: 'assets/minigames/nest_128.png', cols: 1, rows: {}, size: 128, faces: 'right', draw: drawNest },
     notice:     { src: 'assets/enemies/notice_exclaim.png', cols: 1, rows: {}, size: 24, faces: 'up' }, // existing "!"
   };
   const images = {};
-  for (const k in ASSETS) if (ASSETS[k].src) { const img = new Image(); img.src = ASSETS[k].src; images[k] = img; }
+  for (const k in ASSETS) if (ASSETS[k].src) { const img = new Image(); img.onload = () => { if (D) bakeBackground(); }; img.src = ASSETS[k].src; images[k] = img; } // re-bake the static scene once art arrives
 
   // Draws asset `key` centred at (x, y). frame/row pick the sheet cell (ignored by placeholders; `t` is their animation clock).
   // rot: heading in radians (0 = right). flip: -1 mirrors a sideways sprite. scale multiplies the asset's size.
@@ -682,12 +684,12 @@
     }
     for (const c of D.crabs) if (c.on) drawArt(g, 'crab', c.x, c.y, 0, c.flip, 0.8, Math.floor(clock * 8) % 6, 'walk', clock);
     for (const d of D.dogs) if (d.on) {
-      drawArt(g, 'dog', d.x, d.y, d.ang, 1, 1, 0, 'idle', clock * (d.chasing ? 1.4 : 1));
+      drawArt(g, d.chasing ? 'dogRun' : 'dog', d.x, d.y, d.ang, 1, 1, Math.floor(clock * (d.chasing ? 14 : 8)) % 4, 'idle', clock * (d.chasing ? 1.4 : 1));
       if (d.notice > 0) drawArt(g, 'notice', d.x, d.y - 40, 0, 1, 1, 0, 'idle', 0);
     }
-    for (const p of D.people) if (p.on && p.y <= tt.y) drawArt(g, 'person', p.x, p.y, 0, 1, 1, 0, 'idle', clock);
-    drawArt(g, 'babyTurtle', tt.x, tt.y, tt.angle, 1, 1, 0, 'idle', D.walk);
-    for (const p of D.people) if (p.on && p.y > tt.y) drawArt(g, 'person', p.x, p.y, 0, 1, 1, 0, 'idle', clock);
+    for (let i = 0; i < D.people.length; i++) { const p = D.people[i]; if (p.on && p.y <= tt.y) drawArt(g, i & 1 ? 'person2' : 'person', p.x, p.y, 0, 1, 1, Math.floor(clock * 6) % 4, 'idle', clock); }
+    drawArt(g, 'babyTurtle', tt.x, tt.y, tt.angle, 1, 1, Math.floor(D.walk * 8) % 4, 'idle', D.walk);
+    for (let i = 0; i < D.people.length; i++) { const p = D.people[i]; if (p.on && p.y > tt.y) drawArt(g, i & 1 ? 'person2' : 'person', p.x, p.y, 0, 1, 1, Math.floor(clock * 6) % 4, 'idle', clock); }
     for (const gl of D.gulls) { // gulls in the air, above everything
       if (!gl.on || (gl.st !== 3 && gl.st !== 4)) continue;
       const u = gl.u, dive = DC.gullDive;
