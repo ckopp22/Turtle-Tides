@@ -1868,6 +1868,32 @@
   // One Wheel: once unlocked (hut upgrade) it sits parked on the home island. Tap it while close to mount;
   // tap the parked spot again while close to dismount. Dying (or entering the hut) dismounts, which puts it
   // back at its home spot since it's always parked there when not ridden. Land only: water movement is unchanged.
+  // Tire trail: a thin dark line left on the ground behind the wheel that fades out after TRAIL_LIFE seconds.
+  const TRAIL_LIFE = 1.4, TRAIL_STEP = 7; // seconds a point lasts / world px between points
+  const wheelTrail = []; // { x, y, t, brk } brk = start of a new line (don't join to the previous point)
+  let trailBreak = true;
+  function updateWheelTrail(dt, onLand) {
+    for (const p of wheelTrail) p.t += dt;
+    while (wheelTrail.length && wheelTrail[0].t >= TRAIL_LIFE) wheelTrail.shift();
+    if (!riding || !onLand || Math.hypot(turtle.vx, turtle.vy) < 20) { trailBreak = true; return; }
+    const last = wheelTrail[wheelTrail.length - 1];
+    if (trailBreak || !last || Math.hypot(turtle.x - last.x, turtle.y - last.y) >= TRAIL_STEP) {
+      wheelTrail.push({ x: turtle.x, y: turtle.y, t: 0, brk: trailBreak });
+      trailBreak = false;
+    }
+  }
+  function drawWheelTrail() {
+    if (wheelTrail.length < 2) return;
+    ctx.save();
+    ctx.lineCap = 'round'; ctx.lineWidth = 22; ctx.strokeStyle = '#3a2f26'; // ~ the wheel's width on the board art (board is 72 x ~33 world px)
+    for (let i = 1; i < wheelTrail.length; i++) {
+      const a = wheelTrail[i - 1], b = wheelTrail[i];
+      if (b.brk) continue;
+      ctx.globalAlpha = 0.4 * (1 - b.t / TRAIL_LIFE);
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    }
+    ctx.restore();
+  }
   const WHEEL_TAP_R = 50, WHEEL_NEAR_R = 120; // world px: tap tolerance around the spot / how close the turtle must be
   const RIDE_SPEED_MULT = 1.35;               // land speed boost while riding (on top of the skill multiplier)
   let riding = false;
@@ -2007,6 +2033,7 @@
 
     turtle.x += turtle.vx * dt;
     turtle.y += turtle.vy * dt;
+    updateWheelTrail(dt, !inWater);
     resolveObstacleCollisions();
     Home.collideWorld(turtle, TURTLE_BODY_RADIUS);
     if (window.Enemies) window.Enemies.collideTurtle(turtle, TURTLE_BODY_RADIUS); // enemies are solid
@@ -2386,6 +2413,7 @@
     drawFence(viewW / ZOOM, viewH / ZOOM);
     ctx.drawImage(islandDetail.canvas, islandDetail.worldX, islandDetail.worldY);
     Home.drawGround(ctx, t); // outdoor campfire
+    drawWheelTrail();
     if (!skip.pickups) { coinPickups.draw(); coconutPickups.draw(); findPickups.draw(); if (adventureUnlocked) { advCoins.draw(); drawChest(); } }
 
     // Cull scenery to the visible world rect (plus a small margin) so a big world with lots of
