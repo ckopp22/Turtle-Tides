@@ -954,7 +954,8 @@
     playCelebrationJingle();
     const banner = document.createElement('div');
     banner.id = 'tt-congrats-banner';
-    banner.textContent = 'Congratulations! You beat the game!';
+    const t = Math.floor(state.stats.playSeconds), h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60;
+    banner.textContent = `Congratulations! You beat the game in ${h > 0 ? `${h}h ${m}m` : `${m}m ${t % 60}s`}!`;
     document.body.appendChild(banner);
     setTimeout(() => banner.classList.add('tt-fade-out'), 3200);
     setTimeout(() => banner.remove(), 4000);
