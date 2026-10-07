@@ -1897,7 +1897,10 @@
   const WHEEL_TAP_R = 50, WHEEL_NEAR_R = 120; // world px: tap tolerance around the spot / how close the turtle must be
   const RIDE_SPEED_MULT = 1.35;               // land speed boost while riding (on top of the skill multiplier)
   let riding = false;
-  function setRiding(v) { riding = v; Home.setWheelRidden(v); walkFrame = 0; }
+  function setRiding(v) {
+    riding = v; Home.setWheelRidden(v); walkFrame = 0;
+    if (!v && window.TT_SOUND) window.TT_SOUND.wheelHum(false);
+  }
   // "Tap" prompt (text only, like the hut's): fades in above the parked spot while the turtle is close enough to hop on/off, fades out otherwise.
   let wheelPromptA = 0;
   const WHEEL_BTN = { w: 58, h: 30, lift: 58 }; // screen px (drawn at constant size whatever the zoom); lift = world px above the spot
@@ -1928,6 +1931,7 @@
     const k = 1 / ZOOM, onBtn = wheelPromptA > 0.5 && Math.abs(wx - w.x) <= WHEEL_BTN.w * k / 2 + 6 * k && Math.abs(wy - (w.y - WHEEL_BTN.lift)) <= WHEEL_BTN.h * k / 2 + 6 * k;
     if (!onSpot && !onBtn) return false;
     setRiding(!riding);
+    if (window.TT_SOUND) window.TT_SOUND.wheelBeep(); // only on a tap, not when the hut/death forces a dismount
     return true;
   }
   // Walk cycle + footsteps while inside the hut, driven by the room speed converted back to world px/s.
@@ -2058,6 +2062,7 @@
     turtle.x += turtle.vx * dt;
     turtle.y += turtle.vy * dt;
     updateWheelTrail(dt, !inWater);
+    if (window.TT_SOUND) window.TT_SOUND.wheelHum(riding && state === 'normal' && !inWater);
     updateWheelPrompt(dt);
     resolveObstacleCollisions();
     Home.collideWorld(turtle, TURTLE_BODY_RADIUS);

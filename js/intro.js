@@ -128,6 +128,7 @@
   const shellClip = gAudio('assets/sfx/shell.mp3');
   shellClip.volume = 0.6;
   const walkLoop = { buf: null, src: null, vol: 0.6 }, swimLoop = { buf: null, src: null, vol: 0.1 };
+  const wheelHumLoop = { buf: null, src: null, vol: 0.1 }; // One Wheel hum while riding: kept quiet in the background
   // Starts/stops/re-rates a buffer loop. Returns false if the buffer isn't ready (caller falls back to the <audio> clip).
   function driveLoop(l, active, rate) {
     if (!audioCtx || !l.buf) return false;
@@ -180,13 +181,13 @@
     // Pickup SFX: same decoded-buffer + trimmed-silence trick to kill the <audio> start delay on collect.
     // Walk/swim loops play from decoded buffers (looping BufferSource): a looping <audio> routed through
     // WebAudio dropped Chrome iOS to ~4 fps.
-    for (const [l, f] of [[walkLoop, 'walking.mp3'], [swimLoop, 'water-walking.mp3']]) {
+    for (const [l, f] of [[walkLoop, 'walking.mp3'], [swimLoop, 'water-walking.mp3'], [wheelHumLoop, 'onewheel-hum.mp3']]) {
       fetch(`assets/sfx/${f}`).then(r => r.arrayBuffer()).then(b => audioCtx.decodeAudioData(b))
         .then(buf => { l.buf = buf; }).catch(() => {});
     }
     fetch('assets/sfx/fire.mp3').then(r => r.arrayBuffer()).then(b => audioCtx.decodeAudioData(b))
       .then(buf => { fireLoop.buf = buf; }).catch(() => {});
-    for (const f of ['bag.m4a', 'shell.mp3', 'coin.mp3', 'sand.mp3', 'stomp.mp3', 'full.mp3', ...Object.values(HUT_SFX).map(n => n + '.mp3')]) {
+    for (const f of ['bag.m4a', 'shell.mp3', 'coin.mp3', 'sand.mp3', 'stomp.mp3', 'full.mp3', 'onewheel-beep.mp3', ...Object.values(HUT_SFX).map(n => n + '.mp3')]) {
       fetch(`assets/sfx/${f}`).then(r => r.arrayBuffer()).then(b => audioCtx.decodeAudioData(b))
         .then(buf => { pickupBuffers[f] = buf; }).catch(() => {});
     }
@@ -194,7 +195,7 @@
   const pickupBuffers = {};
   // Per-file WebAudio gain (default 0.6); the clip.volume values only apply to the <audio> fallback.
   const PICKUP_GAIN = { 'bag.m4a': 1.4, 'coin.mp3': 0.2, 'sand.mp3': 1.2, 'stomp.mp3': 1.2,
-    'door.mp3': 0.8, 'creak.mp3': 0.5, 'snore.mp3': 0.7, 'book-open.mp3': 0.6, 'book-page.mp3': 0.6, 'book-close.mp3': 0.6,
+    'onewheel-beep.mp3': 0.15, 'door.mp3': 0.8, 'creak.mp3': 0.5, 'snore.mp3': 0.7, 'book-open.mp3': 0.6, 'book-page.mp3': 0.6, 'book-close.mp3': 0.6,
     'eagle.mp3': 0.7, 'snake.mp3': 0.7, 'bear.mp3': 0.8, 'stick-snap.mp3': 0.7, 'wolf-howl.mp3': 0.7, 'wolf-bark.mp3': 0.7 };
   // maxLen (seconds, optional) plays only that much of the clip from its first audible sample, with a short fade-out.
   // gainMul (optional) scales the file's gain, e.g. for distance falloff on enemy cries.
@@ -213,6 +214,9 @@
     } else { if (gainMul != null) clip.volume = Math.min(1, 0.6 * gainMul); clip.currentTime = 0; clip.play().catch(() => {}); }
   }
   // Stomp SFX (assets/sfx/stomp.mp3): the file holds several stomps; only the first (~0.6s) is used.
+  // One Wheel mount/dismount beep (assets/sfx/onewheel-beep.mp3), played from game.js via TT_SOUND.wheelBeep.
+  const wheelBeepClip = gAudio('assets/sfx/onewheel-beep.mp3');
+  wheelBeepClip.volume = 0.15;
   const stompClip = gAudio('assets/sfx/stomp.mp3');
   stompClip.volume = 0.6;
   // Beach ambience loop (assets/sfx/beach.mp3): plays on the main menu + save-slot screens only, fades out
@@ -508,6 +512,8 @@
     enemyAttack: (type, distance) => enemySound(ENEMY_ATTACK_SFX[type], type + '-atk', distance, 400), // a crab swings every ~1.2s, so every swing sounds
     walking: (active, rate) => Sound.walking(active, rate),
     swimming: (active, floating) => Sound.swimming(active, floating),
+    wheelHum: active => driveLoop(wheelHumLoop, active && soundOn, 1), // no <audio> fallback: skipped until the buffer decodes
+    wheelBeep: () => { if (soundOn) playPickup('onewheel-beep.mp3', wheelBeepClip); },
     toggle: () => { soundOn = !soundOn; writeSound(soundOn); syncMusic(); return soundOn; },
     musicZone, musicPrepareAdventure, musicInfo,
     musicGet: () => musicOn,
