@@ -685,6 +685,7 @@
     const C = DC.coins, n = D.round;
     const bonus = Math.min(C.bonusMax, Math.max(0, Math.floor((C.parSeconds - D.t) * C.bonusPerSecond)));
     const coins = Math.min(C.max, C.base + C.perRound * (n - 1)) + bonus;
+    if (window.TT_SOUND) window.TT_SOUND.splash(); // reached the water
     P().grantBankedCoins(coins); sfxCoin(); // into the real coin total right now, so a failed next round loses nothing
     D.coinsRun += coins; D.rounds = n;
     P().setMinigameBest('dashBest', n);

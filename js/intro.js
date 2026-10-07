@@ -499,6 +499,7 @@
     purchase: () => Sound.purchase(),
     bank: () => Sound.bank(),
     gameover: () => Sound.gameover(),
+    splash: () => Sound.splash(), // existing splash.mp3 (Baby Turtle Dash plays it on reaching the water)
     full: seconds => Sound.full(seconds),
     door: () => playHut('door'),
     snore: () => playHut('snore'),
