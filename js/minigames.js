@@ -22,6 +22,7 @@
       bannerSeconds: 1.6,         // "Round N complete!" pause before the next round starts
       gridCell: 24,               // winnable-path check grid (beach units)
       pathPad: 6,                 // extra clearance the path check keeps around obstacles, on top of turtleR
+      log: { r: 15, spacing: 22, scale: 1.4, off: [2.5, 3.5] }, // driftwood: 3 collision circles of radius r, spacing apart, along the art (drawn at scale; off = art's centre offset in art px)
       obstacleGap: 36,            // min empty space between two static obstacles
       maxObstacleCircles: 64, placeAttempts: 14,
       // Per-round scaling: value = clamp(base + per * (round - 1), lo, hi). Counts are floored. The caps keep rounds winnable and phones smooth.
@@ -80,15 +81,15 @@
   // it draws centred on (0,0) facing +x, `size` px across. To swap in real art: set `src` (+ cols/rows/faces) and nothing else changes.
   // ---------------------------------------------------------------------------------------------------------------
   const ASSETS = {
-    babyTurtle: { src: 'assets/minigames/baby_turtle_walk_4f.png', cols: 4, rows: {}, size: 44, faces: 'right', draw: drawBabyTurtle },
+    babyTurtle: { src: 'assets/minigames/baby_turtle_walk_4f.png', cols: 4, rows: {}, size: 48, faces: 'right', draw: drawBabyTurtle },
     seagull:    { src: 'assets/enemies/seagull_spritesheet.png', cols: 6, rows: { fly: 3, attack: 2 }, size: 64, faces: 'up' }, // existing
     crab:       { src: 'assets/enemies/crab_spritesheet.png', cols: 6, rows: { walk: 1 }, size: 56, faces: 'side' },              // existing
     dog:        { src: 'assets/minigames/dog_walk_4f.png', cols: 4, rows: {}, size: 64, faces: 'right', draw: drawDog },
     dogRun:     { src: 'assets/minigames/dog_run_4f.png', cols: 4, rows: {}, size: 64, faces: 'right', draw: drawDog }, // used while chasing
-    person:     { src: 'assets/minigames/person_walk_4f.png', cols: 4, rows: {}, size: 60, faces: 'right', draw: drawPerson },  // top-down, centred on the person (feet ellipse = the hit area)
-    person2:    { src: 'assets/minigames/person2_walk_4f.png', cols: 4, rows: {}, size: 60, faces: 'right', draw: drawPerson },
+    person:     { src: 'assets/minigames/person1_walk_8dir.png', cols: 8, dirs: 8, rows: {}, size: 60, faces: 'right', draw: drawPerson },  // dirs: 8 = rows are E,SE,S,SW,W,NW,N,NE, columns are walk frames; top-down, centred on the person (feet ellipse = the hit area)
+    person2:    { src: 'assets/minigames/person2_walk_8dir.png', cols: 8, dirs: 8, rows: {}, size: 60, faces: 'right', draw: drawPerson },
     rock: { src: 'assets/minigames/rock.png', cols: 1, rows: {}, size: 64, faces: 'right', draw: drawRock },
-    driftwood: { src: 'assets/minigames/driftwood.png', cols: 1, rows: {}, size: 64, faces: 'right', draw: drawDriftwood },
+    driftwood: { src: 'assets/minigames/log.png', cols: 1, rows: {}, size: 64, faces: 'right', draw: drawDriftwood }, // the log art's visible box is ~53x25 of the 64px cell, centre offset 2.5,3.5 (see CONFIG.dash.log)
     shell: { src: 'assets/minigames/big_shell.png', cols: 1, rows: {}, size: 64, faces: 'right', draw: drawShell },
     tidepool: { src: 'assets/minigames/tide_pool.png', cols: 1, rows: {}, size: 64, faces: 'right', draw: drawTidePool },
     nest: { src: 'assets/minigames/nest_128.png', cols: 1, rows: {}, size: 128, faces: 'right', draw: drawNest },
@@ -105,6 +106,11 @@
     g.translate(x, y);
     if (img && img.complete && img.naturalWidth) {
       const F = img.naturalWidth / a.cols;
+      if (a.dirs) { // 8-direction sheet: pick the row for the heading, no rotation
+        const row8 = ((Math.round(rot / (Math.PI / 4)) % 8) + 8) % 8;
+        g.drawImage(img, (frame % a.cols) * F, row8 * F, F, F, -size / 2, -size / 2, size, size);
+        g.restore(); return;
+      }
       if (a.faces === 'side') { if (flip < 0) g.scale(-1, 1); }
       else g.rotate(rot + (a.faces === 'up' ? Math.PI / 2 : 0));
       g.drawImage(img, frame * F, (a.rows[row] || 0) * F, F, F, -size / 2, -size / 2, size, size);
@@ -438,7 +444,7 @@
         const x = rand(x0, x1), y = rand(50, D.H - 50), before = D.on;
         if (kind === 1) {
           const a = rand(0, Math.PI); // log along a random angle: three overlapping circles
-          for (let i = -1; i <= 1; i++) pushObstacle(i === -1 ? 1 : 2, x + Math.cos(a) * 24 * i, y + Math.sin(a) * 24 * i, 13, a);
+          for (let i = -1; i <= 1; i++) pushObstacle(i === -1 ? 1 : 2, x + Math.cos(a) * DC.log.spacing * i, y + Math.sin(a) * DC.log.spacing * i, DC.log.r, a);
         } else pushObstacle(kind, x, y, kind === 0 ? rand(18, 30) : kind === 3 ? rand(11, 16) : rand(28, 44), rand(0, 6.28));
         if (D.on > before && fits(before)) {
           for (let i = before; i < D.on; i++) markCircle(D.ox[i], D.oy[i], D.or[i] + DC.turtleR + DC.pathPad);
@@ -535,7 +541,10 @@
     for (let i = 0; i < D.on; i++) {
       const kind = D.ok[i], r = D.or[i];
       if (kind === 2) continue; // the log is drawn once, from its head circle
-      if (kind === 1) drawArt(g, 'driftwood', D.ox[i] + Math.cos(D.oa[i]) * 24, D.oy[i] + Math.sin(D.oa[i]) * 24, D.oa[i], 1, 100 / ASSETS.driftwood.size, 0, 'idle', 0); // centre of the 3 circles, ~100 long
+      if (kind === 1) { // centre of the 3 circles, nudged so the art's visible box (not its cell) sits on them
+        const L = DC.log, a = D.oa[i], c = Math.cos(a), sn = Math.sin(a), ox = -L.off[0] * L.scale, oy = -L.off[1] * L.scale;
+        drawArt(g, 'driftwood', D.ox[i] + c * L.spacing + ox * c - oy * sn, D.oy[i] + sn * L.spacing + ox * sn + oy * c, a, 1, L.scale, 0, 'idle', 0);
+      }
       else drawArt(g, kind === 0 ? 'rock' : kind === 3 ? 'shell' : 'tidepool', D.ox[i], D.oy[i], kind === 3 ? D.oa[i] * 0.3 : 0, 1, r * 2 / ASSETS.rock.size * (kind === 0 ? 1.1 : 1.05), 0, 'idle', 0);
     }
   }
@@ -615,7 +624,7 @@
       }
       if (sp > 0) {
         const ux = tx - d.x, uy = ty - d.y, l = Math.hypot(ux, uy);
-        if (l > 1) { d.x += ux / l * sp * dt; d.y += uy / l * sp * dt; d.ang = Math.atan2(uy, ux); }
+        if (l > 1) { d.x += ux / l * sp * dt; d.y += uy / l * sp * dt; let da = Math.atan2(uy, ux) - d.ang; da = Math.atan2(Math.sin(da), Math.cos(da)); d.ang += da * Math.min(1, 12 * dt); } // turns smoothly toward where it's going
         for (let i = 0; i < D.on; i++) { // slide around obstacles
           const ex = d.x - D.ox[i], ey = d.y - D.oy[i], min = 18 + D.or[i], e2 = ex * ex + ey * ey;
           if (e2 < min * min && e2 > 1e-6) { const e = Math.sqrt(e2), k = (min - e) / e; d.x += ex * k; d.y += ey * k; }
@@ -683,6 +692,8 @@
     showBanner(`Round ${n} complete!`, `+${coins} coins${bonus ? ` (speed bonus +${bonus})` : ''}`);
   }
 
+  const personHeading = p => Math.atan2(p.y1 - p.y0, p.x1 - p.x0) + (p.dir < 0 ? Math.PI : 0); // people face along their path
+
   // Draws the whole Dash scene (game.js calls this instead of the world render). Only moving things are drawn each frame.
   function renderDash(g, vw, vh, t) {
     if (!D) return;
@@ -710,9 +721,9 @@
       drawArt(g, d.chasing ? 'dogRun' : 'dog', d.x, d.y, d.ang, 1, 1, Math.floor(clock * (d.chasing ? 14 : 8)) % 4, 'idle', clock * (d.chasing ? 1.4 : 1));
       if (d.notice > 0) drawArt(g, 'notice', d.x, d.y - 40, 0, 1, 1, 0, 'idle', 0);
     }
-    for (let i = 0; i < D.people.length; i++) { const p = D.people[i]; if (p.on && p.y <= tt.y) drawArt(g, i & 1 ? 'person2' : 'person', p.x, p.y, 0, 1, 1, Math.floor(clock * 6) % 4, 'idle', clock); }
+    for (let i = 0; i < D.people.length; i++) { const p = D.people[i]; if (p.on && p.y <= tt.y) drawArt(g, i & 1 ? 'person2' : 'person', p.x, p.y, personHeading(p), 1, 1, Math.floor(clock * 8), 'idle', clock); }
     drawArt(g, 'babyTurtle', tt.x, tt.y, tt.angle, 1, 1, Math.floor(D.walk * 8) % 4, 'idle', D.walk);
-    for (let i = 0; i < D.people.length; i++) { const p = D.people[i]; if (p.on && p.y > tt.y) drawArt(g, i & 1 ? 'person2' : 'person', p.x, p.y, 0, 1, 1, Math.floor(clock * 6) % 4, 'idle', clock); }
+    for (let i = 0; i < D.people.length; i++) { const p = D.people[i]; if (p.on && p.y > tt.y) drawArt(g, i & 1 ? 'person2' : 'person', p.x, p.y, personHeading(p), 1, 1, Math.floor(clock * 8), 'idle', clock); }
     for (const gl of D.gulls) { // gulls in the air, above everything
       if (!gl.on || (gl.st !== 3 && gl.st !== 4)) continue;
       gullPos(gl);
