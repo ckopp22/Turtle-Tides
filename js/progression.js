@@ -309,9 +309,9 @@
   // Straight into the bank (mini game reward).
   function grantBankedCoins(n) { state.banked.coins += n; state.stats.coins += n; persist(); }
   function addStat(key, n = 1) { if (key in state.stats) state.stats[key] += n; }
-  // Autosave: playSeconds only reaches the slot on persist(), so write it every few seconds (and when the tab
+  // Autosave: playSeconds only reaches the slot on persist(), so write it every 30 seconds (and when the tab
   // hides/closes) to keep "Time played" accurate when the last upgrade makes you a Turtle Master.
-  const AUTOSAVE_SECONDS = 10;
+  const AUTOSAVE_SECONDS = 30;
   let autosaveTimer = 0;
   function addPlayTime(dt) {
     state.stats.playSeconds += dt;
