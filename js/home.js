@@ -318,6 +318,7 @@
   let scene = 'world';   // 'world' | 'interior' — which one is drawn/simulated
   let phase = 0;         // 0 = none, 1 = fading to black, 2 = fading back in
   let alpha = 0, pending = null;
+  let wheelRidden = false; // true while the turtle is riding it (game.js sets this); the parked sprite is hidden
   let fireX = 0, fireY = 0, gardenX = 0, gardenY = 0, wheelX = 0, wheelY = 0;
   const solids = [];     // world-space copies of HUT_SOLIDS
   const trigger = [0, 0, 0, 0];
@@ -463,7 +464,7 @@
       for (const dy of c.ys) ctx.drawImage(stonesImg, hutX - c.size / 2, hutY + dy - c.size / 2, c.size, c.size);
     }
     if (n >= 4 && ok(gardenImg)) { const c = CONFIG.garden; ctx.drawImage(gardenImg, gardenX - c.size / 2, gardenY - c.size / 2, c.size, c.size); }
-    if (n >= 5 && ok(onewheelImg)) {
+    if (n >= 5 && !wheelRidden && ok(onewheelImg)) {
       const c = CONFIG.onewheel, h = c.w * onewheelImg.naturalHeight / onewheelImg.naturalWidth;
       ctx.imageSmoothingEnabled = true;
       ctx.drawImage(onewheelImg, wheelX - c.w / 2, wheelY - h / 2, c.w, h);
@@ -779,6 +780,8 @@
     syncFromSave: syncUnlocked, refreshInterior: () => { if (scene === 'interior' && builtLevel !== level()) startPops(); }, hasFeature, hutBuilt, UPGRADES,
     init, tick, collideWorld, checkDoor, updateAmbient, layout, drawRoom, drawFade, drawGround, lights, drawSleepDim, drawMessages, hutEntry, room,
     TURTLE_SCALE: CONFIG.roomTurtleScale, SLEEP_SCALE: CONFIG.sleep.scale, bedSpot: BED_SPOT,
+    setWheelRidden: v => { wheelRidden = v; },
+    wheelSpot: () => ({ x: wheelX, y: wheelY }), // parked spot on the home island
     isAsleep: () => sleep.phase === 2,
     isInterior: () => scene === 'interior',
     // Safe zone flag for enemies/other systems: true whenever the player is inside the hut.

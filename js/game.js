@@ -317,12 +317,13 @@
     e.preventDefault();
     wakeUp();
     const t = e.changedTouches[0];
+    if (tryWheelTap(t.clientX, t.clientY)) return; // tapped the one wheel, not a joystick drag
     if (window.Progression.tryEatFromHud(t.clientX, t.clientY)) return; // tapped the hunger bar, not a joystick drag
     if (joy.active) return;
     joy.active = true; joy.id = t.identifier;
     joy.ox = joy.x = t.clientX; joy.oy = joy.y = t.clientY;
   }, { passive: false });
-  canvas.addEventListener('mousedown', wakeUp); // desktop "click" wakes it too (no other click mechanic exists yet)
+  canvas.addEventListener('mousedown', e => { wakeUp(); tryWheelTap(e.clientX, e.clientY); }); // desktop "click" wakes it too (no other click mechanic exists yet)
   canvas.addEventListener('click', e => window.Progression.tryEatFromHud(e.clientX, e.clientY)); // desktop: click the hunger bar to eat a coconut
   canvas.addEventListener('touchmove', e => {
     e.preventDefault();
@@ -1863,6 +1864,22 @@
   }
 
   const NO_DIR = { x: 0, y: 0 };
+
+  // One Wheel: once unlocked (hut upgrade) it sits parked on the home island. Tap it while close to mount;
+  // tap the parked spot again while close to dismount. Dying (or entering the hut) dismounts, which puts it
+  // back at its home spot since it's always parked there when not ridden. Land only: water movement is unchanged.
+  const WHEEL_TAP_R = 50, WHEEL_NEAR_R = 120; // world px: tap tolerance around the spot / how close the turtle must be
+  const RIDE_SPEED_MULT = 1.35;               // land speed boost while riding (on top of the skill multiplier)
+  let riding = false;
+  function setRiding(v) { riding = v; Home.setWheelRidden(v); walkFrame = 0; }
+  function tryWheelTap(cx, cy) {
+    if (Home.isInterior() || state !== 'normal' || deathTimer >= 0 || !Home.hasFeature('moveSpeed3')) return false;
+    const w = Home.wheelSpot();
+    if (Math.hypot(camX + cx / ZOOM - w.x, camY + cy / ZOOM - w.y) > WHEEL_TAP_R) return false;
+    if (Math.hypot(turtle.x - w.x, turtle.y - w.y) > WHEEL_NEAR_R) return false;
+    setRiding(!riding);
+    return true;
+  }
   // Walk cycle + footsteps while inside the hut, driven by the room speed converted back to world px/s.
   function updateInteriorAnim(dt) {
     // The hut's sleep sequence borrows the 'sleeping' sprite row; otherwise the turtle is up and walking.
@@ -1883,7 +1900,7 @@
     if (Home.tick(dt, Home.isInterior() ? getDirection() : NO_DIR)) {
       // Toggled at the hut window: snap the outside sky so there's no dim fade on exit.
       if (Home.isInterior()) nightAmount = window.Progression.state.isNight ? 1 : 0;
-      if (Home.isInterior()) updateInteriorAnim(dt);
+      if (Home.isInterior()) { if (riding) setRiding(false); updateInteriorAnim(dt); }
       else if (window.TT_SOUND) { window.TT_SOUND.walking(false, 1); window.TT_SOUND.swimming(false, true); }
       return;
     }
@@ -1894,6 +1911,7 @@
       if (deathTimer >= DEATH_FADE_SECONDS + DEATH_BLACK_SECONDS) {
         deathTimer = -1; state = 'normal'; stateTime = 0;
         window.Progression.respawnAtHome();
+        if (riding) setRiding(false); // the wheel is back at its home spot
         dropLostItems();
       }
     }
@@ -1923,7 +1941,7 @@
     // Swim Speed only boosts water movement, Move Speed only boosts land movement (see
     // progression.js CONFIG.speed) — domains never overlap, so nothing to stack.
     const skillSpeedMult = inWater ? window.Progression.swimSpeedMultiplier() : window.Progression.moveSpeedMultiplier();
-    const speedMult = (inWater ? WATER_SPEED_MULT : LAND_SPEED_MULT) * skillSpeedMult * hungerSpeedMult;
+    const speedMult = (inWater ? WATER_SPEED_MULT : LAND_SPEED_MULT) * skillSpeedMult * hungerSpeedMult * (riding && !inWater ? RIDE_SPEED_MULT : 1);
     const tvx = dir.x * MAX_SPEED * speedMult, tvy = dir.y * MAX_SPEED * speedMult;
     const hasInput = dir.x !== 0 || dir.y !== 0;
     const rate = (hasInput ? ACCEL : DECEL) * dt;
@@ -2131,8 +2149,24 @@
   const FLOAT_BOB_SPEED = 2.2;   // radians/sec
   const FLOAT_BOB_AMPLITUDE = 4; // world px of vertical drift
 
+  // Turtle on the one wheel: 4 top-down frames (head up, board sideways), rotated like the walk sprite.
+  const wheelSprite = new Image();
+  wheelSprite.src = 'assets/turtle-onewheel.png';
+  const WHEEL_DRAW = 108; // drawn size of one frame in world px (sized so the shell matches the walking turtle)
+  // TODO: hats/clothes/shell tint aren't drawn on the one wheel sprite yet.
+  function drawTurtleOnWheel() {
+    const fw = wheelSprite.naturalWidth / 4, fh = wheelSprite.naturalHeight;
+    ctx.save();
+    ctx.translate(turtle.x, turtle.y);
+    ctx.rotate(turtle.angle + Math.PI / 2);
+    if (window.Progression.isInvulnerable() && Math.floor(gameTime * 12) % 2 === 0) ctx.globalAlpha = 0.3;
+    ctx.drawImage(wheelSprite, (Math.floor(walkFrame) % 4) * fw, 0, fw, fh, -WHEEL_DRAW / 2, -WHEEL_DRAW / 2, WHEEL_DRAW, WHEEL_DRAW * fh / fw);
+    ctx.restore();
+  }
+
   // px/py/ang/sc default to the world turtle; the hut interior passes screen-space values and a scale.
   function drawTurtle(px = turtle.x, py = turtle.y, ang = turtle.angle, sc = 1) {
+    if (riding && state === 'normal' && moveMode === 'walk' && px === turtle.x && wheelSprite.naturalWidth) { drawTurtleOnWheel(); return; }
     if (!sprite.complete || !sprite.naturalWidth) return;
     const fw = sprite.naturalWidth / SHEET_COLS, fh = sprite.naturalHeight / SHEET_ROWS;
     const dw = SPRITE_H * fw / fh;
