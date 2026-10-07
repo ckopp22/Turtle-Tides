@@ -2159,8 +2159,8 @@
     ctx.save();
     ctx.translate(turtle.x, turtle.y);
     // Board runs along the travel direction (turtle stands sideways on it), so rotate by the heading itself. No flip:
-    // the head stays on the same side of the turtle's path (upper side when heading right) instead of swapping sides.
-    ctx.rotate(turtle.angle);
+    // the head stays on the same side of the turtle's path (lower side when heading right) instead of swapping sides.
+    ctx.rotate(turtle.angle + Math.PI); // +180deg: regular stance (head on the lower side when heading right), not goofy
     if (window.Progression.isInvulnerable() && Math.floor(gameTime * 12) % 2 === 0) ctx.globalAlpha = 0.3;
     ctx.drawImage(wheelSprite, (Math.floor(walkFrame) % 4) * fw, 0, fw, fh, -WHEEL_DRAW / 2, -WHEEL_DRAW / 2, WHEEL_DRAW, WHEEL_DRAW * fh / fw);
     ctx.restore();
