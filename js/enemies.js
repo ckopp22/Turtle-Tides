@@ -145,7 +145,7 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
   const SWIPE_FRAMES = 8, SWIPE_WINDUP_FRAMES = 3; // attack_swipe sheet: first frames = the '!' tell during wind-up, the rest = the swipe at the hit
   const exclaimImg = new Image(); exclaimImg.src = 'assets/enemies/notice_exclaim.png';
   const swipeImg = new Image(); swipeImg.src = 'assets/enemies/attack_swipe_spritesheet.png?v=2'; // ?v= busts the old cached sheet that still had the '!' baked in
-  const pool = []; // fixed-size: one slot per configured enemy (home pool, then the Adventure Zone pool), plus a few extra for debug spawns
+  let pool = []; // fixed-size: one slot per configured enemy (home pool, then the Adventure Zone pool), plus a few extra for debug spawns
   const nearList = []; // enemies close enough to simulate this frame (rebuilt each update, reused)
   let ctxRef = null;
 
@@ -223,10 +223,55 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
     }
   }
 
+
+  // ---- Arena (Survival mini game, minigames.js) ----
+  // Swaps in a separate pool + world API so the real enemy behaviour (wander, chase, attack) runs with no safe zones,
+  // while the main game's enemies sit untouched (frozen, not drawn) until arena.stop() puts them back.
+  let arena = null, saved = null;
+  const arenaApi = {
+    // a = minigames.js world API (same shape as Enemies.init's), max = pool size, ramp = { speedFrac } clamp
+    start(a, max, maxSpeedFrac) {
+      if (arena) return;
+      saved = { pool, api, now, nearCount, tvx, tvy, lastTx };
+      arena = { types: {}, maxSpeedFrac, detectBonus: 0, speedMult: 1 };
+      for (const k in CONFIG.types) if (!CONFIG.types[k].nocturnal) arena.types[k] = Object.assign({}, CONFIG.types[k]);
+      pool = []; for (let i = 0; i < max; i++) pool.push(makeSlot(null, Infinity));
+      nearList.length = Math.max(nearList.length, max);
+      api = a; nearCount = 0; tvx = tvy = 0; lastTx = null;
+      arenaApi.setDifficulty(0, 1);
+    },
+    stop() {
+      if (!arena) return;
+      pool = saved.pool; api = saved.api; now = saved.now; nearCount = saved.nearCount; tvx = saved.tvx; tvy = saved.tvy; lastTx = null;
+      arena = saved = null;
+    },
+    // Detection (and the crab's ambush) grows by detectBonusPx; speed scales by speedMult (clamped below the player's speed except the snake).
+    setDifficulty(detectBonusPx, speedMult) {
+      if (!arena) return;
+      arena.detectBonus = detectBonusPx; arena.speedMult = speedMult;
+      for (const k in arena.types) {
+        const base = CONFIG.types[k], c = arena.types[k];
+        c.speed = base.speed < 1 ? Math.min(base.speed * speedMult, arena.maxSpeedFrac) : base.speed * speedMult;
+        c.detect = base.detect + detectBonusPx / U;
+        if (base.ambush) c.ambush = base.ambush + detectBonusPx / U;
+        derive(c);
+      }
+    },
+    spawn(type, x, y) { // returns true if a slot was free
+      for (const e of pool) if (!e.active) { placeEnemy(e, type, x, y, ''); e.respawnAt = Infinity; return true; }
+      return false;
+    },
+    count() { let n = 0; for (const e of pool) if (e.active) n++; return n; },
+    // Frees every enemy farther than sqrt(d2) from (x, y) so the spawner can replace it near the player.
+    recycleFar(x, y, d2) { let n = 0; for (const e of pool) if (e.active && (e.x - x) ** 2 + (e.y - y) ** 2 > d2) { e.active = false; n++; } return n; },
+    typeNames() { return Object.keys(arena ? arena.types : CONFIG.types).filter(k => !CONFIG.types[k].nocturnal); },
+    get on() { return !!arena; },
+  };
+
   // ---- Spawning ----
   function placeEnemy(e, type, x, y, biome) {
     e.type = type; e.active = true;
-    e.cfg = adv && !api.inHomeZone(x, y) ? ADV_TYPES[type] : CONFIG.types[type]; // stats follow where it spawned
+    e.cfg = arena ? arena.types[type] : adv && !api.inHomeZone(x, y) ? ADV_TYPES[type] : CONFIG.types[type]; // stats follow where it spawned (arena: the Survival ramp's live copy)
     e.x = e.sx = x; e.y = e.sy = y; e.biome = biome;
     e.state = WANDER; e.t = 0; e.anim = 0; e.hasTarget = false; e.pause = rnd(0.5, 2); e.nightSleep = false; e.notice = 0;
     e.cd = 0; e.steer = 0; e.steerT = 0; e.dodge = 0; e.dodgeT = 0; e.giveUp = 0; e.lose = 0; e.stuck = 0; e.unreach = 0; e.flip = Math.random() < 0.5 ? 1 : -1;
@@ -629,7 +674,7 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
   function update(dt) {
     if (!api) return;
     now += dt;
-    updateSpawner();
+    if (!arena) updateSpawner(); // the arena's spawns are driven by minigames.js
     const T = api.turtle, v = api.view();
     const act = CONFIG.activeScreens * Math.max(v.w, v.h), act2 = act * act;
     const far = CONFIG.farScreens * Math.max(v.w, v.h), far2 = far * far;
@@ -837,5 +882,5 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
   }
   const statsBuf = { home: 0, adv: 0, near: 0 };
   function stats() { statsBuf.home = statsBuf.adv = 0; for (const e of pool) if (e.active) { if (e.pool === 'adv') statsBuf.adv++; else statsBuf.home++; } statsBuf.near = nearCount; return statsBuf; } // ?debug=1 overlay
-  window.Enemies = { init, update, setAdventure, stats, nearDen, resetAggro, collectVisible, collideTurtle, drawSwipes, drawDebug, CONFIG, get pool() { return DEBUG ? pool : null; }, get api() { return DEBUG ? api : null; } }; // pool/api only exposed with ?debug=1, for console poking
+  window.Enemies = { arena: arenaApi, init, update, setAdventure, stats, nearDen, resetAggro, collectVisible, collideTurtle, drawSwipes, drawDebug, CONFIG, get pool() { return DEBUG ? pool : null; }, get api() { return DEBUG ? api : null; } }; // pool/api only exposed with ?debug=1, for console poking
 })();

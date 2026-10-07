@@ -317,14 +317,14 @@
     e.preventDefault();
     wakeUp();
     const t = e.changedTouches[0];
-    if (tryWheelTap(t.clientX, t.clientY)) return; // tapped the one wheel, not a joystick drag
-    if (window.Progression.tryEatFromHud(t.clientX, t.clientY)) return; // tapped the hunger bar, not a joystick drag
+    if (!miniMode() && tryWheelTap(t.clientX, t.clientY)) return; // tapped the one wheel, not a joystick drag
+    if (!miniMode() && window.Progression.tryEatFromHud(t.clientX, t.clientY)) return; // tapped the hunger bar, not a joystick drag
     if (joy.active) return;
     joy.active = true; joy.id = t.identifier;
     joy.ox = joy.x = t.clientX; joy.oy = joy.y = t.clientY;
   }, { passive: false });
-  canvas.addEventListener('mousedown', e => { wakeUp(); tryWheelTap(e.clientX, e.clientY); }); // desktop "click" wakes it too (no other click mechanic exists yet)
-  canvas.addEventListener('click', e => window.Progression.tryEatFromHud(e.clientX, e.clientY)); // desktop: click the hunger bar to eat a coconut
+  canvas.addEventListener('mousedown', e => { wakeUp(); if (!miniMode()) tryWheelTap(e.clientX, e.clientY); }); // desktop "click" wakes it too (no other click mechanic exists yet)
+  canvas.addEventListener('click', e => { if (!miniMode()) window.Progression.tryEatFromHud(e.clientX, e.clientY); }); // desktop: click the hunger bar to eat a coconut
   canvas.addEventListener('touchmove', e => {
     e.preventDefault();
     for (const t of e.changedTouches) {
@@ -1950,6 +1950,7 @@
   // ---- Update ----
   function update(dt) {
     window.Progression.addPlayTime(dt);
+    if (miniMode()) { window.MiniGames.update(dt); return; } // a plant mini game owns the frame; the main world stays frozen
     // Inside the hut (or mid door-fade) the outside world is paused: no enemies, pickups, timers.
     if (Home.tick(dt, Home.isInterior() ? getDirection() : NO_DIR)) {
       // Toggled at the hut window: snap the outside sky so there's no dim fade on exit.
@@ -2426,7 +2427,9 @@
   }
   function render(t) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // 1 ctx unit = 1 CSS px; backing store already has the dpr scale-up
-    if (Home.isInterior()) { renderInterior(t); return; }
+    const mini = miniMode(); // null | 'dash' | 'survival' (plant mini games, minigames.js)
+    if (mini === 'dash') { window.MiniGames.renderDash(ctx, viewW, viewH, t); drawJoystick(); return; } // its own beach scene, not the world
+    if (Home.isInterior() && !mini) { renderInterior(t); return; } // Survival draws the real map even though the room is still the active scene
     ctx.fillStyle = '#0b3d4f';
     ctx.fillRect(0, 0, viewW, viewH);
 
@@ -2444,7 +2447,7 @@
     ctx.drawImage(islandDetail.canvas, islandDetail.worldX, islandDetail.worldY);
     Home.drawGround(ctx, t); // outdoor campfire
     drawWheelTrail();
-    if (!skip.pickups) { coinPickups.draw(); coconutPickups.draw(); findPickups.draw(); if (adventureUnlocked) { advCoins.draw(); drawChest(); } }
+    if (!skip.pickups && !mini) { coinPickups.draw(); coconutPickups.draw(); findPickups.draw(); if (adventureUnlocked) { advCoins.draw(); drawChest(); } }
 
     // Cull scenery to the visible world rect (plus a small margin) so a big world with lots of
     // trees still draws only a couple dozen-to-hundred objects per frame.
@@ -2456,14 +2459,16 @@
     const visible = visibleBuf;
     if (perf) perf.visible = visible.length;
     drawSceneryWithTurtle(visible);
-    drawWheelPrompt();
+    if (!mini) drawWheelPrompt();
     if (window.Enemies && !skip.enemies) window.Enemies.drawSwipes(ctx, camX, camY, vw, vh); // attack swipes over the turtle
-    drawBurst();
+    if (mini) window.MiniGames.drawWorld(ctx, camX, camY, vw, vh); // spawn warnings at the screen edge
+    else drawBurst();
     if (DEBUG_HITBOXES) drawDebugHitboxes(visible);
     if (DEBUG) { ctx.strokeStyle = 'magenta'; ctx.lineWidth = 4; ctx.strokeRect(0, 0, WORLD_SIZE, WORLD_SIZE); } // Adventure Zone boundary (= the home zone's edge)
     if (window.Enemies) window.Enemies.drawDebug(ctx, camX, camY, vw, vh);
     ctx.restore();
 
+    if (mini) { drawJoystick(); return; } // Survival has its own DOM HUD; no night sky, hunger/coin HUD or door fade
     if (!skip.night) drawNightSky(); // screen space, under the HUD/joystick so they stay fully readable
     drawJoystick(); // screen space
     if (!skip.hud) window.Progression.drawHUD(ctx); // screen space
@@ -2510,7 +2515,7 @@
     const w0 = perf ? performance.now() : 0;
     update(dt);
     render(now / 1000);
-    if (!Home.isInterior()) serviceGroundAhead();
+    if (!Home.isInterior() || miniMode() === 'survival') serviceGroundAhead();
     if (perf) {
       perf.ms = performance.now() - w0;
       perf.frames++; perf.acc += rawMs; perf.worst = Math.max(perf.worst, rawMs);
@@ -2576,7 +2581,69 @@
       return r;
     },
   });
-  window.TurtleGame = { start, renderCosmeticPreview, setAdventureUnlocked, isAdventureUnlocked: () => adventureUnlocked, debugFinds: () => findPickups.items }; // debugFinds: console poking only
+  // ---- Plant mini games (minigames.js): a small API so they reuse the turtle's movement/animation, the map's collision
+  // and the real world render instead of copying them. The main game is frozen while one runs (update()/render() hooks above);
+  // enter() saves the turtle and exit() puts everything back exactly where it was. ----
+  function miniMode() { return window.MiniGames ? window.MiniGames.mode() : null; }
+  let miniSaved = null;
+  function miniEnter() {
+    if (miniSaved) return;
+    miniSaved = { x: turtle.x, y: turtle.y, vx: turtle.vx, vy: turtle.vy, angle: turtle.angle, state, stateTime, moveMode, floating, riding, walkFrame };
+    state = 'normal'; stateTime = 0; floating = false; moveMode = 'walk'; walkFrame = 0; riding = false; shakeTime = 0;
+    turtle.vx = turtle.vy = 0;
+  }
+  function miniExit() {
+    const m = miniSaved; if (!m) return;
+    miniSaved = null;
+    turtle.x = m.x; turtle.y = m.y; turtle.vx = m.vx; turtle.vy = m.vy; turtle.angle = m.angle;
+    state = m.state; stateTime = m.stateTime; moveMode = m.moveMode; floating = m.floating; riding = m.riding; walkFrame = m.walkFrame;
+    if (window.TT_SOUND) { window.TT_SOUND.walking(false, 1); window.TT_SOUND.swimming(false, true); }
+  }
+  // One step of the turtle's own movement (same accel/decel, walk/swim speeds and animation as update(), minus skills and hunger).
+  // Returns the speed. The caller does its own collisions.
+  function miniMove(dt, speedScale, allowSwim) {
+    const dir = getDirection();
+    const inWater = allowSwim && isWater(turtle.x, turtle.y);
+    const m = (inWater ? WATER_SPEED_MULT : LAND_SPEED_MULT) * speedScale;
+    const tvx = dir.x * MAX_SPEED * m, tvy = dir.y * MAX_SPEED * m;
+    const rate = (dir.x !== 0 || dir.y !== 0 ? ACCEL : DECEL) * dt;
+    const dvx = tvx - turtle.vx, dvy = tvy - turtle.vy, dl = Math.hypot(dvx, dvy);
+    if (dl <= rate) { turtle.vx = tvx; turtle.vy = tvy; } else { turtle.vx += dvx / dl * rate; turtle.vy += dvy / dl * rate; }
+    moveMode = inWater ? 'swim' : 'walk';
+    const speed = Math.hypot(turtle.vx, turtle.vy);
+    if (speed > 5) walkFrame += speed * dt * FRAMES_PER_SPEED; else walkFrame = 0;
+    floatClock += dt; floating = inWater && speed <= 5;
+    if (window.TT_SOUND) {
+      window.TT_SOUND.walking(speed > 5 && !inWater, Math.min(4, Math.max(1, WALK_SOUND_BASE_RATE * speed / (MAX_SPEED * LAND_SPEED_MULT))));
+      window.TT_SOUND.swimming(inWater, speed <= 5);
+    }
+    turtle.x += turtle.vx * dt; turtle.y += turtle.vy * dt;
+    if (speed > 10) {
+      let diff = Math.atan2(turtle.vy, turtle.vx) - turtle.angle;
+      diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+      turtle.angle += diff * Math.min(1, 10 * dt);
+    }
+    return speed;
+  }
+  // The map's solid things for Survival: scenery, enemies (they're solid), and the playable edge.
+  function miniCollide() {
+    resolveObstacleCollisions();
+    if (window.Enemies) window.Enemies.collideTurtle(turtle, TURTLE_BODY_RADIUS);
+    clampToWorld();
+  }
+  const miniApi = {
+    turtle, getDirection, move: miniMove, enter: miniEnter, exit: miniExit, collide: miniCollide,
+    isWater, blockedAt, inHomeZone, ensureGroundAt, bodyRadius: TURTLE_BODY_RADIUS,
+    walkable: (x, y) => enemyRoom(x, y) && !isWater(x, y), // Survival has no safe island: same as the main walkable minus the island rule
+    flyable: (x, y) => enemyRoom(x, y),
+    center: CENTER, worldSize: WORLD_SIZE, waterOuterR: WATER_OUTER_R,
+    worldMin: () => adventureUnlocked ? WORLD_MIN : 0, worldMax: () => adventureUnlocked ? WORLD_MAX : WORLD_SIZE,
+    basePlayerSpeed: MAX_SPEED * LAND_SPEED_MULT,
+    view: () => { viewRect.x = camX; viewRect.y = camY; viewRect.w = viewW / ZOOM; viewRect.h = viewH / ZOOM; return viewRect; },
+    size: () => { miniSize.w = viewW; miniSize.h = viewH; return miniSize; }, // CSS px of the canvas
+  };
+  const miniSize = { w: 0, h: 0 };
+  window.TurtleGame = { mini: miniApi, start, renderCosmeticPreview, setAdventureUnlocked, isAdventureUnlocked: () => adventureUnlocked, debugFinds: () => findPickups.items }; // debugFinds: console poking only
 
   // ---- Test mode (?test=1): no intro, no rAF loop. Math.random is seeded (top of file) and every
   // time input is a fixed number, so render() output is a pure function of the shot spec. Driven by

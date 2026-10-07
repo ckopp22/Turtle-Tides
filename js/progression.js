@@ -253,6 +253,7 @@
     homeSeenLevel: 0, // home level the player last saw inside the hut (higher = new items to pop in)
     // Lifetime counters for the future collection book's stats page; saved with the slot.
     stats: { coconuts: 0, coins: 0, castles: 0, deaths: 0, playSeconds: 0 },
+    minigames: { dashBest: 0, survivalBest: 0 }, // plant mini games' high scores (minigames.js): most Dash rounds in one run, longest Survival seconds (saved with the slot)
     invulnTimer: 0,
     hullFullFlash: 0,
     lastLostMessage: null, // { text, timer } shown briefly after a death
@@ -308,6 +309,7 @@
   }
   // Straight into the bank (mini game reward).
   function grantBankedCoins(n) { state.banked.coins += n; state.stats.coins += n; persist(); }
+  function setMinigameBest(key, v) { if (key in state.minigames && v > state.minigames[key]) { state.minigames[key] = v; persist(); return true; } return false; }
   function addStat(key, n = 1) { if (key in state.stats) state.stats[key] += n; }
   // Autosave: playSeconds only reaches the slot on persist(), so write it every 30 seconds (and when the tab
   // hides/closes) to keep "Time played" accurate when the last upgrade makes you a Turtle Master.
@@ -604,6 +606,8 @@
     const st = data.stats || {};
     state.stats = {};
     for (const k of ['coconuts', 'coins', 'castles', 'deaths', 'playSeconds']) state.stats[k] = Number.isFinite(st[k]) && st[k] > 0 ? st[k] : 0;
+    const mg = data.minigames || {};
+    state.minigames = { dashBest: Math.max(0, Math.floor(mg.dashBest) || 0), survivalBest: Number.isFinite(mg.survivalBest) && mg.survivalBest > 0 ? mg.survivalBest : 0 };
     // Never restore carried items from a save — see loseUnbankedOnClose above.
     state.carried = { coins: 0, coconuts: 0 };
     state.carriedFinds = [];
@@ -645,6 +649,7 @@
       homeVersion: 6, // 6 = Goggles inserted at upgrade 5; 5 = Table & Stools moved to upgrade 4 (opens the Adventure Zone); 4 = Window inserted at upgrade 5; 3 = homeLevel 0 is nothing, 1 is the hut, then its upgrades (2 = no hut step); bump if the save shape changes (loads tolerate it missing)
       homeSeenLevel: state.homeSeenLevel,
       stats: { ...state.stats },
+      minigames: { ...state.minigames },
     };
   }
   function attachSlot(slotId, existingData) {
@@ -1092,7 +1097,7 @@
   window.Progression = {
     tryPickup, grantCarriedCoins, bankCarried, takeLostItems, takeHit, getStarveDim: () => starveDim, isInvulnerable, setRespawnHandler, setUpgradeHandler, setDeathHandler, respawnAtHome,
     update, restoreHearts, maxHearts, getHideConfig, swimSpeedMultiplier, moveSpeedMultiplier, toggleDayNight, drawHUD, setHomeButtonVisible, tryEatFromHud, getIconRow: ensureIconRow,
-    topInset, fullViewH, buyUpgrade, canUpgrade, addStat, addPlayTime, claimPageReward, grantBankedCoins,
+    topInset, fullViewH, buyUpgrade, canUpgrade, addStat, addPlayTime, claimPageReward, grantBankedCoins, setMinigameBest,
     attachSlot, getSaveData, persist,
     hasSkill, FINDS: CONFIG.finds, randomFindIndex,
     SHOP_CATEGORIES, getShopItems: () => CONFIG.shop.items, buyCosmetic, equipCosmetic, unequipCategory, ownsCosmetic, equippedIn, getEquippedColorTint, drawEquippedCosmetics,

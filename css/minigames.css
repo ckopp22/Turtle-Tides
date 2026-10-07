@@ -1,0 +1,45 @@
+/* Plant mini games (js/minigames.js): menu / pause / results cards reuse .tt-name-prompt + .tt-name-box from style.css;
+   this file adds the big buttons, the in-game HUD and the round banner. */
+.tt-mg-overlay { z-index: 15; }
+.tt-mg-box { width: min(360px, 90vw); text-align: center; }
+.tt-mg-box h3 { margin: 0 0 14px; font-size: 24px; color: #3a2a10; }
+.tt-mg-box button { touch-action: manipulation; }
+.tt-mg-big {
+  display: flex; flex-direction: column; gap: 4px; width: 100%; box-sizing: border-box; margin-bottom: 12px;
+  padding: 16px 12px; border-radius: 14px; border: 2px solid #7a5a1e; background: #ffb347; cursor: pointer;
+  font-family: inherit; color: #3a2a10; min-height: 76px;
+}
+.tt-mg-big strong { font-size: 22px; }
+.tt-mg-big span { font-size: 15px; opacity: 0.85; }
+.tt-mg-big:active { background: #f59f2d; }
+.tt-mg-col { display: flex; flex-direction: column; gap: 10px; }
+.tt-mg-col button { font-size: 18px; padding: 12px; border-radius: 10px; border: 2px solid #7a5a1e; min-height: 48px; cursor: pointer; }
+.tt-mg-record {
+  display: inline-block; margin: 0 0 10px; padding: 6px 14px; border-radius: 999px;
+  background: #ffd34d; border: 2px solid #b8860b; color: #5a3d00; font-weight: 800; font-size: 16px;
+  animation: tt-mg-pop 0.6s ease-out;
+}
+@keyframes tt-mg-pop { 0% { transform: scale(0.4); } 70% { transform: scale(1.15); } 100% { transform: scale(1); } }
+.tt-mg-rows { margin: 4px 0 16px; text-align: left; }
+.tt-mg-rows div { display: flex; justify-content: space-between; padding: 7px 2px; border-bottom: 1px solid #e5d9b6; font-size: 16px; color: #3a2a10; }
+
+.tt-mg-hud { position: fixed; inset: 0; z-index: 11; pointer-events: none; font-family: system-ui, sans-serif; }
+.tt-mg-pill {
+  position: absolute; top: max(10px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
+  display: flex; gap: 14px; padding: 8px 18px; border-radius: 999px; white-space: nowrap;
+  background: rgba(11, 61, 79, 0.72); color: #fff; font-size: 18px; font-weight: 700;
+}
+.tt-mg-pause {
+  position: absolute; top: max(10px, env(safe-area-inset-top)); right: 12px; width: 48px; height: 48px;
+  border-radius: 50%; border: 2px solid #fff; background: rgba(11, 61, 79, 0.72); color: #fff; font-size: 16px;
+  pointer-events: auto; cursor: pointer; touch-action: manipulation;
+}
+.tt-mg-banner {
+  position: fixed; left: 50%; top: 38%; transform: translate(-50%, -50%); z-index: 12; pointer-events: none;
+  display: none; flex-direction: column; align-items: center; gap: 6px; padding: 18px 28px; border-radius: 18px;
+  background: rgba(253, 246, 227, 0.95); border: 3px solid #7a5a1e; color: #3a2a10; font-family: system-ui, sans-serif; text-align: center;
+  animation: tt-mg-pop 0.35s ease-out;
+}
+.tt-mg-banner strong { font-size: 26px; }
+.tt-mg-banner span { font-size: 18px; font-weight: 600; }
+body.tt-mg-running #tt-icon-row { display: none !important; } /* shop / compass icons stay hidden while a mini game runs */

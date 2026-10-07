@@ -644,26 +644,19 @@
     screenPushed = false;
   }
   window.addEventListener('popstate', () => closeScreen(true));
-  window.addEventListener('keydown', e => { if (e.key === 'Escape' && (closet || book || minigame)) closeScreen(); });
+  window.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    if (minigame) window.MiniGames.escape(); // pauses a running game / backs out of a menu
+    else if (closet || book) closeScreen();
+  });
 
-  // ---- Plant mini game (PLACEHOLDER): tap the plant -> a stub screen; "Finish" pays a flat reward into the
-  // bank and returns to the hut. TODO: replace the stub body with the real mini game. ----
-  const MINIGAME_REWARD_COINS = 5; // placeholder payout
+  // ---- Plant mini games: tap the plant -> minigames.js shows its menu (Baby Turtle Dash / Survival). The room
+  // stays paused (modal) until it closes; closeScreen() (Back / Escape / popstate) tears the whole thing down. ----
   function openMinigame() {
     closeScreen();
     modal = true;
-    const wrap = document.createElement('div');
-    wrap.className = 'tt-name-prompt';
-    wrap.innerHTML = `<div class="tt-name-box tt-upgrade-box">
-      <h3>Mini game</h3><p>Placeholder: the real game goes here.</p>
-      <div class="tt-name-actions"><button type="button" class="tt-upgrade-buy tt-mg-done">Finish (+${MINIGAME_REWARD_COINS} coins)</button><button type="button" class="tt-cancel tt-closet-close">Quit</button></div>
-    </div>`;
-    document.body.appendChild(wrap);
-    minigame = wrap;
-    wrap.addEventListener('click', e => {
-      if (e.target.closest('.tt-mg-done')) { window.Progression.grantBankedCoins(MINIGAME_REWARD_COINS); if (window.TT_SOUND) window.TT_SOUND.coin(); closeScreen(); }
-      else if (e.target.closest('.tt-closet-close')) closeScreen();
-    });
+    minigame = { remove: () => window.MiniGames.close() }; // closeScreen() only needs .remove()
+    window.MiniGames.open(() => closeScreen());
     try { history.pushState({ ttMinigame: 1 }, ''); screenPushed = true; } catch { screenPushed = false; }
   }
 
