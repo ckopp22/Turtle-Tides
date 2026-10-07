@@ -1898,11 +1898,35 @@
   const RIDE_SPEED_MULT = 1.35;               // land speed boost while riding (on top of the skill multiplier)
   let riding = false;
   function setRiding(v) { riding = v; Home.setWheelRidden(v); walkFrame = 0; }
+  // "Tap" prompt (text only, like the hut's): fades in above the parked spot while the turtle is close enough to hop on/off, fades out otherwise.
+  let wheelPromptA = 0;
+  const WHEEL_BTN = { w: 58, h: 30, lift: 58 }; // screen px (drawn at constant size whatever the zoom); lift = world px above the spot
+  function wheelEligible() { return !Home.isInterior() && state === 'normal' && deathTimer < 0 && Home.hasFeature('moveSpeed3'); }
+  function wheelNear() { const w = Home.wheelSpot(); return Math.hypot(turtle.x - w.x, turtle.y - w.y) <= WHEEL_NEAR_R; }
+  function updateWheelPrompt(dt) {
+    const target = wheelEligible() && wheelNear() ? 1 : 0;
+    wheelPromptA += (target - wheelPromptA) * Math.min(1, dt * 10);
+    if (Math.abs(target - wheelPromptA) < 0.01) wheelPromptA = target;
+  }
+  function drawWheelPrompt() {
+    if (wheelPromptA <= 0) return;
+    // Same look as the hut's "Tap" cue: bold white text, dark brown outline, gentle bob, no box.
+    const w = Home.wheelSpot(), k = 1 / ZOOM;
+    const y = w.y - WHEEL_BTN.lift + Math.sin(gameTime * 5) * 1.5 * k;
+    ctx.save();
+    ctx.globalAlpha = wheelPromptA;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
+    ctx.font = `700 ${16 * k}px system-ui, sans-serif`;
+    ctx.lineWidth = 4 * k; ctx.strokeStyle = 'rgba(40,24,8,0.9)'; ctx.fillStyle = '#fff';
+    ctx.strokeText('Tap', w.x, y); ctx.fillText('Tap', w.x, y);
+    ctx.restore();
+  }
   function tryWheelTap(cx, cy) {
-    if (Home.isInterior() || state !== 'normal' || deathTimer >= 0 || !Home.hasFeature('moveSpeed3')) return false;
-    const w = Home.wheelSpot();
-    if (Math.hypot(camX + cx / ZOOM - w.x, camY + cy / ZOOM - w.y) > WHEEL_TAP_R) return false;
-    if (Math.hypot(turtle.x - w.x, turtle.y - w.y) > WHEEL_NEAR_R) return false;
+    if (!wheelEligible() || !wheelNear()) return false;
+    const w = Home.wheelSpot(), wx = camX + cx / ZOOM, wy = camY + cy / ZOOM;
+    const onSpot = Math.hypot(wx - w.x, wy - w.y) <= WHEEL_TAP_R;
+    const k = 1 / ZOOM, onBtn = wheelPromptA > 0.5 && Math.abs(wx - w.x) <= WHEEL_BTN.w * k / 2 + 6 * k && Math.abs(wy - (w.y - WHEEL_BTN.lift)) <= WHEEL_BTN.h * k / 2 + 6 * k;
+    if (!onSpot && !onBtn) return false;
     setRiding(!riding);
     return true;
   }
@@ -2034,6 +2058,7 @@
     turtle.x += turtle.vx * dt;
     turtle.y += turtle.vy * dt;
     updateWheelTrail(dt, !inWater);
+    updateWheelPrompt(dt);
     resolveObstacleCollisions();
     Home.collideWorld(turtle, TURTLE_BODY_RADIUS);
     if (window.Enemies) window.Enemies.collideTurtle(turtle, TURTLE_BODY_RADIUS); // enemies are solid
@@ -2426,6 +2451,7 @@
     const visible = visibleBuf;
     if (perf) perf.visible = visible.length;
     drawSceneryWithTurtle(visible);
+    drawWheelPrompt();
     if (window.Enemies && !skip.enemies) window.Enemies.drawSwipes(ctx, camX, camY, vw, vh); // attack swipes over the turtle
     drawBurst();
     if (DEBUG_HITBOXES) drawDebugHitboxes(visible);
