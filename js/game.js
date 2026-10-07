@@ -2154,7 +2154,39 @@
   wheelSprite.src = 'assets/turtle-onewheel.png';
   const WHEEL_DRAW = 92; // drawn size of one frame in world px (shell measured against the walking sprite: ~49x56 world px)
   // TODO: hats/clothes/shell tint aren't drawn on the one wheel sprite yet.
+  // The regular walking sprite (head, shell, front fins) standing on a top-down board cut from the one wheel sheet.
+  // ?wheel=sheet switches back to the all-in-one turtle-on-wheel sheet version.
+  const WHEEL_MIX = !/[?&]wheel=sheet/.test(location.search);
+  const boardImg = new Image();
+  boardImg.src = 'assets/onewheel_board.png';
+  const BOARD_LEN = 72; // world px, ~1.5x the shell width
+  function drawMixedWheelTurtle() {
+    if (!boardImg.naturalWidth || !sprite.naturalWidth) return;
+    const fw = sprite.naturalWidth / SHEET_COLS, fh = sprite.naturalHeight / SHEET_ROWS, dw = SPRITE_H * fw / fh;
+    const f = 0; // idle frame only: no walk cycle or head swing while riding
+    ctx.save();
+    ctx.translate(turtle.x, turtle.y);
+    if (window.Progression.isInvulnerable() && Math.floor(gameTime * 12) % 2 === 0) ctx.globalAlpha = 0.3;
+    ctx.rotate(turtle.angle + Math.PI); // same stance as the sheet version
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(boardImg, -BOARD_LEN / 2, -BOARD_LEN * boardImg.naturalHeight / boardImg.naturalWidth / 2, BOARD_LEN, BOARD_LEN * boardImg.naturalHeight / boardImg.naturalWidth);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    // Hind legs/tail hidden: clip the idle frame to the shell ellipse plus the head box and front flippers (frame fractions, same shell
+    // ellipse as SHELL_ELLIPSE but a touch taller to keep the shell's rim).
+    ctx.beginPath();
+    ctx.ellipse((SHELL_ELLIPSE.cx - 0.5) * dw, (SHELL_ELLIPSE.cy - 0.5) * SPRITE_H, 0.295 * dw, 0.325 * SPRITE_H, 0, 0, Math.PI * 2);
+    ctx.rect((86 / fw - 0.5) * dw, -SPRITE_H / 2, (68 / fw) * dw, (70 / fh) * SPRITE_H);
+    // front flippers (the arms nearest the head), left and right of the shell's upper half
+    ctx.rect((20 / fw - 0.5) * dw, (70 / fh - 0.5) * SPRITE_H, (65 / fw) * dw, (58 / fh) * SPRITE_H);
+    ctx.rect((155 / fw - 0.5) * dw, (70 / fh - 0.5) * SPRITE_H, (65 / fw) * dw, (58 / fh) * SPRITE_H);
+    ctx.clip();
+    ctx.drawImage(sprite, 0, 0, fw, fh, -dw / 2, -SPRITE_H / 2, dw, SPRITE_H);
+    drawEquippedCosmetics(ctx, dw, SPRITE_H, 0, 0, fw, fh, null, null, undefined); // null frame = no bob/sway
+    ctx.restore();
+  }
   function drawTurtleOnWheel() {
+    if (WHEEL_MIX) { drawMixedWheelTurtle(); return; }
     const fw = wheelSprite.naturalWidth / 4, fh = wheelSprite.naturalHeight;
     ctx.save();
     ctx.translate(turtle.x, turtle.y);
