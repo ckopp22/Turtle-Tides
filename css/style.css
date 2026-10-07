@@ -438,7 +438,7 @@ button { touch-action: manipulation; }
 .tt-closet-buy { display: block; width: 100%; min-height: 48px; margin-top: 6px; }
 
 /* Collection book (home.js) */
-.tt-book-box { background: #f6ecd0; }
+.tt-book-box { background: #f6ecd0; height: min(560px, 88vh); height: min(560px, 88dvh); } /* fixed so nav buttons stay put between pages */
 .tt-book-total { position: absolute; left: 0; font: 700 13px system-ui, sans-serif; color: #6b5b3a; }
 .tt-book-page {
   flex: 1 1 auto;
@@ -486,6 +486,7 @@ button { touch-action: manipulation; }
 @media (orientation: landscape) and (max-height: 500px) {
   .tt-upgrade-box { width: min(280px, 90vw); max-height: 94vh; max-height: 94dvh; }
   .tt-closet-box { width: min(520px, 94vw); max-height: 94vh; max-height: 94dvh; }
+  .tt-book-box { height: 94vh; height: 94dvh; }
   .tt-closet-preview { width: 72px; height: 72px; margin-bottom: 4px; }
   .tt-closet-buy { min-height: 40px; }
 }
