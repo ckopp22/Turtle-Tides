@@ -128,7 +128,7 @@
   const shellClip = gAudio('assets/sfx/shell.mp3');
   shellClip.volume = 0.6;
   const walkLoop = { buf: null, src: null, vol: 0.6 }, swimLoop = { buf: null, src: null, vol: 0.1 };
-  const wheelHumLoop = { buf: null, src: null, vol: 0.1 }; // One Wheel hum while riding: kept quiet in the background
+  const wheelHumLoop = { buf: null, src: null, vol: 0.16 }; // One Wheel hum while riding: kept quiet in the background
   // Starts/stops/re-rates a buffer loop. Returns false if the buffer isn't ready (caller falls back to the <audio> clip).
   function driveLoop(l, active, rate) {
     if (!audioCtx || !l.buf) return false;
