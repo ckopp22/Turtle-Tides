@@ -2149,16 +2149,22 @@
   const FLOAT_BOB_SPEED = 2.2;   // radians/sec
   const FLOAT_BOB_AMPLITUDE = 4; // world px of vertical drift
 
-  // Turtle on the one wheel: 4 top-down frames (head up, board sideways), rotated like the walk sprite.
+  // Turtle on the one wheel: 4 top-down frames (head up, board sideways), rotated so the board follows the heading.
   const wheelSprite = new Image();
   wheelSprite.src = 'assets/turtle-onewheel.png';
+  let wheelFlip = false;
   const WHEEL_DRAW = 108; // drawn size of one frame in world px (sized so the shell matches the walking turtle)
   // TODO: hats/clothes/shell tint aren't drawn on the one wheel sprite yet.
   function drawTurtleOnWheel() {
     const fw = wheelSprite.naturalWidth / 4, fh = wheelSprite.naturalHeight;
     ctx.save();
     ctx.translate(turtle.x, turtle.y);
-    ctx.rotate(turtle.angle + Math.PI / 2);
+    // Board runs along the travel direction (turtle stands sideways on it), so rotate by the heading itself, not +90deg.
+    // The board is symmetric, so turn it half a revolution when heading left to keep the turtle's head on the upper side
+    // (hysteresis stops it flickering when heading straight up/down).
+    const c = Math.cos(turtle.angle);
+    if (c < -0.2) wheelFlip = true; else if (c > 0.2) wheelFlip = false;
+    ctx.rotate(turtle.angle + (wheelFlip ? Math.PI : 0));
     if (window.Progression.isInvulnerable() && Math.floor(gameTime * 12) % 2 === 0) ctx.globalAlpha = 0.3;
     ctx.drawImage(wheelSprite, (Math.floor(walkFrame) % 4) * fw, 0, fw, fh, -WHEEL_DRAW / 2, -WHEEL_DRAW / 2, WHEEL_DRAW, WHEEL_DRAW * fh / fw);
     ctx.restore();
