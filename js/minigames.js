@@ -93,7 +93,7 @@
     shell: { src: 'assets/minigames/big_shell.png', cols: 1, rows: {}, size: 64, faces: 'right', draw: drawShell },
     tidepool: { src: 'assets/minigames/tide_pool.png', cols: 1, rows: {}, size: 64, faces: 'right', draw: drawTidePool },
     nest: { src: 'assets/minigames/nest_128.png', cols: 1, rows: {}, size: 128, faces: 'right', draw: drawNest },
-    notice:     { src: 'assets/enemies/notice_exclaim.png', cols: 1, rows: {}, size: 24, faces: 'up' }, // existing "!"
+    notice:     { src: 'assets/enemies/notice_exclaim.png', cols: 1, rows: {}, size: 24, scale: 2, faces: 'up' }, // existing "!" (5x11): drawn by drawNotice, not drawArt
   };
   const images = {};
   for (const k in ASSETS) if (ASSETS[k].src) { const img = new Image(); img.onload = () => { if (D) bakeBackground(); }; img.src = ASSETS[k].src; images[k] = img; } // re-bake the static scene once art arrives
@@ -230,8 +230,8 @@
     const best = P().state.minigames;
     const box = el('div', 'tt-name-box tt-mg-box');
     box.innerHTML = `<h3>Mini games</h3>
-      <button type="button" class="tt-mg-big" data-act="dash"><strong>Baby Turtle Dash</strong><span>Best: ${best.dashBest} ${best.dashBest === 1 ? 'round' : 'rounds'}</span></button>
-      <button type="button" class="tt-mg-big" data-act="survival"><strong>Survival</strong><span>Best: ${fmtTime(best.survivalBest)}</span></button>
+      <button type="button" class="tt-mg-big" data-act="dash"><i class="tt-mg-icon tt-mg-icon-turtle"></i><em><strong>Baby Turtle Dash</strong><span>Best: ${best.dashBest} ${best.dashBest === 1 ? 'round' : 'rounds'}</span></em></button>
+      <button type="button" class="tt-mg-big" data-act="survival"><i class="tt-mg-icon tt-mg-icon-timer"></i><em><strong>Survival</strong><span>Best: ${fmtTime(best.survivalBest)}</span></em></button>
       <div class="tt-name-actions"><button type="button" class="tt-cancel" data-act="close">Close</button></div>`;
     setOverlay(box);
   }
@@ -695,6 +695,17 @@
 
   const personHeading = p => Math.atan2(p.y1 - p.y0, p.x1 - p.x0) + (p.dir < 0 ? Math.PI : 0); // people face along their path
 
+  // The game's "!" (enemies.js draws it the same way: 3x, with a little pop-in and fade-out) above a dog that just noticed the turtle. u: 0..1 over its life.
+  function drawNotice(g, x, y, u) {
+    const img = images.notice;
+    if (!img || !img.complete || !img.naturalWidth) return;
+    const pop = u < 0.2 ? 0.5 + u / 0.2 * 0.7 : u < 0.35 ? 1.2 - (u - 0.2) / 0.15 * 0.2 : 1;
+    const w = img.naturalWidth * ASSETS.notice.scale * pop, h = img.naturalHeight * ASSETS.notice.scale * pop;
+    g.globalAlpha = Math.min(1, (1 - u) / 0.3);
+    g.drawImage(img, x - w / 2, y - h, w, h);
+    g.globalAlpha = 1;
+  }
+
   // Draws the whole Dash scene (game.js calls this instead of the world render). Only moving things are drawn each frame.
   function renderDash(g, vw, vh, t) {
     if (!D) return;
@@ -720,7 +731,7 @@
     for (const c of D.crabs) if (c.on) drawArt(g, 'crab', c.x, c.y, 0, c.flip, 0.8, Math.floor(clock * 8) % 6, 'walk', clock);
     for (const d of D.dogs) if (d.on) {
       drawArt(g, d.chasing ? 'dogRun' : 'dog', d.x, d.y, d.ang, 1, 1, Math.floor(clock * (d.chasing ? 14 : 8)) % 4, 'idle', clock * (d.chasing ? 1.4 : 1));
-      if (d.notice > 0) drawArt(g, 'notice', d.x, d.y - 40, 0, 1, 1, 0, 'idle', 0);
+      if (d.notice > 0) drawNotice(g, d.x, d.y - 34, 1 - d.notice / 0.7);
     }
     for (let i = 0; i < D.people.length; i++) { const p = D.people[i]; if (p.on && p.y <= tt.y) drawArt(g, i & 1 ? 'person2' : 'person', p.x, p.y, personHeading(p), 1, 1, Math.floor(clock * 8), 'idle', clock); }
     drawArt(g, 'babyTurtle', tt.x, tt.y, tt.angle, 1, 1, Math.floor(D.walk * 8) % 4, 'idle', D.walk);
