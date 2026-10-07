@@ -1785,6 +1785,7 @@
     const dx = turtle.x - chest.x, dy = turtle.y - chest.y, r = TURTLE_BODY_RADIUS + C.pickupRadius;
     if (dx * dx + dy * dy < r * r && state !== 'dying') {
       chest.on = false; chest.left = C.respawnSeconds;
+      window.Progression.addStat('chests');
       window.Progression.grantCarriedCoins(C.value);
       burstConfetti(chest.x, chest.y, '+' + C.value);
       if (window.TT_SOUND) { window.TT_SOUND.purchase(); window.TT_SOUND.coin(); }

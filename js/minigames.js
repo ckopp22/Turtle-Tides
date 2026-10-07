@@ -23,6 +23,7 @@
       gridCell: 24,               // winnable-path check grid (beach units)
       pathPad: 6,                 // extra clearance the path check keeps around obstacles, on top of turtleR
       log: { r: 15, spacing: 22, scale: 1.4, off: [2.5, 3.5] }, // driftwood: 3 collision circles of radius r, spacing apart, along the art (drawn at scale; off = art's centre offset in art px)
+      pool: { slow: 0.6, dogSlow: 0.35, rimW: 0.12, rippleEvery: 0.16, rippleLife: 0.7 }, // pools of water: the turtle swims through at slow x speed (dogs wade through slower, x dogSlow; gulls fly over); rim = share of the radius that's wet sand
       obstacleGap: 36,            // min empty space between two static obstacles
       maxObstacleCircles: 64, placeAttempts: 14,
       // Per-round scaling: value = clamp(base + per * (round - 1), lo, hi). Counts are floored. The caps keep rounds winnable and phones smooth.
@@ -347,6 +348,7 @@
       vw: 0, vh: 0, s: 1, W: 0, H: 0, goalX: 0, nestX: 0, nestY: 0, bgScale: 1,
       bg: document.createElement('canvas'), cols: 0, rows: 0, grid: new Uint8Array(1), queue: new Int32Array(1),
       v: { crabSpeed: 0, personSpeed: 0, dogWander: 0, dogChase: 0, dogDetect: 0, gullInterval: 0, gullTrack: 0 }, // this round's ramp values
+      ripples: new Float32Array(8 * 3), ripT: 0, inPool: false, // ripples: x, y, age per slot (the splash rings the turtle leaves in a pool)
       on: 0, ox: new Float32Array(m), oy: new Float32Array(m), or: new Float32Array(m), ok: new Uint8Array(m), oa: new Float32Array(m), // static circles; ok: kind
       crabs: pool(DC.pools.crabs, makePatroller), people: pool(DC.pools.people, makePatroller),
       dogs: pool(DC.pools.dogs, () => ({ on: false, x: 0, y: 0, hx: 0, hy: 0, tx: 0, ty: 0, chasing: false, hasT: false, pause: 0, lose: 0, ang: 0, notice: 0 })),
@@ -373,6 +375,7 @@
   // Lays out a fresh, winnable beach for `round`, resets every hazard, and puts the turtle back in the nest. No allocation: all pools are reused.
   function startRound(round) {
     const m = api(), sz = m.size(), tt = m.turtle;
+    for (let i = 0; i < 8; i++) D.ripples[i * 3 + 2] = 99; D.inPool = false; // no old rings
     D.round = round; D.snatcher = null; D.t = 0; D.grace = DC.startGraceSeconds; D.bannerT = 0;
     D.vw = sz.w; D.vh = sz.h;
     D.s = clamp(sz.w / DC.targetViewW, DC.minScale, DC.maxScale);
@@ -408,7 +411,7 @@
   }
   function rasterize() {
     D.grid.fill(0, 0, D.cols * D.rows);
-    for (let i = 0; i < D.on; i++) markCircle(D.ox[i], D.oy[i], D.or[i] + DC.turtleR + DC.pathPad);
+    for (let i = 0; i < D.on; i++) if (D.ok[i] !== 4) markCircle(D.ox[i], D.oy[i], D.or[i] + DC.turtleR + DC.pathPad);
   }
   function reachable() { // 8-way flood fill from the nest to any cell at/after the shoreline
     const c = DC.gridCell, cols = D.cols, rows = D.rows, g = D.grid, q = D.queue;
@@ -447,7 +450,7 @@
           for (let i = -1; i <= 1; i++) pushObstacle(i === -1 ? 1 : 2, x + Math.cos(a) * DC.log.spacing * i, y + Math.sin(a) * DC.log.spacing * i, DC.log.r, a);
         } else pushObstacle(kind, x, y, kind === 0 ? rand(18, 30) : kind === 3 ? rand(11, 16) : rand(28, 44), rand(0, 6.28));
         if (D.on > before && fits(before)) {
-          for (let i = before; i < D.on; i++) markCircle(D.ox[i], D.oy[i], D.or[i] + DC.turtleR + DC.pathPad);
+          for (let i = before; i < D.on; i++) if (D.ok[i] !== 4) markCircle(D.ox[i], D.oy[i], D.or[i] + DC.turtleR + DC.pathPad);
           if (reachable()) break; // kept
         }
         D.on = before; rasterize(); // rejected: undo
@@ -467,8 +470,9 @@
     }
     return true;
   }
-  function clearOfObstacles(x, y, pad) {
-    for (let i = 0; i < D.on; i++) { const dx = x - D.ox[i], dy = y - D.oy[i], m = D.or[i] + pad; if (dx * dx + dy * dy < m * m) return false; }
+  function clearOfObstacles(x, y, pad, poolsOk) {
+    for (let i = 0; i < D.on; i++) {
+      if (poolsOk && D.ok[i] === 4) continue; const dx = x - D.ox[i], dy = y - D.oy[i], m = D.or[i] + pad; if (dx * dx + dy * dy < m * m) return false; }
     return true;
   }
   function laneClear(x0, y0, x1, y1, pad) { // sample along a patrol segment
@@ -540,12 +544,12 @@
     drawArt(g, 'nest', D.nestX, D.nestY, 0, 1, 1, 0, 'idle', 0);
     for (let i = 0; i < D.on; i++) {
       const kind = D.ok[i], r = D.or[i];
-      if (kind === 2) continue; // the log is drawn once, from its head circle
+      if (kind === 2 || kind === 4) continue; // the log is drawn once, from its head circle; pools are animated, drawn per frame
       if (kind === 1) { // centre of the 3 circles, nudged so the art's visible box (not its cell) sits on them
         const L = DC.log, a = D.oa[i], c = Math.cos(a), sn = Math.sin(a), ox = -L.off[0] * L.scale, oy = -L.off[1] * L.scale;
         drawArt(g, 'driftwood', D.ox[i] + c * L.spacing + ox * c - oy * sn, D.oy[i] + sn * L.spacing + ox * sn + oy * c, a, 1, L.scale, 0, 'idle', 0);
       }
-      else drawArt(g, kind === 0 ? 'rock' : kind === 3 ? 'shell' : 'tidepool', D.ox[i], D.oy[i], kind === 3 ? D.oa[i] * 0.3 : 0, 1, r * 2 / ASSETS.rock.size * (kind === 0 ? 1.1 : 1.05), 0, 'idle', 0);
+      else drawArt(g, kind === 0 ? 'rock' : 'shell', D.ox[i], D.oy[i], kind === 3 ? D.oa[i] * 0.3 : 0, 1, r * 2 / ASSETS.rock.size * (kind === 0 ? 1.1 : 1.05), 0, 'idle', 0);
     }
   }
 
@@ -563,10 +567,17 @@
     const m = api(), tt = m.turtle, sz = m.size();
     if (Math.abs(sz.w - D.vw) > 1 || Math.abs(sz.h - D.vh) > 1) { startRound(D.round); return; } // window resized / phone rotated: re-lay this round to fit
     D.t += dt; D.clock += dt; if (D.grace > 0) D.grace -= dt;
-    const speed = m.move(dt, DC.turtleSpeedMult, false);
+    const R = DC.turtleR, wasIn = D.inPool;
+    D.inPool = poolAt(tt.x, tt.y);
+    const speed = m.move(dt, DC.turtleSpeedMult * (D.inPool ? DC.pool.slow : 1), false);
+    if (D.inPool) { // swimming: water sound instead of footsteps, a splash on the way in, rings behind the turtle
+      if (window.TT_SOUND) { window.TT_SOUND.walking(false, 1); window.TT_SOUND.swimming(true, speed <= 5); if (!wasIn) window.TT_SOUND.splash(); }
+      D.ripT -= dt;
+      if (speed > 5 && D.ripT <= 0) { D.ripT = DC.pool.rippleEvery; addRipple(tt.x, tt.y); }
+    }
     // static obstacles: push the turtle out of any circle it overlaps
-    const R = DC.turtleR;
     for (let i = 0; i < D.on; i++) {
+      if (D.ok[i] === 4) continue; // pools of water are open
       const dx = tt.x - D.ox[i], dy = tt.y - D.oy[i], min = R + D.or[i], d2 = dx * dx + dy * dy;
       if (d2 >= min * min) continue;
       const d = Math.sqrt(d2) || 0.001, k = (min - d) / d;
@@ -586,8 +597,19 @@
     if (tt.x >= D.goalX) roundComplete();
   }
 
+  function poolAt(x, y) { // is (x, y) inside a pool of water (an ellipse, 0.8 as tall as wide)?
+    for (let i = 0; i < D.on; i++) if (D.ok[i] === 4) { const dx = (x - D.ox[i]) / D.or[i], dy = (y - D.oy[i]) / (D.or[i] * 0.8); if (dx * dx + dy * dy < 1) return true; }
+    return false;
+  }
+  function addRipple(x, y) { // reuse the oldest of the ring slots
+    const r = D.ripples; let k = 0;
+    for (let i = 1; i < 8; i++) if (r[i * 3 + 2] > r[k * 3 + 2]) k = i;
+    r[k * 3] = x; r[k * 3 + 1] = y; r[k * 3 + 2] = 0;
+  }
+
   function updateHazards(dt, tt) {
     const v = D.v, W = D.W, H = D.H, xMin = DC.nestW + 10, xMax = D.goalX - 10;
+    for (let i = 0; i < 8; i++) D.ripples[i * 3 + 2] += dt;
     for (const list of [D.crabs, D.people]) for (const h of list) {
       if (!h.on) continue;
       if (h.pause > 0) { h.pause -= dt; continue; }
@@ -616,16 +638,18 @@
           if (d.pause <= 0) { // pick a wander spot within the leash that's clear of obstacles
             for (let k = 0; k < 4; k++) {
               const a = rand(0, 6.28), r = rand(0.4, 1) * DC.dogLeash, x = d.hx + Math.cos(a) * r, y = d.hy + Math.sin(a) * r;
-              if (x > xMin + 20 && x < xMax - 20 && y > 30 && y < H - 30 && clearOfObstacles(x, y, 34)) { d.tx = x; d.ty = y; d.hasT = true; break; }
+              if (x > xMin + 20 && x < xMax - 20 && y > 30 && y < H - 30 && clearOfObstacles(x, y, 34, true)) { d.tx = x; d.ty = y; d.hasT = true; break; }
             }
             if (!d.hasT) d.pause = 1;
           }
         }
       }
       if (sp > 0) {
+        if (poolAt(d.x, d.y)) sp *= DC.pool.dogSlow; // wading is even slower for a dog than for the turtle
         const ux = tx - d.x, uy = ty - d.y, l = Math.hypot(ux, uy);
         if (l > 1) { d.x += ux / l * sp * dt; d.y += uy / l * sp * dt; let da = Math.atan2(uy, ux) - d.ang; da = Math.atan2(Math.sin(da), Math.cos(da)); d.ang += da * Math.min(1, 12 * dt); } // turns smoothly toward where it's going
         for (let i = 0; i < D.on; i++) { // slide around obstacles
+          if (D.ok[i] === 4) continue; // dogs wade through pools
           const ex = d.x - D.ox[i], ey = d.y - D.oy[i], min = 18 + D.or[i], e2 = ex * ex + ey * ey;
           if (e2 < min * min && e2 > 1e-6) { const e = Math.sqrt(e2), k = (min - e) / e; d.x += ex * k; d.y += ey * k; }
         }
@@ -706,6 +730,34 @@
     g.globalAlpha = 1;
   }
 
+  // A pool of water: wet-sand rim, blue water with a shimmer and slowly pulsing rings (rx = r, ry = 0.8 r, same as poolAt).
+  function drawPool(g, x, y, r, t) {
+    const ry = r * 0.8, rim = DC.pool.rimW;
+    g.fillStyle = '#c9ad74'; g.beginPath(); g.ellipse(x, y, r * 1.06, ry * 1.08, 0, 0, 7); g.fill();
+    g.fillStyle = '#9a7f4c'; g.beginPath(); g.ellipse(x, y, r * (1 - rim * 0.3), ry * (1 - rim * 0.3), 0, 0, 7); g.fill();
+    const w = g.createRadialGradient(x, y, r * 0.1, x, y, r); w.addColorStop(0, '#6cc6ec'); w.addColorStop(1, '#3a97cc');
+    g.fillStyle = w; g.beginPath(); g.ellipse(x, y, r * (1 - rim), ry * (1 - rim), 0, 0, 7); g.fill();
+    g.strokeStyle = 'rgba(255,255,255,0.45)'; g.lineWidth = 1.5;
+    for (let k = 0; k < 2; k++) { // rings that swell and fade
+      const u = (t * 0.35 + k * 0.5) % 1;
+      g.globalAlpha = 1 - u; g.beginPath(); g.ellipse(x, y, r * (1 - rim) * (0.2 + 0.7 * u), ry * (1 - rim) * (0.2 + 0.7 * u), 0, 0, 7); g.stroke();
+    }
+    g.globalAlpha = 1;
+    g.beginPath(); const gy2 = y - ry * 0.3 + Math.sin(t * 1.3) * 3, gx2 = x - r * 0.35 + Math.cos(t) * 4; // a drifting glint
+    g.moveTo(gx2, gy2); g.quadraticCurveTo(gx2 + 8, gy2 - 3, gx2 + 16, gy2); g.stroke();
+  }
+  function drawRipples(g, clock) { // rings the turtle leaves behind in a pool
+    const L = DC.pool.rippleLife, r = D.ripples;
+    g.strokeStyle = '#fff'; g.lineWidth = 2;
+    for (let i = 0; i < 8; i++) {
+      const age = r[i * 3 + 2];
+      if (age >= L) continue;
+      const u = age / L;
+      g.globalAlpha = 0.7 * (1 - u); g.beginPath(); g.ellipse(r[i * 3], r[i * 3 + 1] + 4, 8 + 20 * u, 4 + 10 * u, 0, 0, 7); g.stroke();
+    }
+    g.globalAlpha = 1;
+  }
+
   // Draws the whole Dash scene (game.js calls this instead of the world render). Only moving things are drawn each frame.
   function renderDash(g, vw, vh, t) {
     if (!D) return;
@@ -719,6 +771,8 @@
     }
     g.stroke();
     const tt = api().turtle, clock = D.clock;
+    for (let i = 0; i < D.on; i++) if (D.ok[i] === 4) drawPool(g, D.ox[i], D.oy[i], D.or[i], clock + i * 1.7);
+    drawRipples(g, clock);
     // gull shadows (the warning) go on the ground, under everything
     for (const gl of D.gulls) {
       if (!gl.on || gl.st === 0 || gl.st === 4) continue;

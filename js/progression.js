@@ -252,7 +252,7 @@
     adventure: { v: 1, chest: null }, // Adventure Zone save block (game.js owns the contents: the treasure chest's spot and respawn timer)
     homeSeenLevel: 0, // home level the player last saw inside the hut (higher = new items to pop in)
     // Lifetime counters for the future collection book's stats page; saved with the slot.
-    stats: { coconuts: 0, coins: 0, castles: 0, deaths: 0, playSeconds: 0 },
+    stats: { coconuts: 0, coins: 0, castles: 0, chests: 0, deaths: 0, playSeconds: 0 },
     minigames: { dashBest: 0, survivalBest: 0 }, // plant mini games' high scores (minigames.js): most Dash rounds in one run, longest Survival seconds (saved with the slot)
     invulnTimer: 0,
     hullFullFlash: 0,
@@ -605,7 +605,7 @@
     // Stats: absent on old saves -> zeroed counters.
     const st = data.stats || {};
     state.stats = {};
-    for (const k of ['coconuts', 'coins', 'castles', 'deaths', 'playSeconds']) state.stats[k] = Number.isFinite(st[k]) && st[k] > 0 ? st[k] : 0;
+    for (const k of ['coconuts', 'coins', 'castles', 'chests', 'deaths', 'playSeconds']) state.stats[k] = Number.isFinite(st[k]) && st[k] > 0 ? st[k] : 0;
     const mg = data.minigames || {};
     state.minigames = { dashBest: Math.max(0, Math.floor(mg.dashBest) || 0), survivalBest: Number.isFinite(mg.survivalBest) && mg.survivalBest > 0 ? mg.survivalBest : 0 };
     // Never restore carried items from a save — see loseUnbankedOnClose above.

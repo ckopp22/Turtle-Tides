@@ -686,7 +686,7 @@
     const F = P.FINDS, col = P.state.collection;
     if (page.stats) {
       const st = P.state.stats;
-      const rows = [['Coins found', st.coins], ['Coconuts found', st.coconuts], ['Sandcastles knocked over', st.castles], ['Times caught', st.deaths], ['Time played', fmtPlayTime(st.playSeconds)]];
+      const rows = [['Coins found', st.coins], ['Coconuts found', st.coconuts], ['Sandcastles knocked over', st.castles], ['Treasure Chests Found', st.chests], ['Times caught', st.deaths], ['Time played', fmtPlayTime(st.playSeconds)]];
       return `<h4>Stats</h4><div class="tt-book-stats">${rows.map(([k, v]) => `<div><span>${k}</span><strong>${v}</strong></div>`).join('')}</div>`;
     }
     let found = 0, total = 0, cells = '';
