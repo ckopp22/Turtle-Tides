@@ -161,7 +161,7 @@
   // Interior movement reuses the world's speed/accel numbers, scaled down inside home.js.
   Home.init({
     turtle, center: CENTER, bodyRadius: TURTLE_BODY_RADIUS,
-    maxSpeed: MAX_SPEED * LAND_SPEED_MULT, accel: ACCEL, decel: DECEL,
+    maxSpeed: MAX_SPEED * LAND_SPEED_MULT, accel: ACCEL, decel: DECEL, screenScale: () => ZOOM,
     onEnter: () => { if (window.Enemies) window.Enemies.resetAggro(); }, // chasers give up when the turtle goes inside
     onEnterInterior: () => { window.Progression.setHomeButtonVisible(true); setCompassShown(false); }, // shop (upgrades) icon stays available indoors; only the compass hides
   });
@@ -1941,7 +1941,7 @@
     state = Home.isAsleep() ? 'sleeping' : 'normal'; moveMode = 'walk'; floating = false;
     if (state === 'sleeping') stateTime += dt;
     else stateTime = 0;
-    const speed = Home.room.speed / Home.TURTLE_SCALE;
+    const speed = Home.worldSpeed(); // world-equivalent speed, drives walk anim/sound
     if (speed > 5) walkFrame += speed * dt * FRAMES_PER_SPEED; else walkFrame = 0;
     if (window.TT_SOUND) {
       window.TT_SOUND.walking(speed > 5, Math.min(4, Math.max(1, WALK_SOUND_BASE_RATE * speed / (MAX_SPEED * LAND_SPEED_MULT))));
