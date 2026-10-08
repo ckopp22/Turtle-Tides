@@ -34,8 +34,8 @@
   background: rgba(11, 61, 79, 0.72); color: #fff; font-size: 18px; font-weight: 700;
 }
 .tt-mg-pause {
-  position: absolute; top: max(10px, env(safe-area-inset-top)); right: 12px; width: 48px; height: 48px;
-  border-radius: 50%; border: 2px solid #fff; background: rgba(11, 61, 79, 0.72); color: #fff; font-size: 16px;
+  position: absolute; top: calc(14px + env(safe-area-inset-top)); right: 14px; width: 34px; height: 34px; padding: 0;
+  border-radius: 50%; border: 2px solid #fff; background: rgba(11, 61, 79, 0.72); color: #fff; font-size: 13px; line-height: 1;
   pointer-events: auto; cursor: pointer; touch-action: manipulation;
 }
 .tt-mg-banner {
