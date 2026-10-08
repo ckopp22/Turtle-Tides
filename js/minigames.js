@@ -44,9 +44,10 @@
         gullTrack:   { base: 1.5, per: -0.06, lo: 0.9,  hi: 1.5 },  // seconds the shadow follows the turtle before it locks
       },
       crabLen: [140, 260], personLen: [260, 600], // patrol path lengths (people are clamped to the beach)
+      dogPredict: { fromRound: 11, maxLead: 1.1 }, // from this round on, chasing dogs aim where the turtle is heading (up to maxLead seconds ahead) instead of where it is
       dogLeash: 130,              // wander radius around its home spot
       dogLoseMult: 1.7, dogLoseSeconds: 2,   // gives up once the turtle is this x detect away for this long
-      gullLockSeconds: 0.75, gullSwoopSeconds: 0.75, gullSnatchR: 54, gullTrackSpeed: 70, gullDive: 420, // swoop = how long the dive takes (slower = easier to dodge); snatchR = the red circle
+      gullLockSeconds: 0.75, gullSwoopSeconds: 1.4, gullSnatchR: 54, gullTrackSpeed: 70, gullDive: 420, // swoop = how long the dive takes (slower = easier to dodge); snatchR = the red circle
       gullLeaveSeconds: 0.45, gullCarrySeconds: 1.4, // a gull that missed flies off in leave seconds; one that grabbed the turtle carries it away for carry seconds, then the results show
       bodyR: { crab: 15, person: 18, dog: 18 }, // collision radius between crabs, people and dogs so they never overlap
       hitR: { crab: 17, dog: 19 },            // hazard body radius added to the turtle's
@@ -488,6 +489,19 @@
     return true;
   }
 
+  // True if the lane (x0,y0)-(x1,y1) stays at least r + the other walker's radius + a gap away from every crab and person lane already placed.
+  function laneApart(x0, y0, x1, y1, r) {
+    const n = Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 24);
+    for (const list of [D.crabs, D.people]) for (const o of list) {
+      if (!o.on) continue;
+      const m = r + (list === D.crabs ? DC.bodyR.crab : DC.bodyR.person) + 12, ex = o.x1 - o.x0, ey = o.y1 - o.y0, l2 = ex * ex + ey * ey || 1;
+      for (let i = 0; i <= n; i++) {
+        const px = x0 + (x1 - x0) * i / n, py = y0 + (y1 - y0) * i / n, t = clamp(((px - o.x0) * ex + (py - o.y0) * ey) / l2, 0, 1), dx = px - (o.x0 + ex * t), dy = py - (o.y0 + ey * t);
+        if (dx * dx + dy * dy < m * m) return false;
+      }
+    }
+    return true;
+  }
   function setPatrol(h, x0, y0, x1, y1, speed) {
     h.on = true; h.x0 = x0; h.y0 = y0; h.x1 = x1; h.y1 = y1; h.len = Math.max(1, Math.hypot(x1 - x0, y1 - y0));
     h.u = Math.random(); h.dir = Math.random() < 0.5 ? 1 : -1; h.speed = speed; h.pause = 0; h.flip = 1;
@@ -498,36 +512,44 @@
     for (const list of [D.crabs, D.people, D.dogs, D.gulls]) for (const h of list) h.on = false;
     // crabs: sideways patrols (mostly horizontal, a little slant)
     const nCrab = Math.min(D.crabs.length, Math.floor(ramp(R.crabs, round)));
-    for (let i = 0, placed = 0; placed < nCrab && i < nCrab * 8; i++) {
+    for (let i = 0, placed = 0; placed < nCrab && i < nCrab * 40; i++) {
+      const last = i >= nCrab * 30; // many misses: stop checking lanes so the round never has fewer crabs
       const len = rand(DC.crabLen[0], DC.crabLen[1]);
       if (D.port) { // portrait: patrol across the beach (beach y = screen left-right), a little slant along x
         const y0 = rand(30, D.H - len - 30), x0 = rand(xMin + 20, xMax - 40), x1 = clamp(x0 + rand(-40, 40), xMin, xMax);
-        if (D.H - len - 30 < 30 || !laneClear(x0, y0, x1, y0 + len, 24)) continue;
+        if (D.H - len - 30 < 30 || (!last && (!laneClear(x0, y0, x1, y0 + len, 24) || !laneApart(x0, y0, x1, y0 + len, DC.bodyR.crab)))) continue;
         setPatrol(D.crabs[placed++], x0, y0, x1, y0 + len, v.crabSpeed); continue;
       }
       const x0 = rand(xMin + 20, xMax - len - 10), y0 = rand(50, D.H - 50), y1 = clamp(y0 + rand(-40, 40), 40, D.H - 40);
-      if (x0 + len > xMax || !laneClear(x0, y0, x0 + len, y1, 24)) continue;
+      if (x0 + len > xMax || (!last && (!laneClear(x0, y0, x0 + len, y1, 24) || !laneApart(x0, y0, x0 + len, y1, DC.bodyR.crab)))) continue;
       setPatrol(D.crabs[placed++], x0, y0, x0 + len, y1, v.crabSpeed);
     }
     // people: long walks, horizontal or vertical, on separate lanes
     const nPer = Math.min(D.people.length, Math.floor(ramp(R.people, round)));
-    for (let i = 0, placed = 0; placed < nPer && i < nPer * 10; i++) {
+    for (let i = 0, placed = 0; placed < nPer && i < nPer * 40; i++) {
+      const last = i >= nPer * 30;
       const vertical = Math.random() < 0.5;
       let x0, y0, x1, y1;
       if (vertical) { x0 = x1 = rand(xMin + 40, xMax - 40); y0 = rand(30, D.H * 0.35); y1 = rand(D.H * 0.65, D.H - 30); }
       else { y0 = y1 = rand(60, D.H - 60); x0 = rand(xMin, xMin + 120); x1 = rand(xMax - 160, xMax); }
       let apart = true; // lanes at least 110 apart so a few people never wall the beach off
       for (let j = 0; j < placed; j++) { const p = D.people[j]; const same = (p.x0 === p.x1) === vertical; if (same && Math.abs(vertical ? p.x0 - x0 : p.y0 - y0) < 110) apart = false; }
-      if (!apart || !laneClear(x0, y0, x1, y1, 30)) continue;
+      if (!last && (!apart || !laneClear(x0, y0, x1, y1, 30) || !laneApart(x0, y0, x1, y1, DC.bodyR.person))) continue;
       setPatrol(D.people[placed++], x0, y0, x1, y1, v.personSpeed);
     }
-    // dogs: home spot away from the nest, wandering until the turtle comes close
+    // dogs: home spots spread over the beach (each takes the best of several tries: the one farthest from the dogs already placed), away from the nest
     const nDog = Math.min(D.dogs.length, Math.floor(ramp(R.dogs, round)));
-    for (let i = 0, placed = 0; placed < nDog && i < nDog * 12; i++) {
-      const x = rand(Math.max(xMin + 200, D.W * 0.4), xMax - 40), y = rand(60, D.H - 60);
-      if (!clearOfObstacles(x, y, 40)) continue;
-      const d = D.dogs[placed++];
-      d.on = true; d.x = d.hx = x; d.y = d.hy = y; d.chasing = false; d.hasT = false; d.pause = rand(0.5, 2); d.lose = 0; d.ang = rand(0, 6.28); d.notice = 0;
+    for (let placed = 0; placed < nDog; placed++) {
+      let bx = 0, by = 0, best = -1;
+      for (let k = 0; k < 24; k++) {
+        const x = rand(xMin + 140, xMax - 40), y = rand(60, D.H - 60);
+        if (!clearOfObstacles(x, y, 40)) continue;
+        let near = 1e9; for (let j = 0; j < placed; j++) near = Math.min(near, (x - D.dogs[j].x) ** 2 + (y - D.dogs[j].y) ** 2);
+        if (near > best) { best = near; bx = x; by = y; }
+      }
+      if (best < 0) { bx = rand(xMin + 140, xMax - 40); by = rand(60, D.H - 60); } // no clear spot found: place it anyway, the count never drops
+      const d = D.dogs[placed];
+      d.on = true; d.x = d.hx = bx; d.y = d.hy = by; d.chasing = false; d.hasT = false; d.pause = rand(0.5, 2); d.lose = 0; d.ang = rand(0, 6.28); d.notice = 0;
     }
     // gulls: first swoop only after the grace period
     const nGull = Math.min(D.gulls.length, Math.floor(ramp(R.seagulls, round)));
@@ -666,6 +688,10 @@
       if (d.chasing) {
         if (d2 > lose2) { d.lose += dt; if (d.lose > DC.dogLoseSeconds) { d.chasing = false; d.hasT = false; d.lose = 0; } } else d.lose = 0;
         tx = tt.x; ty = tt.y; sp = v.dogChase;
+        if (D.round >= DC.dogPredict.fromRound) { // lead the turtle: aim at where it will be by the time the dog gets there
+          const lead = Math.min(DC.dogPredict.maxLead, Math.sqrt(d2) / sp);
+          tx = clamp(tt.x + tt.vx * lead, xMin, xMax); ty = clamp(tt.y + tt.vy * lead, 20, H - 20);
+        }
         if (tt.x < DC.nestW) { d.chasing = false; d.hasT = false; } // the nest zone is safe
       } else {
         if (D.grace <= 0 && d2 < detect2 && tt.x > DC.nestW) { d.chasing = true; d.notice = 0.7; d.lose = 0; }
