@@ -15,6 +15,7 @@
     dash: {
       targetViewW: 1000,          // beach units shown across the screen at scale 1; scale = viewW / this, clamped:
       minScale: 0.45, maxScale: 1.3, // (phones get a smaller, wider-looking beach so the crossing isn't tiny)
+      portraitViewW: 500, portraitMinScale: 0.5, // portrait screens: the beach is turned 90deg (nest at the bottom, water at the top) so the crossing runs up the long side; the screen's width shows this many beach units
       nestW: 130, waterW: 150,    // beach units: nest zone on the left (hazards stay out), water strip on the right
       turtleR: 11,                // beach units: baby turtle's body radius (hit tests + obstacle collision)
       turtleSpeedMult: 1,         // x the main turtle's land speed
@@ -46,6 +47,7 @@
       dogLoseMult: 1.7, dogLoseSeconds: 2,   // gives up once the turtle is this x detect away for this long
       gullLockSeconds: 0.75, gullSwoopSeconds: 0.75, gullSnatchR: 54, gullTrackSpeed: 70, gullDive: 420, // swoop = how long the dive takes (slower = easier to dodge); snatchR = the red circle
       gullLeaveSeconds: 0.45, gullCarrySeconds: 1.4, // a gull that missed flies off in leave seconds; one that grabbed the turtle carries it away for carry seconds, then the results show
+      bodyR: { crab: 15, person: 18, dog: 18 }, // collision radius between crabs, people and dogs so they never overlap
       hitR: { crab: 17, dog: 19 },            // hazard body radius added to the turtle's
       personFeet: { rx: 20, ry: 11 },        // a person's feet ellipse: the turtle's centre inside it is a hit
       // Coins at the end of each completed round: base + perRound * (round - 1), capped, plus a speed bonus.
@@ -345,7 +347,7 @@
     return {
       round: 1, rounds: 0, coinsRun: 0, bestAtStart: P().state.minigames.dashBest,
       t: 0, grace: 0, bannerT: 0, clock: 0, walk: 0, snatcher: null,
-      vw: 0, vh: 0, s: 1, W: 0, H: 0, goalX: 0, nestX: 0, nestY: 0, bgScale: 1,
+      vw: 0, vh: 0, s: 1, port: false, rotAdj: 0, W: 0, H: 0, goalX: 0, nestX: 0, nestY: 0, bgScale: 1,
       bg: document.createElement('canvas'), cols: 0, rows: 0, grid: new Uint8Array(1), queue: new Int32Array(1),
       v: { crabSpeed: 0, personSpeed: 0, dogWander: 0, dogChase: 0, dogDetect: 0, gullInterval: 0, gullTrack: 0 }, // this round's ramp values
       ripples: new Float32Array(8 * 3), ripT: 0, inPool: false, // ripples: x, y, age per slot (the splash rings the turtle leaves in a pool)
@@ -378,8 +380,10 @@
     for (let i = 0; i < 8; i++) D.ripples[i * 3 + 2] = 99; D.inPool = false; // no old rings
     D.round = round; D.snatcher = null; D.t = 0; D.grace = DC.startGraceSeconds; D.bannerT = 0;
     D.vw = sz.w; D.vh = sz.h;
-    D.s = clamp(sz.w / DC.targetViewW, DC.minScale, DC.maxScale);
-    D.W = sz.w / D.s; D.H = sz.h / D.s;
+    // Portrait: the game still runs in a landscape-style "beach space" (x = the crossing, y = across), turned 90deg onto the screen.
+    D.port = sz.h > sz.w; D.rotAdj = D.port ? -Math.PI / 2 : 0;
+    D.s = D.port ? clamp(sz.w / DC.portraitViewW, DC.portraitMinScale, DC.maxScale) : clamp(sz.w / DC.targetViewW, DC.minScale, DC.maxScale);
+    D.W = (D.port ? sz.h : sz.w) / D.s; D.H = (D.port ? sz.w : sz.h) / D.s;
     D.goalX = D.W - DC.waterW + 18;
     D.nestX = DC.nestW * 0.5; D.nestY = D.H * 0.5 + rand(-0.15, 0.15) * D.H;
     const v = D.v, R = DC.ramp;
@@ -492,7 +496,13 @@
     // crabs: sideways patrols (mostly horizontal, a little slant)
     const nCrab = Math.min(D.crabs.length, Math.floor(ramp(R.crabs, round)));
     for (let i = 0, placed = 0; placed < nCrab && i < nCrab * 8; i++) {
-      const len = rand(DC.crabLen[0], DC.crabLen[1]), x0 = rand(xMin + 20, xMax - len - 10), y0 = rand(50, D.H - 50), y1 = clamp(y0 + rand(-40, 40), 40, D.H - 40);
+      const len = rand(DC.crabLen[0], DC.crabLen[1]);
+      if (D.port) { // portrait: patrol across the beach (beach y = screen left-right), a little slant along x
+        const y0 = rand(30, D.H - len - 30), x0 = rand(xMin + 20, xMax - 40), x1 = clamp(x0 + rand(-40, 40), xMin, xMax);
+        if (D.H - len - 30 < 30 || !laneClear(x0, y0, x1, y0 + len, 24)) continue;
+        setPatrol(D.crabs[placed++], x0, y0, x1, y0 + len, v.crabSpeed); continue;
+      }
+      const x0 = rand(xMin + 20, xMax - len - 10), y0 = rand(50, D.H - 50), y1 = clamp(y0 + rand(-40, 40), 40, D.H - 40);
       if (x0 + len > xMax || !laneClear(x0, y0, x0 + len, y1, 24)) continue;
       setPatrol(D.crabs[placed++], x0, y0, x0 + len, y1, v.crabSpeed);
     }
@@ -528,7 +538,7 @@
     if (bg.width !== w || bg.height !== h) { bg.width = w; bg.height = h; }
     const g = bg.getContext('2d'), k = D.bgScale * D.s;
     g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, w, h);
-    g.setTransform(k, 0, 0, k, 0, 0);
+    if (D.port) g.setTransform(0, -k, k, 0, 0, h); else g.setTransform(k, 0, 0, k, 0, 0); // portrait: beach x runs up the screen, y runs right
     const wx = D.W - DC.waterW;
     const sand = g.createLinearGradient(0, 0, wx, 0); sand.addColorStop(0, '#f1dca4'); sand.addColorStop(0.7, '#ecd59b'); sand.addColorStop(1, '#d6bb82'); // wetter near the water
     g.fillStyle = sand; g.fillRect(0, 0, wx + 20, D.H);
@@ -541,7 +551,7 @@
     g.strokeStyle = 'rgba(255,255,255,0.7)'; g.lineWidth = 3; g.beginPath();
     for (let y = 0; y <= D.H + 20; y += 20) { const x = wx + Math.sin(y * 0.05) * 7; if (y === 0) g.moveTo(x, y); else g.lineTo(x, y); }
     g.stroke();
-    drawArt(g, 'nest', D.nestX, D.nestY, 0, 1, 1, 0, 'idle', 0);
+    drawArt(g, 'nest', D.nestX, D.nestY, -D.rotAdj, 1, 1, 0, 'idle', 0); // -rotAdj keeps it upright on screen in portrait
     for (let i = 0; i < D.on; i++) {
       const kind = D.ok[i], r = D.or[i];
       if (kind === 2 || kind === 4) continue; // the log is drawn once, from its head circle; pools are animated, drawn per frame
@@ -549,7 +559,7 @@
         const L = DC.log, a = D.oa[i], c = Math.cos(a), sn = Math.sin(a), ox = -L.off[0] * L.scale, oy = -L.off[1] * L.scale;
         drawArt(g, 'driftwood', D.ox[i] + c * L.spacing + ox * c - oy * sn, D.oy[i] + sn * L.spacing + ox * sn + oy * c, a, 1, L.scale, 0, 'idle', 0);
       }
-      else drawArt(g, kind === 0 ? 'rock' : 'shell', D.ox[i], D.oy[i], kind === 3 ? D.oa[i] * 0.3 : 0, 1, r * 2 / ASSETS.rock.size * (kind === 0 ? 1.1 : 1.05), 0, 'idle', 0);
+      else drawArt(g, kind === 0 ? 'rock' : 'shell', D.ox[i], D.oy[i], (kind === 3 ? D.oa[i] * 0.3 : 0) - D.rotAdj, 1, r * 2 / ASSETS.rock.size * (kind === 0 ? 1.1 : 1.05), 0, 'idle', 0);
     }
   }
 
@@ -569,7 +579,7 @@
     D.t += dt; D.clock += dt; if (D.grace > 0) D.grace -= dt;
     const R = DC.turtleR, wasIn = D.inPool;
     D.inPool = poolAt(tt.x, tt.y);
-    const speed = m.move(dt, DC.turtleSpeedMult * (D.inPool ? DC.pool.slow : 1), false);
+    const speed = m.move(dt, DC.turtleSpeedMult * (D.inPool ? DC.pool.slow : 1), false, D.port);
     if (D.inPool) { // swimming: water sound instead of footsteps, a splash on the way in, rings behind the turtle
       if (window.TT_SOUND) { window.TT_SOUND.walking(false, 1); window.TT_SOUND.swimming(true, speed <= 5); if (!wasIn) window.TT_SOUND.splash(); }
       D.ripT -= dt;
@@ -597,8 +607,11 @@
     if (tt.x >= D.goalX) roundComplete();
   }
 
-  function poolAt(x, y) { // is (x, y) inside a pool of water (an ellipse, 0.8 as tall as wide)?
-    for (let i = 0; i < D.on; i++) if (D.ok[i] === 4) { const dx = (x - D.ox[i]) / D.or[i], dy = (y - D.oy[i]) / (D.or[i] * 0.8); if (dx * dx + dy * dy < 1) return true; }
+  function poolAt(x, y) { // is (x, y) inside a pool of water (an ellipse 0.8 as tall as wide on screen)?
+    for (let i = 0; i < D.on; i++) if (D.ok[i] === 4) { // portrait: the ellipse is wide along the screen's left-right = beach y
+      const dx = (D.port ? y - D.oy[i] : x - D.ox[i]) / D.or[i], dy = (D.port ? x - D.ox[i] : y - D.oy[i]) / (D.or[i] * 0.8);
+      if (dx * dx + dy * dy < 1) return true;
+    }
     return false;
   }
   function addRipple(x, y) { // reuse the oldest of the ring slots
@@ -607,16 +620,47 @@
     r[k * 3] = x; r[k * 3 + 1] = y; r[k * 3 + 2] = 0;
   }
 
+  // True if moving patroller h to (nx, ny) would bring it into another crab or person (only when getting closer, so a bad spawn can't freeze it).
+  function walkerBlocked(h, nx, ny, r) {
+    for (const list of [D.crabs, D.people]) for (const o of list) {
+      if (o === h || !o.on) continue;
+      const m = r + (list === D.crabs ? DC.bodyR.crab : DC.bodyR.person), dn = (nx - o.x) ** 2 + (ny - o.y) ** 2;
+      if (dn < m * m && dn < (h.x - o.x) ** 2 + (h.y - o.y) ** 2) return true;
+    }
+    return false;
+  }
+  // Pushes dog d out of every crab, person and other dog it overlaps (patrollers don't give way, dogs share the push).
+  // tx, ty, step: where the dog is heading and how far it can move this frame, so a blocked dog slides around the obstacle toward its target.
+  function separateDog(d, tx, ty, step) {
+    const B = DC.bodyR;
+    for (const list of [D.crabs, D.people, D.dogs]) for (const o of list) {
+      if (o === d || !o.on) continue;
+      const dx = d.x - o.x, dy = d.y - o.y, m = B.dog + (list === D.crabs ? B.crab : list === D.people ? B.person : B.dog), d2 = dx * dx + dy * dy;
+      if (d2 >= m * m) continue;
+      const dist = Math.sqrt(d2) || 0.001, k = (m - dist) / dist * (list === D.dogs ? 0.5 : 1);
+      if (d2 < 1e-6) { d.x += m * 0.5; continue; }
+      d.x += dx * k; d.y += dy * k;
+      if (step > 0) { // slide along the edge, on the side that's closer to the target
+        const nx = dx / dist, ny = dy / dist, side = (-ny * (tx - d.x) + nx * (ty - d.y)) >= 0 ? 1 : -1;
+        d.x += -ny * side * step; d.y += nx * side * step;
+      }
+    }
+  }
+
   function updateHazards(dt, tt) {
     const v = D.v, W = D.W, H = D.H, xMin = DC.nestW + 10, xMax = D.goalX - 10;
     for (let i = 0; i < 8; i++) D.ripples[i * 3 + 2] += dt;
     for (const list of [D.crabs, D.people]) for (const h of list) {
       if (!h.on) continue;
       if (h.pause > 0) { h.pause -= dt; continue; }
+      const u0 = h.u;
       h.u += h.dir * h.speed * dt / h.len;
       if (h.u >= 1 || h.u <= 0) { h.u = clamp(h.u, 0, 1); h.dir = -h.dir; h.pause = 0.35; }
-      const px = h.x; h.x = h.x0 + (h.x1 - h.x0) * h.u; h.y = h.y0 + (h.y1 - h.y0) * h.u;
-      if (Math.abs(h.x - px) > 0.01) h.flip = h.x > px ? 1 : -1;
+      const px = h.x, py0 = h.y, nx = h.x0 + (h.x1 - h.x0) * h.u, ny = h.y0 + (h.y1 - h.y0) * h.u;
+      if (walkerBlocked(h, nx, ny, list === D.crabs ? DC.bodyR.crab : DC.bodyR.person)) { h.u = u0; h.dir = -h.dir; h.pause = 0.3; continue; } // would run into another crab/person: turn back
+      h.x = nx; h.y = ny;
+      if (D.port) { if (Math.abs(h.y - py0) > 0.01) h.flip = h.y > py0 ? 1 : -1; } // portrait: screen left-right is beach y
+      else if (Math.abs(h.x - px) > 0.01) h.flip = h.x > px ? 1 : -1;
     }
     const detect2 = v.dogDetect * v.dogDetect, lose2 = (v.dogDetect * DC.dogLoseMult) ** 2, leash2 = DC.dogLeash * DC.dogLeash;
     for (const d of D.dogs) {
@@ -653,8 +697,9 @@
           const ex = d.x - D.ox[i], ey = d.y - D.oy[i], min = 18 + D.or[i], e2 = ex * ex + ey * ey;
           if (e2 < min * min && e2 > 1e-6) { const e = Math.sqrt(e2), k = (min - e) / e; d.x += ex * k; d.y += ey * k; }
         }
-        d.x = clamp(d.x, xMin, xMax); d.y = clamp(d.y, 20, H - 20);
       }
+      separateDog(d, tx, ty, sp * dt); // even a resting dog gets nudged out of a crab or person walking into it
+      d.x = clamp(d.x, xMin, xMax); d.y = clamp(d.y, 20, H - 20);
     }
     // seagulls: idle -> shadow tracks the turtle -> shadow locks (warning) -> swoop -> leave
     for (const g of D.gulls) {
@@ -719,19 +764,30 @@
 
   const personHeading = p => Math.atan2(p.y1 - p.y0, p.x1 - p.x0) + (p.dir < 0 ? Math.PI : 0); // people face along their path
 
+  // People are 8-direction sprites (no rotation): in portrait the turned canvas would spin them, so counter-rotate and pick the row from the screen heading.
+  function drawPerson(g, i, clock) {
+    const p = D.people[i];
+    g.save(); g.translate(p.x, p.y); if (D.port) g.rotate(Math.PI / 2);
+    drawArt(g, i & 1 ? 'person2' : 'person', 0, 0, personHeading(p) + D.rotAdj, 1, 1, Math.floor(clock * 8), 'idle', clock);
+    g.restore();
+  }
+
   // The game's "!" (enemies.js draws it the same way: 3x, with a little pop-in and fade-out) above a dog that just noticed the turtle. u: 0..1 over its life.
-  function drawNotice(g, x, y, u) {
+  function drawNotice(g, x, y, u) { // (x, y) = the dog; the "!" floats 34 above it on screen
     const img = images.notice;
     if (!img || !img.complete || !img.naturalWidth) return;
     const pop = u < 0.2 ? 0.5 + u / 0.2 * 0.7 : u < 0.35 ? 1.2 - (u - 0.2) / 0.15 * 0.2 : 1;
     const w = img.naturalWidth * ASSETS.notice.scale * pop, h = img.naturalHeight * ASSETS.notice.scale * pop;
     g.globalAlpha = Math.min(1, (1 - u) / 0.3);
-    g.drawImage(img, x - w / 2, y - h, w, h);
-    g.globalAlpha = 1;
+    g.save(); g.translate(x, y); if (D.port) g.rotate(Math.PI / 2); // stay upright in the turned beach
+    g.drawImage(img, -w / 2, -34 - h, w, h);
+    g.restore(); g.globalAlpha = 1;
   }
 
   // A pool of water: wet-sand rim, blue water with a shimmer and slowly pulsing rings (rx = r, ry = 0.8 r, same as poolAt).
-  function drawPool(g, x, y, r, t) {
+  function drawPool(g, px, py, r, t) {
+    g.save(); g.translate(px, py); if (D.port) g.rotate(Math.PI / 2); // drawn upright on screen
+    const x = 0, y = 0;
     const ry = r * 0.8, rim = DC.pool.rimW;
     g.fillStyle = '#c9ad74'; g.beginPath(); g.ellipse(x, y, r * 1.06, ry * 1.08, 0, 0, 7); g.fill();
     g.fillStyle = '#9a7f4c'; g.beginPath(); g.ellipse(x, y, r * (1 - rim * 0.3), ry * (1 - rim * 0.3), 0, 0, 7); g.fill();
@@ -745,6 +801,7 @@
     g.globalAlpha = 1;
     g.beginPath(); const gy2 = y - ry * 0.3 + Math.sin(t * 1.3) * 3, gx2 = x - r * 0.35 + Math.cos(t) * 4; // a drifting glint
     g.moveTo(gx2, gy2); g.quadraticCurveTo(gx2 + 8, gy2 - 3, gx2 + 16, gy2); g.stroke();
+    g.restore();
   }
   function drawRipples(g, clock) { // rings the turtle leaves behind in a pool
     const L = DC.pool.rippleLife, r = D.ripples;
@@ -753,7 +810,8 @@
       const age = r[i * 3 + 2];
       if (age >= L) continue;
       const u = age / L;
-      g.globalAlpha = 0.7 * (1 - u); g.beginPath(); g.ellipse(r[i * 3], r[i * 3 + 1] + 4, 8 + 20 * u, 4 + 10 * u, 0, 0, 7); g.stroke();
+      g.save(); g.translate(r[i * 3], r[i * 3 + 1]); if (D.port) g.rotate(Math.PI / 2);
+      g.globalAlpha = 0.7 * (1 - u); g.beginPath(); g.ellipse(0, 4, 8 + 20 * u, 4 + 10 * u, 0, 0, 7); g.stroke(); g.restore();
     }
     g.globalAlpha = 1;
   }
@@ -762,7 +820,7 @@
   function renderDash(g, vw, vh, t) {
     if (!D) return;
     g.drawImage(D.bg, 0, 0, vw, vh);
-    g.save(); g.scale(D.s, D.s);
+    g.save(); if (D.port) g.transform(0, -D.s, D.s, 0, 0, vh); else g.scale(D.s, D.s);
     const wx = D.W - DC.waterW;
     g.strokeStyle = 'rgba(255,255,255,0.28)'; g.lineWidth = 2; g.beginPath(); // drifting water glints
     for (let i = 0; i < 7; i++) {
@@ -779,17 +837,20 @@
       const sx = gl.st === 3 ? gl.tx : gl.sx, sy = gl.st === 3 ? gl.ty : gl.sy;
       const k = gl.st === 1 ? 0.5 : gl.st === 2 ? 0.7 + 0.5 * (1 - gl.timer / DC.gullLockSeconds) : 1.2;
       g.fillStyle = gl.st === 1 ? 'rgba(0,0,0,0.22)' : 'rgba(40,0,0,0.38)';
-      g.beginPath(); g.ellipse(sx, sy, 24 * k, 12 * k, 0, 0, 7); g.fill();
-      if (gl.st === 2) { g.strokeStyle = 'rgba(220,40,40,0.8)'; g.lineWidth = 2; g.beginPath(); g.ellipse(sx, sy, DC.gullSnatchR, DC.gullSnatchR * 0.55, 0, 0, 7); g.stroke(); }
+      g.beginPath(); g.ellipse(sx, sy, 24 * k, 12 * k, -D.rotAdj, 0, 7); g.fill();
+      if (gl.st === 2) { g.strokeStyle = 'rgba(220,40,40,0.8)'; g.lineWidth = 2; g.beginPath(); g.ellipse(sx, sy, DC.gullSnatchR, DC.gullSnatchR * 0.55, -D.rotAdj, 0, 7); g.stroke(); }
     }
-    for (const c of D.crabs) if (c.on) drawArt(g, 'crab', c.x, c.y, 0, c.flip, 0.8, Math.floor(clock * 8) % 6, 'walk', clock);
+    for (const c of D.crabs) if (c.on) {
+      if (D.port) { g.save(); g.translate(c.x, c.y); g.rotate(Math.PI / 2); drawArt(g, 'crab', 0, 0, 0, c.flip, 0.8, Math.floor(clock * 8) % 6, 'walk', clock); g.restore(); } // upright, scuttling left-right on screen
+      else drawArt(g, 'crab', c.x, c.y, 0, c.flip, 0.8, Math.floor(clock * 8) % 6, 'walk', clock);
+    }
     for (const d of D.dogs) if (d.on) {
       drawArt(g, d.chasing ? 'dogRun' : 'dog', d.x, d.y, d.ang, 1, 1, Math.floor(clock * (d.chasing ? 14 : 8)) % 4, 'idle', clock * (d.chasing ? 1.4 : 1));
-      if (d.notice > 0) drawNotice(g, d.x, d.y - 34, 1 - d.notice / 0.7);
+      if (d.notice > 0) drawNotice(g, d.x, d.y, 1 - d.notice / 0.7);
     }
-    for (let i = 0; i < D.people.length; i++) { const p = D.people[i]; if (p.on && p.y <= tt.y) drawArt(g, i & 1 ? 'person2' : 'person', p.x, p.y, personHeading(p), 1, 1, Math.floor(clock * 8), 'idle', clock); }
+    for (let i = 0; i < D.people.length; i++) if (D.people[i].on && D.people[i].y <= tt.y) drawPerson(g, i, clock);
     drawArt(g, 'babyTurtle', tt.x, tt.y, tt.angle, 1, 1, Math.floor(D.walk * 8) % 4, 'idle', D.walk);
-    for (let i = 0; i < D.people.length; i++) { const p = D.people[i]; if (p.on && p.y > tt.y) drawArt(g, i & 1 ? 'person2' : 'person', p.x, p.y, personHeading(p), 1, 1, Math.floor(clock * 8), 'idle', clock); }
+    for (let i = 0; i < D.people.length; i++) if (D.people[i].on && D.people[i].y > tt.y) drawPerson(g, i, clock);
     for (const gl of D.gulls) { // gulls in the air, above everything
       if (!gl.on || (gl.st !== 3 && gl.st !== 4)) continue;
       gullPos(gl);

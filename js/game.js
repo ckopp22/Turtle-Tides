@@ -2602,8 +2602,9 @@
   }
   // One step of the turtle's own movement (same accel/decel, walk/swim speeds and animation as update(), minus skills and hunger).
   // Returns the speed. The caller does its own collisions.
-  function miniMove(dt, speedScale, allowSwim) {
-    const dir = getDirection();
+  function miniMove(dt, speedScale, allowSwim, rot90) { // rot90: the minigame's world is turned 90deg (screen up = +x, screen right = +y), so turn the input to match
+    let dir = getDirection();
+    if (rot90) dir = { x: -dir.y, y: dir.x };
     const inWater = allowSwim && isWater(turtle.x, turtle.y);
     const m = (inWater ? WATER_SPEED_MULT : LAND_SPEED_MULT) * speedScale;
     const tvx = dir.x * MAX_SPEED * m, tvy = dir.y * MAX_SPEED * m;
