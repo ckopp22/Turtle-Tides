@@ -24,6 +24,7 @@
       gridCell: 24,               // winnable-path check grid (beach units)
       pathPad: 6,                 // extra clearance the path check keeps around obstacles, on top of turtleR
       log: { r: 15, spacing: 22, scale: 1.4, off: [2.5, 3.5] }, // driftwood: 3 collision circles of radius r, spacing apart, along the art (drawn at scale; off = art's centre offset in art px)
+      prints: { every: 13, life: 2.2, side: 5 }, // baby turtle footprints in the sand: one every `every` units walked, alternating sides (`side` off the path), fading out over `life` seconds
       pool: { slow: 0.6, dogSlow: 0.35, rimW: 0.12, rippleEvery: 0.16, rippleLife: 0.7 }, // pools of water: the turtle swims through at slow x speed (dogs wade through slower, x dogSlow; gulls fly over); rim = share of the radius that's wet sand
       obstacleGap: 36,            // min empty space between two static obstacles
       maxObstacleCircles: 64, placeAttempts: 14,
@@ -350,6 +351,7 @@
       vw: 0, vh: 0, s: 1, port: false, rotAdj: 0, W: 0, H: 0, goalX: 0, nestX: 0, nestY: 0, bgScale: 1,
       bg: document.createElement('canvas'), cols: 0, rows: 0, grid: new Uint8Array(1), queue: new Int32Array(1),
       v: { crabSpeed: 0, personSpeed: 0, dogWander: 0, dogChase: 0, dogDetect: 0, gullInterval: 0, gullTrack: 0 }, // this round's ramp values
+      prints: new Float32Array(32 * 4), printDist: 0, printSide: 1, // prints: x, y, heading, age per slot
       ripples: new Float32Array(8 * 3), ripT: 0, inPool: false, // ripples: x, y, age per slot (the splash rings the turtle leaves in a pool)
       on: 0, ox: new Float32Array(m), oy: new Float32Array(m), or: new Float32Array(m), ok: new Uint8Array(m), oa: new Float32Array(m), // static circles; ok: kind
       crabs: pool(DC.pools.crabs, makePatroller), people: pool(DC.pools.people, makePatroller),
@@ -377,6 +379,7 @@
   // Lays out a fresh, winnable beach for `round`, resets every hazard, and puts the turtle back in the nest. No allocation: all pools are reused.
   function startRound(round) {
     const m = api(), sz = m.size(), tt = m.turtle;
+    for (let i = 0; i < 32; i++) D.prints[i * 4 + 3] = 99; D.printDist = 0;
     for (let i = 0; i < 8; i++) D.ripples[i * 3 + 2] = 99; D.inPool = false; // no old rings
     D.round = round; D.snatcher = null; D.t = 0; D.grace = DC.startGraceSeconds; D.bannerT = 0;
     D.vw = sz.w; D.vh = sz.h;
@@ -585,6 +588,16 @@
       D.ripT -= dt;
       if (speed > 5 && D.ripT <= 0) { D.ripT = DC.pool.rippleEvery; addRipple(tt.x, tt.y); }
     }
+    for (let i = 0; i < 32; i++) D.prints[i * 4 + 3] += dt;
+    if (speed > 5 && !D.inPool) { // footprints on dry sand
+      D.printDist += speed * dt;
+      if (D.printDist >= DC.prints.every) {
+        D.printDist = 0; D.printSide = -D.printSide;
+        let k = 0; for (let i = 1; i < 32; i++) if (D.prints[i * 4 + 3] > D.prints[k * 4 + 3]) k = i; // reuse the oldest slot
+        const a = tt.angle, o = DC.prints.side * D.printSide;
+        D.prints[k * 4] = tt.x - Math.sin(a) * o; D.prints[k * 4 + 1] = tt.y + Math.cos(a) * o; D.prints[k * 4 + 2] = a; D.prints[k * 4 + 3] = 0;
+      }
+    }
     // static obstacles: push the turtle out of any circle it overlaps
     for (let i = 0; i < D.on; i++) {
       if (D.ok[i] === 4) continue; // pools of water are open
@@ -622,31 +635,13 @@
 
   // True if moving patroller h to (nx, ny) would bring it into another crab or person (only when getting closer, so a bad spawn can't freeze it).
   function walkerBlocked(h, nx, ny, r) {
-    for (const list of [D.crabs, D.people]) for (const o of list) {
+    for (const list of [D.crabs, D.people, D.dogs]) for (const o of list) { // dogs count too, so a crab or person never walks into (and pushes) a dog
       if (o === h || !o.on) continue;
-      const m = r + (list === D.crabs ? DC.bodyR.crab : DC.bodyR.person), dn = (nx - o.x) ** 2 + (ny - o.y) ** 2;
+      const m = r + (list === D.crabs ? DC.bodyR.crab : list === D.people ? DC.bodyR.person : DC.bodyR.dog), dn = (nx - o.x) ** 2 + (ny - o.y) ** 2;
       if (dn < m * m && dn < (h.x - o.x) ** 2 + (h.y - o.y) ** 2) return true;
     }
     return false;
   }
-  // Pushes dog d out of every crab, person and other dog it overlaps (patrollers don't give way, dogs share the push).
-  // tx, ty, step: where the dog is heading and how far it can move this frame, so a blocked dog slides around the obstacle toward its target.
-  function separateDog(d, tx, ty, step) {
-    const B = DC.bodyR;
-    for (const list of [D.crabs, D.people, D.dogs]) for (const o of list) {
-      if (o === d || !o.on) continue;
-      const dx = d.x - o.x, dy = d.y - o.y, m = B.dog + (list === D.crabs ? B.crab : list === D.people ? B.person : B.dog), d2 = dx * dx + dy * dy;
-      if (d2 >= m * m) continue;
-      const dist = Math.sqrt(d2) || 0.001, k = (m - dist) / dist * (list === D.dogs ? 0.5 : 1);
-      if (d2 < 1e-6) { d.x += m * 0.5; continue; }
-      d.x += dx * k; d.y += dy * k;
-      if (step > 0) { // slide along the edge, on the side that's closer to the target
-        const nx = dx / dist, ny = dy / dist, side = (-ny * (tx - d.x) + nx * (ty - d.y)) >= 0 ? 1 : -1;
-        d.x += -ny * side * step; d.y += nx * side * step;
-      }
-    }
-  }
-
   function updateHazards(dt, tt) {
     const v = D.v, W = D.W, H = D.H, xMin = DC.nestW + 10, xMax = D.goalX - 10;
     for (let i = 0; i < 8; i++) D.ripples[i * 3 + 2] += dt;
@@ -697,9 +692,13 @@
           const ex = d.x - D.ox[i], ey = d.y - D.oy[i], min = 18 + D.or[i], e2 = ex * ex + ey * ey;
           if (e2 < min * min && e2 > 1e-6) { const e = Math.sqrt(e2), k = (min - e) / e; d.x += ex * k; d.y += ey * k; }
         }
+        for (const list of [D.crabs, D.people, D.dogs]) for (const o of list) { // crabs, people and other dogs are just more static obstacles: the dog is stopped at their edge and keeps going
+          if (o === d || !o.on) continue;
+          const ex = d.x - o.x, ey = d.y - o.y, min = DC.bodyR.dog + (list === D.crabs ? DC.bodyR.crab : list === D.people ? DC.bodyR.person : DC.bodyR.dog), e2 = ex * ex + ey * ey;
+          if (e2 < min * min && e2 > 1e-6) { const e = Math.sqrt(e2), k = (min - e) / e; d.x += ex * k; d.y += ey * k; }
+        }
+        d.x = clamp(d.x, xMin, xMax); d.y = clamp(d.y, 20, H - 20);
       }
-      separateDog(d, tx, ty, sp * dt); // even a resting dog gets nudged out of a crab or person walking into it
-      d.x = clamp(d.x, xMin, xMax); d.y = clamp(d.y, 20, H - 20);
     }
     // seagulls: idle -> shadow tracks the turtle -> shadow locks (warning) -> swoop -> leave
     for (const g of D.gulls) {
@@ -802,6 +801,20 @@
     g.moveTo(gx2, gy2); g.quadraticCurveTo(gx2 + 8, gy2 - 3, gx2 + 16, gy2); g.stroke();
     g.restore();
   }
+  function drawPrints(g) { // little flipper prints that fade
+    const L = DC.prints.life, p = D.prints;
+    g.fillStyle = '#7a5a2a';
+    for (let i = 0; i < 32; i++) {
+      const age = p[i * 4 + 3];
+      if (age >= L) continue;
+      g.globalAlpha = 0.45 * (1 - age / L);
+      g.save(); g.translate(p[i * 4], p[i * 4 + 1]); g.rotate(p[i * 4 + 2]);
+      g.beginPath(); g.ellipse(0, 0, 3.2, 2, 0, 0, 7); g.fill();
+      g.beginPath(); g.arc(4.2, -1.3, 0.9, 0, 7); g.arc(4.6, 0, 0.9, 0, 7); g.arc(4.2, 1.3, 0.9, 0, 7); g.fill(); // toes
+      g.restore();
+    }
+    g.globalAlpha = 1;
+  }
   function drawRipples(g, clock) { // rings the turtle leaves behind in a pool
     const L = DC.pool.rippleLife, r = D.ripples;
     g.strokeStyle = '#fff'; g.lineWidth = 2;
@@ -830,6 +843,7 @@
     const tt = api().turtle, clock = D.clock;
     for (let i = 0; i < D.on; i++) if (D.ok[i] === 4) drawPool(g, D.ox[i], D.oy[i], D.or[i], clock + i * 1.7);
     drawRipples(g, clock);
+    drawPrints(g);
     // gull shadows (the warning) go on the ground, under everything
     for (const gl of D.gulls) {
       if (!gl.on || gl.st === 0 || gl.st === 4) continue;
