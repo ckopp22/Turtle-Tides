@@ -187,14 +187,14 @@
     }
     fetch('assets/sfx/fire.mp3').then(r => r.arrayBuffer()).then(b => audioCtx.decodeAudioData(b))
       .then(buf => { fireLoop.buf = buf; }).catch(() => {});
-    for (const f of ['bag.m4a', 'shell.mp3', 'coin.mp3', 'sand.mp3', 'stomp.mp3', 'full.mp3', 'onewheel-beep.mp3', ...Object.values(HUT_SFX).map(n => n + '.mp3')]) {
+    for (const f of ['bag.m4a', 'splash.mp3', 'shell.mp3', 'coin.mp3', 'sand.mp3', 'stomp.mp3', 'full.mp3', 'onewheel-beep.mp3', ...Object.values(HUT_SFX).map(n => n + '.mp3')]) {
       fetch(`assets/sfx/${f}`).then(r => r.arrayBuffer()).then(b => audioCtx.decodeAudioData(b))
         .then(buf => { pickupBuffers[f] = buf; }).catch(() => {});
     }
   }
   const pickupBuffers = {};
   // Per-file WebAudio gain (default 0.6); the clip.volume values only apply to the <audio> fallback.
-  const PICKUP_GAIN = { 'bag.m4a': 1.4, 'coin.mp3': 0.2, 'sand.mp3': 1.2, 'stomp.mp3': 1.2,
+  const PICKUP_GAIN = { 'bag.m4a': 1.4, 'splash.mp3': 0.6, 'coin.mp3': 0.2, 'sand.mp3': 1.2, 'stomp.mp3': 1.2,
     'onewheel-beep.mp3': 0.15, 'door.mp3': 0.8, 'creak.mp3': 0.5, 'snore.mp3': 0.7, 'book-open.mp3': 0.6, 'book-page.mp3': 0.6, 'book-close.mp3': 0.6,
     'eagle.mp3': 0.7, 'snake.mp3': 0.7, 'bear.mp3': 0.8, 'stick-snap.mp3': 0.7, 'wolf-howl.mp3': 0.7, 'wolf-bark.mp3': 0.7 };
   // maxLen (seconds, optional) plays only that much of the clip from its first audible sample, with a short fade-out.
@@ -383,8 +383,7 @@
     },
     splash: () => {
       if (!soundOn) return;
-      splashClip.currentTime = 0;
-      splashClip.play().catch(() => {});
+      playPickup('splash.mp3', splashClip); // decoded buffer: restarting an <audio> element mid-game hitches on mobile
     },
     bite: () => {
       if (!soundOn) return;

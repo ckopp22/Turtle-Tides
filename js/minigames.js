@@ -610,6 +610,7 @@
       D.ripT -= dt;
       if (speed > 5 && D.ripT <= 0) { D.ripT = DC.pool.rippleEvery; addRipple(tt.x, tt.y); }
     }
+    else if (wasIn && window.TT_SOUND) window.TT_SOUND.swimming(false, true); // left the pool: stop the swim loop
     for (let i = 0; i < 32; i++) D.prints[i * 4 + 3] += dt;
     if (speed > 5 && !D.inPool) { // footprints on dry sand
       D.printDist += speed * dt;
