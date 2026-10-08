@@ -2269,8 +2269,7 @@
     ctx.beginPath(); ctx.arc(bx - 8, by + 12, 5, 0, 7); ctx.fill(); ctx.stroke();
     ctx.beginPath(); ctx.arc(bx, by - 8, 22, 0, 7); ctx.fill(); ctx.stroke();
     ctx.translate(bx, by - 8); ctx.scale(pulse, pulse);
-    ctx.fillStyle = '#6b4423'; ctx.beginPath(); ctx.arc(0, 0, 12, 0, 7); ctx.fill(); // coconut
-    ctx.fillStyle = '#2e1b0c'; for (const [dx, dy] of [[-4, -3], [4, -3], [0, 4]]) { ctx.beginPath(); ctx.arc(dx, dy, 2, 0, 7); ctx.fill(); }
+    if (coconutImg.complete && coconutImg.naturalWidth) ctx.drawImage(coconutImg, -15, -15, 30, 30); // same coconut.png as the HUD
     ctx.restore();
   }
 
