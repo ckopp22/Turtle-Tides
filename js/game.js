@@ -79,6 +79,7 @@
   // line FENCE_A px in from each edge (this is also how far the turtle can go while the zone is locked).
   const FENCE_N = Math.round((WORLD_SIZE - 2 * ADVENTURE.fenceInset) / ADVENTURE.fenceTile);
   const FENCE_A = (WORLD_SIZE - FENCE_N * ADVENTURE.fenceTile) / 2;
+  const FENCE_STOP = FENCE_A + 40; // turtle halts this far in from the post line so it bumps the fence instead of overlapping it
   const WORLD_PAD = WORLD_SIZE * (ADVENTURE.worldMult - 1) / 2; // new land on each side of the home zone
   const WORLD_MIN = -WORLD_PAD, WORLD_MAX = WORLD_SIZE + WORLD_PAD;
   const CENTER = { x: WORLD_SIZE / 2, y: WORLD_SIZE / 2 };
@@ -2071,7 +2072,7 @@
     if (window.Enemies) window.Enemies.collideTurtle(turtle, TURTLE_BODY_RADIUS); // enemies are solid
 
     // World edge, or the fence while the Adventure Zone is locked.
-    const m = adventureUnlocked ? TURTLE_RADIUS : FENCE_A;
+    const m = adventureUnlocked ? TURTLE_RADIUS : FENCE_STOP;
     if (turtle.x < bounds.x0 + m) { turtle.x = bounds.x0 + m; turtle.vx = 0; }
     if (turtle.x > bounds.x1 - m) { turtle.x = bounds.x1 - m; turtle.vx = 0; }
     if (turtle.y < bounds.y0 + m) { turtle.y = bounds.y0 + m; turtle.vy = 0; }
@@ -2106,7 +2107,7 @@
   let dpr = 1, viewW = 0, viewH = 0;
 
   function clampToWorld() {
-    const m = adventureUnlocked ? TURTLE_RADIUS : FENCE_A;
+    const m = adventureUnlocked ? TURTLE_RADIUS : FENCE_STOP;
     turtle.x = Math.max(bounds.x0 + m, Math.min(bounds.x1 - m, turtle.x));
     turtle.y = Math.max(bounds.y0 + m, Math.min(bounds.y1 - m, turtle.y));
   }
