@@ -31,13 +31,13 @@
       ramp: {
         obstacles:   { base: 7,   per: 1,     lo: 0,    hi: 18 },   // static groups (rock / driftwood / shell / tide pool)
         crabs:       { base: 2,   per: 0.5,   lo: 0,    hi: 7 },
-        dogs:        { base: 0.6, per: 0.4,   lo: 0,    hi: 4 },    // first dog in round 2
+        dogs:        { base: 0.6, per: 0.4,   lo: 0,    hi: 6 },    // first dog in round 2
         seagulls:    { base: 1,   per: 0.35,  lo: 0,    hi: 4 },
         people:      { base: 1,   per: 0.4,   lo: 0,    hi: 5 },
         crabSpeed:   { base: 55,  per: 4,     lo: 0,    hi: 110 }, // beach units/s
         personSpeed: { base: 45,  per: 3,     lo: 0,    hi: 90 },
-        dogWander:   { base: 40,  per: 2,     lo: 0,    hi: 70 },
-        dogChase:    { base: 0.6, per: 0.03,  lo: 0,    hi: 0.88 }, // x turtle speed: always slower than the turtle, so a dog can be outrun
+        dogWander:   { base: 40,  per: 0,     lo: 0,    hi: 70 },
+        dogChase:    { base: 0.6, per: 0,     lo: 0,    hi: 0.88 }, // x turtle speed: always slower than the turtle, so a dog can be outrun
         dogDetect:   { base: 170, per: 14,    lo: 0,    hi: 320 },  // beach units: wider every round
         gullInterval:{ base: 5,   per: -0.4,  lo: 1.8,  hi: 5 },    // seconds between one gull's swoops: more frequent every round
         gullTrack:   { base: 1.5, per: -0.06, lo: 0.9,  hi: 1.5 },  // seconds the shadow follows the turtle before it locks
@@ -50,9 +50,9 @@
       bodyR: { crab: 15, person: 18, dog: 18 }, // collision radius between crabs, people and dogs so they never overlap
       hitR: { crab: 17, dog: 19 },            // hazard body radius added to the turtle's
       personFeet: { rx: 20, ry: 11 },        // a person's feet ellipse: the turtle's centre inside it is a hit
-      // Coins at the end of each completed round: base + perRound * (round - 1), capped, plus a speed bonus.
-      coins: { base: 3, perRound: 2, max: 60, parSeconds: 12, bonusPerSecond: 0.5, bonusMax: 5 },
-      pools: { crabs: 7, dogs: 4, gulls: 4, people: 5 }, // = the ramp caps above
+      // Coins at the end of each completed round: base + perRound * (round - 1), capped.
+      coins: { base: 3, perRound: 2, max: 60 },
+      pools: { crabs: 7, dogs: 6, gulls: 4, people: 5 }, // = the ramp caps above
     },
 
     // ---------------- Survival ----------------
@@ -752,14 +752,13 @@
 
   function roundComplete() {
     const C = DC.coins, n = D.round;
-    const bonus = Math.min(C.bonusMax, Math.max(0, Math.floor((C.parSeconds - D.t) * C.bonusPerSecond)));
-    const coins = Math.min(C.max, C.base + C.perRound * (n - 1)) + bonus;
+    const coins = Math.min(C.max, C.base + C.perRound * (n - 1));
     if (window.TT_SOUND) window.TT_SOUND.splash(); // reached the water
     P().grantBankedCoins(coins); sfxCoin(); // into the real coin total right now, so a failed next round loses nothing
     D.coinsRun += coins; D.rounds = n;
     P().setMinigameBest('dashBest', n);
     phase = 'banner'; D.bannerT = DC.bannerSeconds;
-    showBanner(`Round ${n} complete!`, `+${coins} coins${bonus ? ` (speed bonus +${bonus})` : ''}`);
+    showBanner(`Round ${n} complete!`, `+${coins} coins`);
   }
 
   const personHeading = p => Math.atan2(p.y1 - p.y0, p.x1 - p.x0) + (p.dir < 0 ? Math.PI : 0); // people face along their path
