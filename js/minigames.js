@@ -742,10 +742,10 @@
         g.sx += dx / l * step; g.sy += dy / l * step;
         if (g.timer <= 0) { g.st = 2; g.timer = DC.gullLockSeconds; g.tx = g.sx; g.ty = g.sy; }
       } else if (g.st === 2) { // locked: the shadow holds still and grows; the turtle can still run
-        if (g.timer <= 0) { g.st = 3; g.timer = DC.gullSwoopSeconds; g.ang = Math.atan2(DC.gullDive, 300); }
+        if (g.timer <= 0) { g.st = 3; g.u = 0; g.timer = DC.gullSwoopSeconds; g.ang = Math.atan2(DC.gullDive, 300); }
       } else if (g.st === 3) { // swoop in
         g.u = 1 - Math.max(0, g.timer) / DC.gullSwoopSeconds;
-        if (g.timer <= 0) { g.st = 4; g.timer = DC.gullLeaveSeconds; g.dur = DC.gullLeaveSeconds; g.snatch = true; }
+        if (g.timer <= 0) { g.st = 4; g.u = 0; g.timer = DC.gullLeaveSeconds; g.dur = DC.gullLeaveSeconds; g.snatch = true; }
       } else { // leaving
         g.u = 1 - Math.max(0, g.timer) / g.dur;
         if (g.timer <= 0) { g.st = 0; g.timer = rand(0.6, 1) * v.gullInterval; g.snatch = false; }
