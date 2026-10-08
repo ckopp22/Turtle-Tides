@@ -10,6 +10,7 @@
   const CONFIG = {
     hutScale: 1.25,        // exterior draw scale: world px per art px
     fadeSeconds: 0.25,     // each half of a door fade (to black, then back in)
+    roomSpeedBoost: 1.3, // extra walking speed in the room on top of matching the outside (the turtle is drawn small there)
     roomTurtleScale: 0.36, // turtle draw size / speed / hitbox inside the room vs. its world size
     exitDropPx: 65,        // world px below the hut's wall base where the turtle reappears
     // Hut position in world px relative to the island center; the anchor is the middle of the wall's
@@ -314,7 +315,7 @@
 
   // ---- State ----
   let onEnterInterior = null;
-  let screenScale = () => 1; // game.js's camera zoom: room speed is set so it covers the same screen distance as outside
+  let speedMult = () => 1, screenScale = () => 1; // game.js's camera zoom: room speed is set so it covers the same screen distance as outside
   let turtle = null, hutX = 0, hutY = 0, bodyR = 22, maxSpeed = 0, accel = 0, decel = 0, onEnter = null;
   let scene = 'world';   // 'world' | 'interior' — which one is drawn/simulated
   let phase = 0;         // 0 = none, 1 = fading to black, 2 = fading back in
@@ -327,7 +328,7 @@
   const hutEntry = { x: 0, y: 0, type: 'custom', collide: false, draw: drawHut };
 
   function init(o) {
-    turtle = o.turtle; bodyR = o.bodyRadius; maxSpeed = o.maxSpeed; accel = o.accel; decel = o.decel; onEnter = o.onEnter; if (o.screenScale) screenScale = o.screenScale; onEnterInterior = o.onEnterInterior;
+    turtle = o.turtle; bodyR = o.bodyRadius; maxSpeed = o.maxSpeed; accel = o.accel; decel = o.decel; onEnter = o.onEnter; if (o.screenScale) screenScale = o.screenScale; if (o.speedMult) speedMult = o.speedMult; onEnterInterior = o.onEnterInterior;
     hutX = o.center.x + CONFIG.hutOffset.x;
     hutY = o.center.y + CONFIG.hutOffset.y;
     hutEntry.x = hutX; hutEntry.y = hutY;
@@ -412,8 +413,9 @@
     if (modal) { room.vx = room.vy = room.speed = 0; return true; } // a screen is open: the room is paused
     // Interior movement (art px): same feel as outside, scaled by the turtle's size in the room.
     const k = CONFIG.roomTurtleScale, hasInput = dir.x !== 0 || dir.y !== 0;
-    const kv = screenScale() / L.s; // art px per world px: same on-screen speed as outside (ignores speed upgrades)
-    const tvx = dir.x * maxSpeed * kv, tvy = dir.y * maxSpeed * kv, rate = (hasInput ? accel : decel) * kv * dt;
+    const kv = screenScale() / L.s; // art px per world px: same on-screen speed as outside
+    const mv = kv * speedMult() * CONFIG.roomSpeedBoost; // ...including the Move Speed upgrades
+    const tvx = dir.x * maxSpeed * mv, tvy = dir.y * maxSpeed * mv, rate = (hasInput ? accel : decel) * mv * dt;
     const dvx = tvx - room.vx, dvy = tvy - room.vy, dl = Math.hypot(dvx, dvy);
     if (dl <= rate) { room.vx = tvx; room.vy = tvy; }
     else { room.vx += (dvx / dl) * rate; room.vy += (dvy / dl) * rate; }
@@ -774,7 +776,7 @@
   window.Home = {
     syncFromSave: syncUnlocked, refreshInterior: () => { if (scene === 'interior' && builtLevel !== level()) startPops(); }, hasFeature, hutBuilt, UPGRADES,
     init, tick, collideWorld, checkDoor, updateAmbient, layout, drawRoom, drawFade, drawGround, lights, drawSleepDim, drawMessages, hutEntry, room,
-    TURTLE_SCALE: CONFIG.roomTurtleScale, worldSpeed: () => room.speed * L.s / screenScale(), SLEEP_SCALE: CONFIG.sleep.scale, bedSpot: BED_SPOT,
+    TURTLE_SCALE: CONFIG.roomTurtleScale, worldSpeed: () => room.speed * L.s / screenScale() / speedMult() / CONFIG.roomSpeedBoost, SLEEP_SCALE: CONFIG.sleep.scale, bedSpot: BED_SPOT,
     setWheelRidden: v => { wheelRidden = v; },
     wheelSpot: () => ({ x: wheelX, y: wheelY }), // parked spot on the home island
     isAsleep: () => sleep.phase === 2,

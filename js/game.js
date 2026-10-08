@@ -161,7 +161,7 @@
   // Interior movement reuses the world's speed/accel numbers, scaled down inside home.js.
   Home.init({
     turtle, center: CENTER, bodyRadius: TURTLE_BODY_RADIUS,
-    maxSpeed: MAX_SPEED * LAND_SPEED_MULT, accel: ACCEL, decel: DECEL, screenScale: () => ZOOM,
+    maxSpeed: MAX_SPEED * LAND_SPEED_MULT, accel: ACCEL, decel: DECEL, screenScale: () => ZOOM, speedMult: () => window.Progression.moveSpeedMultiplier(),
     onEnter: () => { if (window.Enemies) window.Enemies.resetAggro(); }, // chasers give up when the turtle goes inside
     onEnterInterior: () => { window.Progression.setHomeButtonVisible(true); setCompassShown(false); }, // shop (upgrades) icon stays available indoors; only the compass hides
   });
