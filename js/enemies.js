@@ -186,7 +186,7 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
     const e = {
       type, cfg: type ? CONFIG.types[type] : null, active: false, respawnAt, debug: false, pool: 'home',
       x: 0, y: 0, sx: 0, sy: 0, biome: '', state: WANDER, t: 0, anim: 0, row: 0, frame: 0,
-      tx: 0, ty: 0, hasTarget: false, pause: 0, flip: 1, angle: 0, cd: 0, giveUp: 0, steer: 0, steerT: 0, dodge: 0, dodgeT: 0, flank: 0, atkAngle: 0, acc: 0,
+      tx: 0, ty: 0, hasTarget: false, pause: 0, flip: 1, angle: 0, cd: 0, giveUp: 0, steer: 0, steerT: 0, hd: null, escT: 0, ex: 0, ey: 0, dodge: 0, dodgeT: 0, flank: 0, atkAngle: 0, acc: 0,
       role: 0, notice: 0, lose: 0, stuck: 0, unreach: 0, nightSleep: false, want: '', path: null, pi: 0, pathLen: 0, replans: 0, hiddenFor: 0, emergeToChase: false, hitDone: false,
       proxy: null,
     };
@@ -274,7 +274,7 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
     e.cfg = arena ? arena.types[type] : adv && !api.inHomeZone(x, y) ? ADV_TYPES[type] : CONFIG.types[type]; // stats follow where it spawned (arena: the Survival ramp's live copy)
     e.x = e.sx = x; e.y = e.sy = y; e.biome = biome;
     e.state = WANDER; e.t = 0; e.anim = 0; e.hasTarget = false; e.pause = rnd(0.5, 2); e.nightSleep = false; e.notice = 0;
-    e.cd = 0; e.steer = 0; e.steerT = 0; e.dodge = 0; e.dodgeT = 0; e.giveUp = 0; e.lose = 0; e.stuck = 0; e.unreach = 0; e.flip = Math.random() < 0.5 ? 1 : -1;
+    e.cd = 0; e.steer = 0; e.steerT = 0; e.hd = null; e.escT = 0; e.dodge = 0; e.dodgeT = 0; e.giveUp = 0; e.lose = 0; e.stuck = 0; e.unreach = 0; e.flip = Math.random() < 0.5 ? 1 : -1;
   }
 
   function trySpawn(e) {
@@ -337,7 +337,33 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
     return open(e, e.x + hx * step, e.y + hy * step) && open(e, e.x + hx * look, e.y + hy * look);
   }
   // Returns the fraction (0..1) of the intended step actually travelled.
+  // Stuck: pick the open direction with the most room, biased away from where it was trying to go, and
+  // walk that way for a moment (steerMove uses it while escT > 0).
+  function startEscape(e, ux, uy) {
+    const r = e.cfg.bodyRadius; let best = -1e9;
+    for (let i = 0; i < 8; i++) {
+      const a = i * Math.PI / 4, cx = Math.cos(a), cy = Math.sin(a);
+      let room = 0;
+      for (let k = 1; k <= 4 && open(e, e.x + cx * r * k, e.y + cy * r * k); k++) room++;
+      const score = room * 2 - (cx * ux + cy * uy);
+      if (score > best) { best = score; e.ex = cx; e.ey = cy; }
+    }
+    e.escT = 0.6; e.steerT = 0; e.hd = null;
+  }
+  // Smooth turning: the actual heading rotates toward the wanted one at a limited rate (proportional to the
+  // step, so it's frame-rate independent) instead of snapping, which was the jittery fast-spinning glitch.
+  function smoothHeading(e, wx, wy, step) {
+    if (!e.hd) { e.hd = { x: wx, y: wy }; return e.hd; }
+    const cur = Math.atan2(e.hd.y, e.hd.x);
+    let d = Math.atan2(wy, wx) - cur;
+    if (d > Math.PI) d -= Math.PI * 2; else if (d < -Math.PI) d += Math.PI * 2;
+    const maxTurn = step / (e.cfg.bodyRadius * 0.6);
+    const a = cur + Math.max(-maxTurn, Math.min(maxTurn, d));
+    e.hd.x = Math.cos(a); e.hd.y = Math.sin(a);
+    return e.hd;
+  }
   function steerMove(e, ux, uy, step) {
+    if (e.escT > 0) { ux = e.ex; uy = e.ey; }
     const look = e.cfg.bodyRadius * 1.2 + step;
     // While committed to a steer (steerT > 0) skip the direct heading, so it doesn't flip between "blocked" and
     // "clear" every frame at a wall edge (that was the shaking).
@@ -355,10 +381,11 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
     }
     if (!found && committed) { e.steerT = 0; return steerMove(e, ux, uy, step); } // nothing clear while committed: re-evaluate fresh
     if (!found) { const ox = e.x, oy = e.y; tryMove(e, ux * step, uy * step); return step > 0 ? Math.hypot(e.x - ox, e.y - oy) / step : 1; }
-    e.x += hx * step; e.y += hy * step;
-    if (e.cfg.flipsSideways) { if (Math.abs(hx) > 0.2) e.flip = hx > 0 ? 1 : -1; }
-    else e.angle = Math.atan2(hy, hx);
-    return 1;
+    const h = smoothHeading(e, hx, hy, step), ox = e.x, oy = e.y;
+    tryMove(e, h.x * step, h.y * step); // slides along walls if the eased heading clips something
+    if (e.cfg.flipsSideways) { if (Math.abs(h.x) > 0.2) e.flip = h.x > 0 ? 1 : -1; }
+    else e.angle = Math.atan2(h.y, h.x);
+    return step > 0 ? Math.min(1, Math.hypot(e.x - ox, e.y - oy) / step) : 1;
   }
   // Steps toward (tx, ty); returns the fraction (0..1) of the intended step that made progress along
   // the heading, so callers can tell "blocked / sliding along a wall" from "moving freely".
@@ -507,6 +534,7 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
     if (e.cd > 0) e.cd -= dt;
     if (e.notice > 0) e.notice -= dt;
     if (e.steerT > 0) e.steerT -= dt;
+    if (e.escT > 0) e.escT -= dt;
     if (e.dodgeT > 0) e.dodgeT -= dt;
     const dx = T.x - e.x, dy = T.y - e.y, d2 = dx * dx + dy * dy;
     // Enemies ignore the turtle on the home island (safe zone), while it's dying, and right after giving up.
@@ -644,6 +672,7 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
         }
         const progress = stepToward(e, aimX, aimY, chaseSpeed, dt, c.flies);
         e.stuck = progress < 0.3 ? e.stuck + dt : Math.max(0, e.stuck - dt);
+        if (!c.flies && e.stuck > 0.5 && e.escT <= 0 && e.stuck <= CONFIG.stuckSeconds) startEscape(e, dx, dy); // back away first, give up only if that fails
         if (!c.flies && e.stuck > CONFIG.stuckSeconds) { giveUpChase(e); return; }
         setAnim(e, c.flies ? R.fly : R.walk, CONFIG.animFps * 1.5, FRAMES);
         return;
