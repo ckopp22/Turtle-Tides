@@ -2258,6 +2258,22 @@
   }
 
   // px/py/ang/sc default to the world turtle; the hut interior passes screen-space values and a scale.
+  // Hunger warning: a bobbing thought bubble with a pulsing coconut over the head while starving (0 hunger, slowed, heart loss coming).
+  function drawHungerBubble() {
+    if (!window.Progression.isStarving() || state === 'sleeping') return;
+    const t = gameTime, pulse = 1 + Math.sin(t * 8) * 0.12;
+    const bx = turtle.x + 38, by = turtle.y - SPRITE_H * 0.75 + Math.sin(t * 3) * 4;
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,0.92)'; ctx.strokeStyle = '#444'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(bx - 16, by + 22, 3, 0, 7); ctx.fill(); ctx.stroke(); // trailing bubble dots
+    ctx.beginPath(); ctx.arc(bx - 8, by + 12, 5, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(bx, by - 8, 22, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.translate(bx, by - 8); ctx.scale(pulse, pulse);
+    ctx.fillStyle = '#6b4423'; ctx.beginPath(); ctx.arc(0, 0, 12, 0, 7); ctx.fill(); // coconut
+    ctx.fillStyle = '#2e1b0c'; for (const [dx, dy] of [[-4, -3], [4, -3], [0, 4]]) { ctx.beginPath(); ctx.arc(dx, dy, 2, 0, 7); ctx.fill(); }
+    ctx.restore();
+  }
+
   function drawTurtle(px = turtle.x, py = turtle.y, ang = turtle.angle, sc = 1) {
     if (riding && state === 'normal' && moveMode === 'walk' && px === turtle.x && wheelSprite.naturalWidth) { drawTurtleOnWheel(); return; }
     if (!sprite.complete || !sprite.naturalWidth) return;
@@ -2460,6 +2476,7 @@
     const visible = visibleBuf;
     if (perf) perf.visible = visible.length;
     drawSceneryWithTurtle(visible);
+    if (!mini) drawHungerBubble();
     if (!mini) drawWheelPrompt();
     if (window.Enemies && !skip.enemies) window.Enemies.drawSwipes(ctx, camX, camY, vw, vh); // attack swipes over the turtle
     if (mini) window.MiniGames.drawWorld(ctx, camX, camY, vw, vh); // spawn warnings at the screen edge

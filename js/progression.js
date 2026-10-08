@@ -1102,7 +1102,7 @@
   }
 
   window.Progression = {
-    tryPickup, grantCarriedCoins, bankCarried, takeLostItems, takeHit, getStarveDim: () => starveDim, isInvulnerable, setRespawnHandler, setUpgradeHandler, setDeathHandler, respawnAtHome,
+    tryPickup, grantCarriedCoins, bankCarried, takeLostItems, takeHit, getStarveDim: () => starveDim, isStarving: () => !dying && state.hunger <= 0 && state.hungerZeroTimer > 0, isInvulnerable, setRespawnHandler, setUpgradeHandler, setDeathHandler, respawnAtHome,
     update, restoreHearts, maxHearts, getHideConfig, swimSpeedMultiplier, moveSpeedMultiplier, toggleDayNight, drawHUD, setHomeButtonVisible, tryEatFromHud, getIconRow: ensureIconRow,
     topInset, fullViewH, buyUpgrade, canUpgrade, addStat, addPlayTime, claimPageReward, grantBankedCoins, setMinigameBest,
     attachSlot, getSaveData, persist,
