@@ -573,6 +573,13 @@
       if (state.homeLevel >= 4) state.homeLevel = Math.min(state.homeLevel + 1, max);
       if (state.homeSeenLevel >= 4) state.homeSeenLevel = Math.min(state.homeSeenLevel + 1, state.homeLevel);
     }
+    // homeVersion < 7 saves predate the Campfire Pit moving up to upgrade 8 (it used to be 12th, after the Rug), so levels 8-11
+    // move up by one (they get the pit free); level 12+ already owned both.
+    if ((data.homeVersion || 0) < 7) {
+      if (state.homeLevel >= 8 && state.homeLevel <= 11) state.homeLevel++;
+      if (state.homeSeenLevel >= 8 && state.homeSeenLevel <= 11) state.homeSeenLevel++;
+      state.homeSeenLevel = Math.min(state.homeSeenLevel, state.homeLevel);
+    }
     // Finds banked so far (old saves' shell trophies are dropped: they had no types).
     state.bookRewards = {};
     for (const k in (data.bookRewards || {})) if (data.bookRewards[k] === true) state.bookRewards[k] = true;
@@ -646,7 +653,7 @@
       adventure: { v: 1, chest: state.adventure.chest ? { ...state.adventure.chest } : null },
       cosmetics: { owned: state.cosmetics.owned.slice(), equipped: { ...state.cosmetics.equipped } },
       turtleMaster: state.turtleMaster,
-      homeVersion: 6, // 6 = Goggles inserted at upgrade 5; 5 = Table & Stools moved to upgrade 4 (opens the Adventure Zone); 4 = Window inserted at upgrade 5; 3 = homeLevel 0 is nothing, 1 is the hut, then its upgrades (2 = no hut step); bump if the save shape changes (loads tolerate it missing)
+      homeVersion: 7, // 7 = Campfire Pit moved to upgrade 8 (Window now unlocks Day/Night, pit unlocks Hide in Shell); 6 = Goggles inserted at upgrade 5; 5 = Table & Stools moved to upgrade 4 (opens the Adventure Zone); 4 = Window inserted at upgrade 5; 3 = homeLevel 0 is nothing, 1 is the hut, then its upgrades (2 = no hut step); bump if the save shape changes (loads tolerate it missing)
       homeSeenLevel: state.homeSeenLevel,
       stats: { ...state.stats },
       minigames: { ...state.minigames },

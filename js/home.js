@@ -49,7 +49,7 @@
     { id: 'table',   name: 'Table & Stools', layer: '04_table_and_stools_192.png', cost: 30, unlocks: ['adventureZone'], perk: 'New area',solids: [{ circle: [152, 82, 18] }, { circle: [152, 112, 8] }, { circle: [128, 82, 8] }], hotspot: { rect: [134, 64, 170, 100], action: 'bible' } },
     { id: 'goggles',  name: 'Goggles',        layer: null,                          cost: 35, unlocks: ['swimSpeed1'],             perk: 'Swim Speed I',               solids: [] }, // drawn in rebuildRoom, hanging on a stool
     { id: 'doormat', name: 'Doormat',        layer: '03_doormat_192.png',          cost: 40, unlocks: ['moveSpeed1'],             perk: 'Move Speed I',               solids: [] },
-    { id: 'window',  name: 'Window',         layer: null,                          cost: 45, unlocks: ['hideInShell'],             perk: 'Hide in Shell',            solids: [], hotspot: { rect: [74, 10, 118, 36], action: 'daynight' } }, // art is in the base room image; no layer
+    { id: 'window',  name: 'Window',         layer: null,                          cost: 45, unlocks: ['dayNight'],              perk: 'Day/Night',                  solids: [], hotspot: { rect: [74, 10, 118, 36], action: 'daynight' } }, // art is in the base room image; no layer
     { id: 'shelf',   name: 'Shelf',          layer: '05_shelf_192.png',            cost: 60, unlocks: ['collectionBook'],         perk: 'Collection Book',            solids: [], hotspot: { rect: [130, 17, 178, 36], action: 'book' } },
     { id: 'plant',   name: 'Plant',          layer: '06_plant_192.png',            cost: 75, unlocks: ['minigame'],              perk: 'Mini game',                  solids: [{ circle: [30, 158, 9] }], hotspot: { rect: [18, 142, 42, 168], action: 'minigame' } },
     { id: 'lantern', name: 'Lantern',        layer: '07_lantern_192.png',          cost: 95, unlocks: ['moveSpeed2'],             perk: 'Move Speed II',               solids: [] },
@@ -58,14 +58,18 @@
   // Outdoor upgrades come after the hut items (levels 9-10): the campfire next to the hut, first
   // unlit, then lit (animated) with Hide in Shell. Drawn on the island, not in the room.
   const OUTDOOR = [
-    { id: 'campfireUnlit', name: 'Campfire Pit', cost: 150, unlocks: [],              perk: 'A place for a fire' },
-    { id: 'campfireLit',   name: 'Campfire',     cost: 190, unlocks: ['dayNight'], perk: 'Day/Night' },
+    { id: 'campfireUnlit', name: 'Campfire Pit', cost: 150, unlocks: ['hideInShell'], perk: 'Hide in Shell' },
+    { id: 'campfireLit',   name: 'Campfire',     cost: 190, unlocks: [],            perk: 'A warm fire' },
     { id: 'stones',        name: 'Stepping Stones', cost: 230, unlocks: [],            perk: 'A path to the water' },
     { id: 'garden',        name: 'Garden Bed',   cost: 280, unlocks: ['slowHunger'],  perk: 'Slower hunger' },
     { id: 'onewheel',      name: 'One Wheel',    cost: 340, unlocks: ['moveSpeed3'],  perk: 'Move Speed III' },
   ];
   const HUT = { id: 'hut', name: 'Hut', cost: 15, unlocks: [], perk: 'A home of your own' }; // level 1
-  const UPGRADES = [HUT].concat(INDOOR, OUTDOOR); // everything the shop's Home row sells, in order
+  // Shop order: the Campfire Pit is bought right after the Window (upgrade 8); everything else keeps its relative order.
+  const byId = id => INDOOR.concat(OUTDOOR).find(u => u.id === id);
+  const UPGRADES = [HUT, 'bed', 'chest', 'table', 'goggles', 'doormat', 'window', 'campfireUnlit', 'shelf', 'plant', 'lantern', 'rug', 'campfireLit', 'stones', 'garden', 'onewheel'].map(x => typeof x === 'string' ? byId(x) : x); // everything the shop's Home row sells, in order
+  const UPGRADE_IDX = {};
+  UPGRADES.forEach((u, i) => { UPGRADE_IDX[u.id] = i; });
   const DRAW_FIRST = 'rug'; // layered under every other item
   const POP = { startDelay: 0.5, stagger: 0.45, duration: 0.45, overshoot: 1.7 }; // newly unlocked items pop in on entering
 
@@ -143,15 +147,14 @@
   let builtLevel = -1;
   const level = () => Math.min(window.Progression.state.homeLevel, UPGRADES.length);
   const hutBuilt = () => level() >= 1;
-  const indoorCount = () => clamp(level() - 1, 0, INDOOR.length);              // INDOOR items unlocked
-  const outdoorCount = () => clamp(level() - 1 - INDOOR.length, 0, OUTDOOR.length); // OUTDOOR items unlocked, in order
-  const fireStage = () => Math.min(outdoorCount(), 2); // 0 none, 1 pit, 2 lit
+  const owned = id => UPGRADE_IDX[id] < level(); // bought yet (indoor or outdoor)
+  const fireStage = () => owned('campfireLit') ? 2 : owned('campfireUnlit') ? 1 : 0; // 0 none, 1 pit, 2 lit
   function syncUnlocked() {
-    const n = indoorCount();
     roomSolids.length = 0;
-    INDOOR.forEach((u, i) => {
-      shown[u.id] = i < n;
-      if (i < n) for (const sh of u.solids) roomSolids.push(sh.rect ? [0, ...sh.rect] : [1, ...sh.circle]);
+    INDOOR.forEach(u => {
+      const have = owned(u.id);
+      shown[u.id] = have;
+      if (have) for (const sh of u.solids) roomSolids.push(sh.rect ? [0, ...sh.rect] : [1, ...sh.circle]);
     });
     builtLevel = level();
     rebuildRoom();
@@ -168,18 +171,20 @@
   const pops = []; // { id, delay, cx, cy } in art px
   let popClock = 0, toast = null, toastTimer = 0;
   function startPops() {
-    const P = window.Progression, lv = level(), seen = clamp(Math.min(P.state.homeSeenLevel, lv) - 1, 0, INDOOR.length);
+    const P = window.Progression, lv = level(), seen = clamp(Math.min(P.state.homeSeenLevel, lv), 0, UPGRADES.length); // upgrades already seen (UPGRADES index)
     pops.length = 0;
     syncUnlocked(); // clean slate (e.g. an animation cut short by leaving last time)
     if (lv > seen) {
       const names = [];
-      for (let i = seen; i < indoorCount(); i++) { // outdoor items just appear on the island
-        const u = INDOOR[i];
+      let k = 0;
+      for (let i = seen; i < lv; i++) {
+        const u = UPGRADES[i];
+        if (!INDOOR.includes(u)) continue; // outdoor items just appear on the island
         names.push(`${u.name} (${u.perk})`);
         if (!u.layer) continue; // layer-less items (the window) are already in the base art: toast only
         const b = layerBBox(u.id);
         shown[u.id] = false; // keep it out of the cached canvas until its animation is done
-        pops.push({ id: u.id, delay: POP.startDelay + (i - seen) * POP.stagger, cx: b.x + b.w / 2, cy: b.y + b.h / 2, played: false });
+        pops.push({ id: u.id, delay: POP.startDelay + (k++) * POP.stagger, cx: b.x + b.w / 2, cy: b.y + b.h / 2, played: false });
       }
       if (names.length) {
         rebuildRoom();
@@ -278,7 +283,7 @@
     }
   }
   // Furniture with a hotspot that is unlocked and has an action wired up.
-  function spotActive(i) { const u = INDOOR[i]; return !!u.hotspot && !!ACTIONS[u.hotspot.action] && i < indoorCount() && (u.hotspot.action !== 'daynight' || hasFeature('dayNight')); } // the window toggle waits for Day/Night (the lit campfire)
+  function spotActive(i) { const u = INDOOR[i]; return !!u.hotspot && !!ACTIONS[u.hotspot.action] && owned(u.id) && (u.hotspot.action !== 'daynight' || hasFeature('dayNight')); } // the window toggle waits for Day/Night (the lit campfire)
   function hitSpot(rx, ry) {
     const pad = CONFIG.hitPad;
     for (let i = 0; i < INDOOR.length; i++) {
@@ -461,14 +466,14 @@
   // Flat ground-level pieces on the island, drawn under the turtle/scenery (so no depth sorting): the
   // outdoor campfire. `t` is real time in seconds (drives the flame animation).
   function drawGround(ctx, t) {
-    const stage = fireStage(), n = outdoorCount(), ok = i => i.complete && i.naturalWidth;
+    const stage = fireStage(), ok = i => i.complete && i.naturalWidth;
     ctx.imageSmoothingEnabled = false;
-    if (n >= 3 && ok(stonesImg)) { // stepping stones from the door down to the water
+    if (owned('stones') && ok(stonesImg)) { // stepping stones from the door down to the water
       const c = CONFIG.stones;
       for (const dy of c.ys) ctx.drawImage(stonesImg, hutX - c.size / 2, hutY + dy - c.size / 2, c.size, c.size);
     }
-    if (n >= 4 && ok(gardenImg)) { const c = CONFIG.garden; ctx.drawImage(gardenImg, gardenX - c.size / 2, gardenY - c.size / 2, c.size, c.size); }
-    if (n >= 5 && !wheelRidden && ok(onewheelImg)) {
+    if (owned('garden') && ok(gardenImg)) { const c = CONFIG.garden; ctx.drawImage(gardenImg, gardenX - c.size / 2, gardenY - c.size / 2, c.size, c.size); }
+    if (owned('onewheel') && !wheelRidden && ok(onewheelImg)) {
       const c = CONFIG.onewheel, h = c.w * onewheelImg.naturalHeight / onewheelImg.naturalWidth;
       ctx.imageSmoothingEnabled = true;
       ctx.drawImage(onewheelImg, wheelX - c.w / 2, wheelY - h / 2, c.w, h);
