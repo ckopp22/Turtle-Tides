@@ -488,6 +488,7 @@
     if (hasSkill('swimSpeed1')) return CONFIG.speed.swimSpeedTiers[0];
     return 1;
   }
+  function masterSpeed() { return { land: CONFIG.speed.moveSpeedTiers[CONFIG.speed.moveSpeedTiers.length - 1], swim: CONFIG.speed.swimSpeedTiers[CONFIG.speed.swimSpeedTiers.length - 1] }; } // top speed tiers (Turtle Master), for Survival
   function moveSpeedMultiplier() {
     if (hasSkill('moveSpeed3')) return CONFIG.speed.moveSpeedTiers[2];
     if (hasSkill('moveSpeed2')) return CONFIG.speed.moveSpeedTiers[1];
@@ -1103,7 +1104,7 @@
 
   window.Progression = {
     tryPickup, grantCarriedCoins, bankCarried, takeLostItems, takeHit, getStarveDim: () => starveDim, isStarving: () => !dying && state.hunger <= 0 && state.hungerZeroTimer > 0, isInvulnerable, setRespawnHandler, setUpgradeHandler, setDeathHandler, respawnAtHome,
-    update, restoreHearts, maxHearts, getHideConfig, swimSpeedMultiplier, moveSpeedMultiplier, toggleDayNight, drawHUD, setHomeButtonVisible, tryEatFromHud, getIconRow: ensureIconRow,
+    update, restoreHearts, maxHearts, getHideConfig, swimSpeedMultiplier, moveSpeedMultiplier, masterSpeed, toggleDayNight, drawHUD, setHomeButtonVisible, tryEatFromHud, getIconRow: ensureIconRow,
     topInset, fullViewH, buyUpgrade, canUpgrade, addStat, addPlayTime, claimPageReward, grantBankedCoins, setMinigameBest,
     attachSlot, getSaveData, persist,
     hasSkill, FINDS: CONFIG.finds, randomFindIndex,

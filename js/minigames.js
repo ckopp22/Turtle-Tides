@@ -59,11 +59,12 @@
 
     // ---------------- Survival ----------------
     survival: {
-      startEnemies: 3, addEverySeconds: 10, maxEnemies: 12, maxEnemiesMobile: 8, // live enemy target = start + elapsed / addEvery, capped
+      startEnemies: 4, addEverySeconds: 5, maxEnemies: 25, maxEnemiesMobile: 14, // live enemy target = start + elapsed / addEvery, capped
       detectEverySeconds: 15, detectBonusPx: 40, detectBonusMax: 240,           // every enemy's detect radius grows by this much per step
       speedEverySeconds: 20, speedStep: 0.03, speedMax: 1.2,                     // optional small speed ramp (x base)
       maxSpeedFrac: 0.95,                                                        // a slow type never gets faster than this x the turtle (the snake is exempt, as in the main game)
-      weights: { crab: 3, bear: 2, snake: 2, seagull: 2 },                       // spawn mix
+      weights: { crab: 3, bear: 2, seagull: 3 },                      // spawn mix (wolves are separate: one every wolfEverySeconds)
+      wolfEverySeconds: 30, maxCrabs: 4, wolfExtraSlots: 12,                   // a wolf spawns on top of the cap this often; crabs on the map at once; pool slots reserved for wolves
       startGraceSeconds: 1.5,     // first telegraph comes this long after the start
       spawn: {
         tickSeconds: 0.25,        // how often the spawner runs
@@ -72,11 +73,11 @@
         minPlayerDist: 380,       // never closer than this to the turtle
         telegraphSeconds: 0.9,    // warning marker before the enemy appears
         maxPending: 3,            // warnings at once
+        aheadChance: 0.75, aheadSpread: 0.9, // share of spawns placed in front of the turtle's heading, and how wide (radians either side)
         recycleScreens: 2.2,      // an enemy this many screens away is removed so a new one spawns near the turtle
       },
-      startRing: [250, 650],      // the turtle starts this far (world px) beyond the water ring, on the mainland
-      // Coins: perChunk every perSeconds survived, plus a one-time bonus at each milestone (seconds, coins). Paid as it's earned.
-      coins: { perSeconds: 10, perChunk: 1, milestones: [[30, 5], [60, 12], [120, 30], [180, 50]] },
+      // Coins: perChunk every perSeconds survived, plus `bonus` every bonusEvery seconds. Paid as it's earned.
+      coins: { perSeconds: 10, perChunk: 2, bonusEvery: 30, bonus: 10 },
     },
   };
 
@@ -915,43 +916,49 @@
     view = 'survival'; phase = 'play';
     const cap = isMobile() ? SC.maxEnemiesMobile : SC.maxEnemies;
     S = { elapsed: 0, hit: false, paid: 0, lastSec: -1, lastCount: -1, bestAtStart: P().state.minigames.survivalBest, cap,
-      detectStep: -1, speedStep: -1, spawnTimer: SC.startGraceSeconds, pendN: 0,
+      wolfTimer: SC.wolfEverySeconds, wolfDue: false, detectStep: -1, speedStep: -1, spawnTimer: SC.startGraceSeconds, pendN: 0,
       px: new Float32Array(SC.spawn.maxPending), py: new Float32Array(SC.spawn.maxPending), pt: new Float32Array(SC.spawn.maxPending),
       pk: new Array(SC.spawn.maxPending).fill(''), pon: new Uint8Array(SC.spawn.maxPending), clock: 0 };
     m.enter();
-    // Start on the mainland (not the home island) so land enemies can reach the turtle.
-    const tt = m.turtle, C = m.center;
+    if (window.TT_SOUND && m.music) { window.TT_SOUND.musicPrepareAdventure(m.music.files); window.TT_SOUND.musicZone(true, m.music.fade); } // adventure soundtrack
+    // Start near the middle of the fenced arena (west thick forest).
+    const tt = m.turtle, C = m.center, A = m.arena, ax = (A.x0 + A.x1) / 2, ay = (A.y0 + A.y1) / 2;
     let placed = false;
     for (let i = 0; i < 60 && !placed; i++) {
-      const a = Math.random() * 6.283, r = m.waterOuterR + rand(SC.startRing[0], SC.startRing[1]), x = C.x + Math.cos(a) * r, y = C.y + Math.sin(a) * r;
+      const x = ax + rand(-250, 250), y = ay + rand(-250, 250);
       if (m.walkable(x, y) && !m.blockedAt(x, y, 60)) { tt.x = x; tt.y = y; placed = true; }
     }
-    if (!placed) { tt.x = C.x; tt.y = C.y - m.waterOuterR - 300; }
+    if (!placed) { tt.x = ax; tt.y = ay; }
     tt.vx = tt.vy = 0; tt.angle = Math.random() * 6.283;
     m.ensureGroundAt(tt.x, tt.y);
     if (!weightKeys) { weightKeys = Object.keys(SC.weights); weightSum = weightKeys.reduce((s, k) => s + SC.weights[k], 0); }
     survApi = {
       turtle: tt, worldSize: m.worldSize, center: C, worldMin: m.worldMin(), worldMax: m.worldMax(), inHomeZone: m.inHomeZone,
       walkable: m.walkable, flyable: m.flyable, blockedAt: m.blockedAt, isHomeIsland: () => false, inSandText: () => false, // no safe zones
-      biomeAt: () => '', view: m.view, turtleAlive: () => !S.hit, isNight: () => false, basePlayerSpeed: m.basePlayerSpeed,
+      arena: m.arena, biomeAt: () => '', view: m.view, turtleAlive: () => !S.hit, isNight: () => false, basePlayerSpeed: m.basePlayerSpeed,
       takeHit: () => { if (S) S.hit = true; return true; }, // one hit ends the run (no hearts)
     };
-    window.Enemies.arena.start(survApi, cap, SC.maxSpeedFrac);
+    window.Enemies.arena.start(survApi, cap + SC.wolfExtraSlots, SC.maxSpeedFrac);
     buildHud('0:00', true);
     setText(hudB, '0 enemies');
     updateSurvivalDifficulty();
-    // the spawner fills the first few slots one telegraph at a time
+    // The opening pack appears at once (just off-screen, no telegraphs); the spawner adds more over time.
+    const v0 = m.view(), v = { x: tt.x - v0.w / 2, y: tt.y - v0.h / 2, w: v0.w, h: v0.h };
+    for (let i = 0; i < SC.startEnemies * 4 && window.Enemies.arena.count() < SC.startEnemies; i++) {
+      pickSpawn(m, v);
+      for (let s = 0; s < S.pon.length; s++) if (S.pon[s]) { S.pon[s] = 0; S.pendN--; window.Enemies.arena.spawn(S.pk[s], S.px[s], S.py[s]); }
+    }
   }
   function releaseSurvival() {
     if (window.Enemies) window.Enemies.arena.stop();
+    const mu = api() && api().music;
+    if (window.TT_SOUND && mu) window.TT_SOUND.musicZone(mu.inZone(), mu.fade); // back to the zone's normal music
     survApi = null; S = null;
   }
 
   function coinsFor(sec) {
     const C = SC.coins;
-    let n = Math.floor(sec / C.perSeconds) * C.perChunk;
-    for (const [at, bonus] of C.milestones) if (sec >= at) n += bonus;
-    return n;
+    return Math.floor(sec / C.perSeconds) * C.perChunk + Math.floor(sec / C.bonusEvery) * C.bonus;
   }
   function updateSurvivalDifficulty() {
     const e = S.elapsed, ds = Math.floor(e / SC.detectEverySeconds), ss = Math.floor(e / SC.speedEverySeconds);
@@ -964,7 +971,7 @@
     if (phase !== 'play') return;
     const m = api(), tt = m.turtle, E = window.Enemies;
     S.elapsed += dt; S.clock += dt;
-    m.move(dt, 1, true);
+    m.move(dt, 1, true, false, true);
     m.collide();
     E.update(dt);
     if (S.hit) { finishRun(true); return; }
@@ -985,7 +992,10 @@
       const v = m.view(), far = SC.spawn.recycleScreens * Math.max(v.w, v.h);
       E.arena.recycleFar(tt.x, tt.y, far * far); // frees enemies the turtle left far behind
       const target = Math.min(S.cap, SC.startEnemies + Math.floor(S.elapsed / SC.addEverySeconds));
-      if (E.arena.count() + S.pendN < target && S.pendN < SC.spawn.maxPending) pickSpawn(m, v);
+      S.wolfTimer -= SC.spawn.tickSeconds;
+      if (S.wolfTimer <= 0) { S.wolfTimer += SC.wolfEverySeconds; S.wolfDue = true; }
+      if (S.wolfDue && S.pendN < SC.spawn.maxPending && pickSpawn(m, v, 'wolf')) S.wolfDue = false; // the scheduled wolf ignores the cap
+      else if (E.arena.count() - E.arena.count('wolf') + S.pendN < target && S.pendN < SC.spawn.maxPending) pickSpawn(m, v);
     }
     // HUD + coins, only when something changed
     const sec = Math.floor(S.elapsed);
@@ -998,19 +1008,32 @@
     if (cnt !== S.lastCount) { S.lastCount = cnt; setText(hudB, cnt + (cnt === 1 ? ' enemy' : ' enemies')); }
   }
   // Picks a point just outside the camera view (not near the turtle) and starts its warning marker.
-  function pickSpawn(m, v) {
-    const sp = SC.spawn, tt = m.turtle;
-    let key = weightKeys[0], r = Math.random() * weightSum;
-    for (const k of weightKeys) { r -= SC.weights[k]; if (r <= 0) { key = k; break; } }
+  function pickSpawn(m, v, forceKey) {
+    const sp = SC.spawn, tt = m.turtle, moving = Math.hypot(tt.vx, tt.vy) > 40, head = Math.atan2(tt.vy, tt.vx);
+    let key = forceKey;
+    if (!key) {
+      let crabs = window.Enemies.arena.count('crab'); // live crabs + warnings already on screen
+      for (let s = 0; s < S.pon.length; s++) if (S.pon[s] && S.pk[s] === 'crab') crabs++;
+      const noCrab = crabs >= SC.maxCrabs, total = noCrab ? weightSum - SC.weights.crab : weightSum;
+      let r = Math.random() * total; key = weightKeys[0];
+      for (const k of weightKeys) { if (noCrab && k === 'crab') continue; r -= SC.weights[k]; if (r <= 0) { key = k; break; } }
+    }
     for (let i = 0; i < sp.attempts; i++) {
-      const mg = rand(sp.marginMin, sp.marginMax), u = Math.random(), side = (Math.random() * 4) | 0;
-      const x = side === 0 ? v.x - mg : side === 1 ? v.x + v.w + mg : v.x - mg + u * (v.w + 2 * mg);
-      const y = side === 2 ? v.y - mg : side === 3 ? v.y + v.h + mg : v.y - mg + u * (v.h + 2 * mg);
+      let x, y;
+      if (moving && Math.random() < sp.aheadChance) { // ahead of the turtle's heading, just past the screen edge, so running straight meets them
+        const a = head + rand(-sp.aheadSpread, sp.aheadSpread), d = Math.hypot(v.w, v.h) / 2 + rand(sp.marginMin, sp.marginMax);
+        x = tt.x + Math.cos(a) * d; y = tt.y + Math.sin(a) * d;
+      } else {
+        const mg = rand(sp.marginMin, sp.marginMax), u = Math.random(), side = (Math.random() * 4) | 0;
+        x = side === 0 ? v.x - mg : side === 1 ? v.x + v.w + mg : v.x - mg + u * (v.w + 2 * mg);
+        y = side === 2 ? v.y - mg : side === 3 ? v.y + v.h + mg : v.y - mg + u * (v.h + 2 * mg);
+      }
       const dx = x - tt.x, dy = y - tt.y;
       if (dx * dx + dy * dy < sp.minPlayerDist * sp.minPlayerDist) continue;
       if (key === 'seagull' ? !m.flyable(x, y) : (!m.walkable(x, y) || m.blockedAt(x, y, 34))) continue;
-      for (let s = 0; s < S.pon.length; s++) if (!S.pon[s]) { S.pon[s] = 1; S.px[s] = x; S.py[s] = y; S.pt[s] = sp.telegraphSeconds; S.pk[s] = key; S.pendN++; return; }
+      for (let s = 0; s < S.pon.length; s++) if (!S.pon[s]) { S.pon[s] = 1; S.px[s] = x; S.py[s] = y; S.pt[s] = sp.telegraphSeconds; S.pk[s] = key; S.pendN++; return true; }
     }
+    return false;
   }
 
   // Spawn warnings: a pulsing marker pinned to the screen edge, pointing at where the enemy will appear (game.js calls this inside the world transform).

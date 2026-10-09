@@ -83,6 +83,11 @@
   const WORLD_PAD = WORLD_SIZE * (ADVENTURE.worldMult - 1) / 2; // new land on each side of the home zone
   const WORLD_MIN = -WORLD_PAD, WORLD_MAX = WORLD_SIZE + WORLD_PAD;
   const CENTER = { x: WORLD_SIZE / 2, y: WORLD_SIZE / 2 };
+  // Survival mini game arena: a small fenced square in the middle of the west thick forest (post line = x0..x1 / y0..y1, N tiles a side).
+  const SURV_N = 26, SURV_SIZE = SURV_N * ADVENTURE.fenceTile;
+  const SURV = { x0: CENTER.x - 1500 - SURV_SIZE / 2, y0: CENTER.y - SURV_SIZE / 2, x1: 0, y1: 0, stop: 40 }; // stop: turtle halts this far inside the post line
+  SURV.x1 = SURV.x0 + SURV_SIZE; SURV.y1 = SURV.y0 + SURV_SIZE;
+  const inSurv = (x, y) => x > SURV.x0 && x < SURV.x1 && y > SURV.y0 && y < SURV.y1;
   const ISLAND_R = 260;                             // home island radius: safe area, no obstacles
   const WATER_WIDTH = 300;                          // water ring width beyond the island
   const WATER_OUTER_R = ISLAND_R + WATER_WIDTH;     // mainland starts here
@@ -2107,7 +2112,12 @@
   let dpr = 1, viewW = 0, viewH = 0;
 
   function clampToWorld() {
-    const m = adventureUnlocked ? TURTLE_RADIUS : FENCE_STOP;
+    if (miniMode() === 'survival') {
+      turtle.x = Math.max(SURV.x0 + SURV.stop, Math.min(SURV.x1 - SURV.stop, turtle.x));
+      turtle.y = Math.max(SURV.y0 + SURV.stop, Math.min(SURV.y1 - SURV.stop, turtle.y));
+      return;
+    }
+    const m = advOpen() ? TURTLE_RADIUS : FENCE_STOP;
     turtle.x = Math.max(bounds.x0 + m, Math.min(bounds.x1 - m, turtle.x));
     turtle.y = Math.max(bounds.y0 + m, Math.min(bounds.y1 - m, turtle.y));
   }
@@ -2392,7 +2402,8 @@
   // While the Adventure Zone is locked: fog rolling in toward the home zone's edge, and the fence along FENCE_A. Only the
   // tiles in view are drawn (at most a couple dozen per edge). The turtle stops at the fence (see update()).
   function drawFence(vw, vh) {
-    if (adventureUnlocked) return;
+    if (miniMode() === 'survival') { drawSurvFence(vw, vh); return; }
+    if (advOpen()) return;
     const W = WORLD_SIZE, fb = ADVENTURE.fogBand, T = ADVENTURE.fenceTile, A = FENCE_A, N = FENCE_N, far = A + N * T;
     const top = camY < fb, bottom = camY + vh > W - fb, left = camX < fb, right = camX + vw > W - fb;
     if (!(top || bottom || left || right)) return;
@@ -2420,6 +2431,19 @@
     if (bottom) for (let k = k0x; k <= k1x; k++) tile(k === 0 ? F.corner_up_right : k === N ? F.corner_up_left : F.horizontal_depth, A + k * T, far);
     if (left) for (let k = Math.max(1, k0y); k <= Math.min(N - 1, k1y); k++) tile(F.vertical, A, A + k * T);
     if (right) for (let k = Math.max(1, k0y); k <= Math.min(N - 1, k1y); k++) tile(F.vertical, far, A + k * T);
+    ctx.restore();
+  }
+  // Survival arena fence: a closed ring of tiles on the SURV post line (only the tiles in view are drawn).
+  function drawSurvFence(vw, vh) {
+    const T = ADVENTURE.fenceTile, h = T / 2, F = FENCE_IMG, N = SURV_N;
+    ctx.save(); ctx.imageSmoothingEnabled = false;
+    const tile = (img, cx, cy) => { if (img.complete && img.naturalWidth && cx > camX - T && cx < camX + vw + T && cy > camY - T && cy < camY + vh + T) ctx.drawImage(img, cx - h, cy - h, T, T); };
+    for (let k = 0; k <= N; k++) {
+      const x = SURV.x0 + k * T, y = SURV.y0 + k * T;
+      tile(k === 0 ? F.corner_down_right : k === N ? F.corner_down_left : F.horizontal_depth, x, SURV.y0);
+      tile(k === 0 ? F.corner_up_right : k === N ? F.corner_up_left : F.horizontal_depth, x, SURV.y1);
+      if (k > 0 && k < N) { tile(F.vertical, SURV.x0, y); tile(F.vertical, SURV.x1, y); }
+    }
     ctx.restore();
   }
   function inView(s, vw, vh, margin) {
@@ -2578,7 +2602,9 @@
   const ENEMY_ZONE_M = 0; // enemies reach the whole square world, so they can get a turtle hugging the edge
   // Enemies may go anywhere inside the circle that fits the playable world: the old circle until the zone is
   // open (so a locked game plays exactly as before), the enlarged one after, so they can cross the old edge both ways.
-  const enemyRoom = (x, y) => adventureUnlocked
+  const enemyRoom = (x, y) => miniMode() === 'survival'
+    ? inSurv(x, y) // Survival never leaves its fenced arena
+    : adventureUnlocked
     ? x > WORLD_MIN + ENEMY_ZONE_M && x < WORLD_MAX - ENEMY_ZONE_M && y > WORLD_MIN + ENEMY_ZONE_M && y < WORLD_MAX - ENEMY_ZONE_M
     : (x - CENTER.x) ** 2 + (y - CENTER.y) ** 2 <= ENEMY_WALK_R2;
   if (!TEST && window.Enemies && !skip.noenemies) window.Enemies.init({
@@ -2603,9 +2629,11 @@
   // and the real world render instead of copying them. The main game is frozen while one runs (update()/render() hooks above);
   // enter() saves the turtle and exit() puts everything back exactly where it was. ----
   function miniMode() { return window.MiniGames ? window.MiniGames.mode() : null; }
-  let miniSaved = null;
+  let miniSaved = null, surviveBounds = null;
+  const advOpen = () => adventureUnlocked && miniMode() !== 'survival'; // false during Survival so the map is the locked home square
   function miniEnter() {
     if (miniSaved) return;
+    if (miniMode() === 'survival') { surviveBounds = Object.assign({}, bounds); bounds.x0 = bounds.y0 = 0; bounds.x1 = bounds.y1 = WORLD_SIZE; }
     miniSaved = { x: turtle.x, y: turtle.y, vx: turtle.vx, vy: turtle.vy, angle: turtle.angle, state, stateTime, moveMode, floating, riding, walkFrame };
     state = 'normal'; stateTime = 0; floating = false; moveMode = 'walk'; walkFrame = 0; riding = false; shakeTime = 0;
     turtle.vx = turtle.vy = 0;
@@ -2613,17 +2641,20 @@
   function miniExit() {
     const m = miniSaved; if (!m) return;
     miniSaved = null;
+    if (surviveBounds) { Object.assign(bounds, surviveBounds); surviveBounds = null; }
     turtle.x = m.x; turtle.y = m.y; turtle.vx = m.vx; turtle.vy = m.vy; turtle.angle = m.angle;
     state = m.state; stateTime = m.stateTime; moveMode = m.moveMode; floating = m.floating; riding = m.riding; walkFrame = m.walkFrame;
     if (window.TT_SOUND) { window.TT_SOUND.walking(false, 1); window.TT_SOUND.swimming(false, true); }
   }
   // One step of the turtle's own movement (same accel/decel, walk/swim speeds and animation as update(), minus skills and hunger).
   // Returns the speed. The caller does its own collisions.
-  function miniMove(dt, speedScale, allowSwim, rot90) { // rot90: the minigame's world is turned 90deg (screen up = +x, screen right = +y), so turn the input to match
+  function miniMove(dt, speedScale, allowSwim, rot90, master) { // rot90: the minigame's world is turned 90deg (screen up = +x, screen right = +y), so turn the input to match
+    if (shakeTime > 0) shakeTime = Math.max(0, shakeTime - dt); // update() is frozen during mini games, so the shake countdown runs here
     let dir = getDirection();
     if (rot90) dir = { x: -dir.y, y: dir.x };
     const inWater = allowSwim && isWater(turtle.x, turtle.y);
-    const m = (inWater ? WATER_SPEED_MULT : LAND_SPEED_MULT) * speedScale;
+    const ms = master ? window.Progression.masterSpeed() : null; // Survival: Turtle Master speed regardless of owned skills
+    const m = (inWater ? WATER_SPEED_MULT : LAND_SPEED_MULT) * speedScale * (ms ? (inWater ? ms.swim : ms.land) : 1);
     const tvx = dir.x * MAX_SPEED * m, tvy = dir.y * MAX_SPEED * m;
     const rate = (dir.x !== 0 || dir.y !== 0 ? ACCEL : DECEL) * dt;
     const dvx = tvx - turtle.vx, dvy = tvy - turtle.vy, dl = Math.hypot(dvx, dvy);
@@ -2656,9 +2687,10 @@
     walkable: (x, y) => enemyRoom(x, y) && !isWater(x, y), // Survival has no safe island: same as the main walkable minus the island rule
     flyable: (x, y) => enemyRoom(x, y),
     center: CENTER, worldSize: WORLD_SIZE, waterOuterR: WATER_OUTER_R,
-    worldMin: () => adventureUnlocked ? WORLD_MIN : 0, worldMax: () => adventureUnlocked ? WORLD_MAX : WORLD_SIZE,
+    worldMin: () => SURV.x0, worldMax: () => SURV.x1, arena: SURV, // Survival stays inside its fenced arena in the west forest
     basePlayerSpeed: MAX_SPEED * LAND_SPEED_MULT,
     view: () => { viewRect.x = camX; viewRect.y = camY; viewRect.w = viewW / ZOOM; viewRect.h = viewH / ZOOM; return viewRect; },
+    music: { files: ADVENTURE.music.files, fade: ADVENTURE.music.fadeSeconds, inZone: () => inAdventure },
     size: () => { miniSize.w = viewW; miniSize.h = viewH; return miniSize; }, // CSS px of the canvas
   };
   const miniSize = { w: 0, h: 0 };

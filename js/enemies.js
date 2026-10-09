@@ -41,6 +41,11 @@
     debugSpawnOffset: 150,   // world px: ?debug=1 spawn key puts the enemy this far from the turtle
     cutLeadSeconds: 1.1,     // cut-off wolves aim this many seconds ahead of the turtle's velocity...
     cutMinAhead: 150,        // ...but at least this many world px ahead
+    chargerTurnRate: 1.2,      // Survival chargers: max turn in radians/second
+    lungeDist: 450,          // Survival chargers: commit to a straight run once this close (world px)...
+    lungeSeconds: 1.1,       // ...for this long (they overshoot and loop back)...
+    lungeCooldown: 1.5,      // ...and can't lunge again for this long after it starts
+    edgeChaseDist: 350,      // Survival bears: patrol the fence, but chase the turtle directly when it comes within this many world px
     cutSpread: 130,          // world px: how far the flankers sit to either side of the lead spot
     spawnTickSeconds: 0.2,   // the spawner runs at most this often
     spawnsPerTick: 6,        // ...and places at most this many enemies per run (a big zone pool fills in over a few seconds)
@@ -234,7 +239,12 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
       if (arena) return;
       saved = { pool, api, now, nearCount, tvx, tvy, lastTx };
       arena = { types: {}, maxSpeedFrac, detectBonus: 0, speedMult: 1 };
-      for (const k in CONFIG.types) if (!CONFIG.types[k].nocturnal) arena.types[k] = Object.assign({}, CONFIG.types[k]);
+      for (const k in CONFIG.types) arena.types[k] = Object.assign({}, CONFIG.types[k]);
+      // Survival roles: crab/seagull/wolf = chargers (can't slow down or turn sharply, aim ahead of the turtle and overshoot),
+      // bear = edge blocker (patrols the fence line to cut off exits, chases only when the turtle is close).
+      for (const k in arena.types) arena.types[k].cutOff = false;
+      for (const k of ['crab', 'seagull', 'wolf']) if (arena.types[k]) { arena.types[k].role = 'charger'; arena.types[k].turnRate = CONFIG.chargerTurnRate; }
+      if (arena.types.bear) arena.types.bear.role = 'edge';
       pool = []; for (let i = 0; i < max; i++) pool.push(makeSlot(null, Infinity));
       nearList.length = Math.max(nearList.length, max);
       api = a; nearCount = 0; tvx = tvy = 0; lastTx = null;
@@ -261,10 +271,10 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
       for (const e of pool) if (!e.active) { placeEnemy(e, type, x, y, ''); e.respawnAt = Infinity; return true; }
       return false;
     },
-    count() { let n = 0; for (const e of pool) if (e.active) n++; return n; },
+    count(type) { let n = 0; for (const e of pool) if (e.active && (!type || e.type === type)) n++; return n; },
     // Frees every enemy farther than sqrt(d2) from (x, y) so the spawner can replace it near the player.
     recycleFar(x, y, d2) { let n = 0; for (const e of pool) if (e.active && (e.x - x) ** 2 + (e.y - y) ** 2 > d2) { e.active = false; n++; } return n; },
-    typeNames() { return Object.keys(arena ? arena.types : CONFIG.types).filter(k => !CONFIG.types[k].nocturnal); },
+    typeNames() { return Object.keys(arena ? arena.types : CONFIG.types).filter(k => arena || !CONFIG.types[k].nocturnal); },
     get on() { return !!arena; },
   };
 
@@ -273,7 +283,7 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
     e.type = type; e.active = true;
     e.cfg = arena ? arena.types[type] : adv && !api.inHomeZone(x, y) ? ADV_TYPES[type] : CONFIG.types[type]; // stats follow where it spawned (arena: the Survival ramp's live copy)
     e.x = e.sx = x; e.y = e.sy = y; e.biome = biome;
-    e.state = WANDER; e.t = 0; e.anim = 0; e.hasTarget = false; e.pause = rnd(0.5, 2); e.nightSleep = false; e.notice = 0;
+    e.ha = undefined; e.lungeT = e.lungeCd = 0; e.state = WANDER; e.t = 0; e.anim = 0; e.hasTarget = false; e.pause = rnd(0.5, 2); e.nightSleep = false; e.notice = 0;
     e.cd = 0; e.steer = 0; e.steerT = 0; e.hd = null; e.escT = 0; e.dodge = 0; e.dodgeT = 0; e.giveUp = 0; e.lose = 0; e.stuck = 0; e.unreach = 0; e.flip = Math.random() < 0.5 ? 1 : -1;
   }
 
@@ -507,6 +517,7 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
   // Shared by CHASE and STUN: gives up on the turtle's safe-zone / too-far / unreachable conditions.
   function chaseChecks(e, dt, d2, safe, alive) {
     if (!alive || safe) { giveUpChase(e); return true; }
+    if (arena) return false; // Survival: never loses interest
     if (d2 > LOSE2) { e.lose += dt; if (e.lose > CONFIG.loseInterestSeconds) { giveUpChase(e); return true; } }
     else e.lose = 0;
     // Land enemies can't follow into water: stop at the shore and lose interest after a few seconds.
@@ -547,6 +558,10 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
           if (c.burrowTime) { if (e.state !== HIDDEN && e.state !== BURROW) setState(e, BURROW); } else setState(e, SLEEP);
         }
       } else if (e.nightSleep) { e.nightSleep = false; e.hiddenFor = 0; }
+    }
+    // Survival: every animal is locked on the turtle from the moment it spawns (never wanders, sleeps, burrows or gives up).
+    if (arena && alive && e.state !== CHASE && e.state !== ATTACK && e.state !== STUN) {
+      e.giveUp = 0; e.notice = 0; e.flank = Math.random() * Math.PI * 2; e.lose = 0; e.stuck = 0; e.unreach = 0; e.hasTarget = false; setState(e, CHASE);
     }
     const chaseSpeed = c.speed * playerSpeed, wanderSpeed = chaseSpeed * CONFIG.wanderSpeedMult;
 
@@ -635,7 +650,11 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
           const sp = Math.hypot(tvx, tvy);
           if (sp >= 25 && (e.x - T.x) * tvx + (e.y - T.y) * tvy < -0.2 * Math.sqrt(d2) * sp && cutOffAim(e)) behind = true;
         }
-        if (d2 <= c.attack2 && !behind) {
+        if (c.role === 'charger' && d2 <= c.hit2 && e.cd <= 0) { // rockets bite on contact and keep flying (no stopping to attack)
+          e.cd = c.cooldown; api.takeHit(c.damage);
+          if (window.TT_SOUND && window.TT_SOUND.enemyAttack) window.TT_SOUND.enemyAttack(e.type, Math.sqrt(d2));
+        }
+        if (d2 <= c.attack2 && !behind && c.role !== 'charger') {
           face(e, dx, dy);
           if (e.cd <= 0) { e.hitDone = false; e.atkAngle = Math.atan2(dy, dx); setState(e, ATTACK);
             if (window.TT_SOUND && window.TT_SOUND.enemyAttack) window.TT_SOUND.enemyAttack(e.type, Math.hypot(dx, dy)); // crab: stick snap
@@ -660,6 +679,25 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
           }
           return;
         }
+        if (c.role === 'edge' && d2 > CONFIG.edgeChaseDist * CONFIG.edgeChaseDist) {
+          // Patrols the arena's inner edge, sliding to the stretch of wall nearest where the turtle is heading
+          // (spread along the wall by e.flank) to cut off that way out. Once the turtle is close it chases it normally.
+          const A = api.arena, inset = 110, sp = Math.hypot(tvx, tvy);
+          let px = T.x + (sp >= 25 ? tvx / sp * 500 : 0), py = T.y + (sp >= 25 ? tvy / sp * 500 : 0);
+          const off = (e.flank / (Math.PI * 2) - 0.5) * 700;
+          px = Math.max(A.x0 + inset, Math.min(A.x1 - inset, px)); py = Math.max(A.y0 + inset, Math.min(A.y1 - inset, py));
+          const dl = px - A.x0, dr = A.x1 - px, dtp = py - A.y0, db = A.y1 - py, m = Math.min(dl, dr, dtp, db);
+          let bx = px, by = py;
+          if (m === dl) { bx = A.x0 + inset; by = py + off; } else if (m === dr) { bx = A.x1 - inset; by = py + off; }
+          else if (m === dtp) { by = A.y0 + inset; bx = px + off; } else { by = A.y1 - inset; bx = px + off; }
+          bx = Math.max(A.x0 + inset, Math.min(A.x1 - inset, bx)); by = Math.max(A.y0 + inset, Math.min(A.y1 - inset, by));
+          if ((bx - e.x) ** 2 + (by - e.y) ** 2 < 40 * 40) { setAnim(e, R.idle, 4, FRAMES); face(e, dx, dy); return; } // in position: wait
+          const progress = stepToward(e, bx, by, chaseSpeed, dt, false);
+          e.stuck = progress < 0.3 ? e.stuck + dt : Math.max(0, e.stuck - dt);
+          if (e.stuck > 0.5 && e.escT <= 0 && e.stuck <= CONFIG.stuckSeconds) startEscape(e, dx, dy);
+          setAnim(e, R.walk, CONFIG.animFps * 1.5, FRAMES);
+          return;
+        }
         // Far away, aim at this enemy's own spot around the turtle so a pack arrives from different sides;
         // once close, aim straight at the turtle.
         const fr = CONFIG.flankRadius, close = Math.sqrt(c.attack2) + fr + 20;
@@ -669,6 +707,21 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
           // Head for the intercept spot unless the turtle is already between this wolf and it (then just bite).
           const tdx = cutAim.x - e.x, tdy = cutAim.y - e.y;
           if (tdx * dx + tdy * dy > 0 || tdx * tdx + tdy * tdy > d2) { aimX = cutAim.x; aimY = cutAim.y; } else { aimX = T.x; aimY = T.y; }
+        }
+        if (c.role === 'charger') {
+          // Heads for where the turtle will be, but only turns a little per second and never slows: a sharp turn by the turtle makes it overshoot.
+          if (e.ha === undefined) e.ha = Math.atan2(dy, dx);
+          // Lunge: once within lungeDist it commits to its heading for lungeSeconds (no steering), so it runs straight through
+          // wherever the turtle was and has to loop back; a short cooldown after, then it can lunge again.
+          if (e.lungeT > 0) e.lungeT -= dt; else if (e.lungeCd > 0) e.lungeCd -= dt;
+          else if (d2 < CONFIG.lungeDist * CONFIG.lungeDist) { e.lungeT = CONFIG.lungeSeconds; e.lungeCd = CONFIG.lungeCooldown; }
+          if (!(e.lungeT > 0)) {
+            let da = Math.atan2(T.y - e.y, T.x - e.x) - e.ha; // aims at where the turtle is now, so a turtle that moves gets missed
+            da = Math.atan2(Math.sin(da), Math.cos(da));
+            const maxTurn = (c.turnRate || CONFIG.chargerTurnRate) * dt;
+            e.ha += Math.max(-maxTurn, Math.min(maxTurn, da));
+          }
+          aimX = e.x + Math.cos(e.ha) * 200; aimY = e.y + Math.sin(e.ha) * 200;
         }
         const progress = stepToward(e, aimX, aimY, chaseSpeed, dt, c.flies);
         e.stuck = progress < 0.3 ? e.stuck + dt : Math.max(0, e.stuck - dt);
@@ -713,7 +766,7 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
     let nn = 0;
     for (const e of pool) {
       if (!e.active) continue;
-      if (e.cfg.nocturnal && !night) { e.active = false; e.respawnAt = now + 2; continue; } // dawn: wolves vanish
+      if (e.cfg.nocturnal && !night && !arena) { e.active = false; e.respawnAt = now + 2; continue; } // dawn: wolves vanish
       const dx = T.x - e.x, dy = T.y - e.y;
       if (dx * dx + dy * dy > act2) continue; // far away: frozen, costs nothing
       nearList[nn++] = e;
