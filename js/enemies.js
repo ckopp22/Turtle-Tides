@@ -45,7 +45,9 @@
     lungeDist: 450,          // Survival chargers: commit to a straight run once this close (world px)...
     lungeSeconds: 1.1,       // ...for this long (they overshoot and loop back)...
     lungeCooldown: 1.5,      // ...and can't lunge again for this long after it starts
-    edgeChaseDist: 350,      // Survival bears: patrol the fence, but chase the turtle directly when it comes within this many world px
+    patrolMin: 300, patrolMax: 800, // Survival bears/crabs: length (world px) of the fixed back-and-forth line each one walks, rolled per spawn
+    survivalHitScale: 0.75,  // Survival: enemies must get this fraction of their normal hit range to land a hit (smaller turtle hitbox)
+    wolfTurnRate: 1,         // Survival wolves: max turn in radians/second (slow, so a missed pass takes a while to loop back)
     cutSpread: 130,          // world px: how far the flankers sit to either side of the lead spot
     spawnTickSeconds: 0.2,   // the spawner runs at most this often
     spawnsPerTick: 6,        // ...and places at most this many enemies per run (a big zone pool fills in over a few seconds)
@@ -181,7 +183,7 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
     const side = [0, 1, -1, 0.5, -0.5][e.role % 5] * CONFIG.cutSpread;
     const back = e.role >= 3 ? -ahead * 1.5 : 0; // extra wolves close in from behind
     const ax = T.x + ux * (ahead + back) + px * side, ay = T.y + uy * (ahead + back) + py * side;
-    if (!api.walkable(ax, ay) || api.blockedAt(ax, ay, e.cfg.bodyRadius)) return false; // spot unusable: fall back to the flank
+    if (!open(e, ax, ay, e.cfg.flies)) return false; // spot unusable: fall back to the flank
     cutAim.x = ax; cutAim.y = ay; return true;
   }
 
@@ -240,11 +242,11 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
       saved = { pool, api, now, nearCount, tvx, tvy, lastTx };
       arena = { types: {}, maxSpeedFrac, detectBonus: 0, speedMult: 1 };
       for (const k in CONFIG.types) arena.types[k] = Object.assign({}, CONFIG.types[k]);
-      // Survival roles: crab/seagull/wolf = chargers (can't slow down or turn sharply, aim ahead of the turtle and overshoot),
-      // bear = edge blocker (patrols the fence line to cut off exits, chases only when the turtle is close).
-      for (const k in arena.types) arena.types[k].cutOff = false;
-      for (const k of ['crab', 'seagull', 'wolf']) if (arena.types[k]) { arena.types[k].role = 'charger'; arena.types[k].turnRate = CONFIG.chargerTurnRate; }
-      if (arena.types.bear) arena.types.bear.role = 'edge';
+      // Survival roles: crab/bear = patrollers (a fixed random line per spawn, bite on contact, never chase),
+      // seagull/wolf = chargers (aim at the turtle's current spot, lunge through it, loop back; wolves turn slower).
+      for (const k in arena.types) { arena.types[k].cutOff = false; arena.types[k].windup = 0; } // no wind-up: the attack animation plays as the hit lands
+      for (const k of ['crab', 'bear']) if (arena.types[k]) arena.types[k].role = 'patrol';
+      for (const k of ['seagull', 'wolf']) if (arena.types[k]) { arena.types[k].role = 'charger'; arena.types[k].turnRate = CONFIG.wolfTurnRate; }
       pool = []; for (let i = 0; i < max; i++) pool.push(makeSlot(null, Infinity));
       nearList.length = Math.max(nearList.length, max);
       api = a; nearCount = 0; tvx = tvy = 0; lastTx = null;
@@ -265,6 +267,7 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
         c.detect = base.detect + detectBonusPx / U;
         if (base.ambush) c.ambush = base.ambush + detectBonusPx / U;
         derive(c);
+        c.hit2 *= CONFIG.survivalHitScale ** 2;
       }
     },
     spawn(type, x, y) { // returns true if a slot was free
@@ -283,7 +286,7 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
     e.type = type; e.active = true;
     e.cfg = arena ? arena.types[type] : adv && !api.inHomeZone(x, y) ? ADV_TYPES[type] : CONFIG.types[type]; // stats follow where it spawned (arena: the Survival ramp's live copy)
     e.x = e.sx = x; e.y = e.sy = y; e.biome = biome;
-    e.ha = undefined; e.lungeT = e.lungeCd = 0; e.state = WANDER; e.t = 0; e.anim = 0; e.hasTarget = false; e.pause = rnd(0.5, 2); e.nightSleep = false; e.notice = 0;
+    e.ha = undefined; e.da = undefined; e.dnow = undefined; e.pdir = undefined; e.lungeT = e.lungeCd = 0; e.state = WANDER; e.t = 0; e.anim = 0; e.hasTarget = false; e.pause = rnd(0.5, 2); e.nightSleep = false; e.notice = 0;
     e.cd = 0; e.steer = 0; e.steerT = 0; e.hd = null; e.escT = 0; e.dodge = 0; e.dodgeT = 0; e.giveUp = 0; e.lose = 0; e.stuck = 0; e.unreach = 0; e.flip = Math.random() < 0.5 ? 1 : -1;
   }
 
@@ -534,6 +537,15 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
     setState(e, RETURN); // walks back to its spawn point; crabs burrow once they arrive
   }
 
+  // Survival contact hit: the hit lands now and the attack animation (sprite + swipe) plays with no wind-up so the player sees what got them.
+  function bite(e, dx, dy, d2) {
+    const c = e.cfg;
+    e.cd = c.cooldown; e.hitDone = true; e.atkAngle = Math.atan2(dy, dx); face(e, dx, dy);
+    api.takeHit(c.damage);
+    if (window.TT_SOUND && window.TT_SOUND.enemyAttack) window.TT_SOUND.enemyAttack(e.type, Math.sqrt(d2));
+    setState(e, ATTACK);
+  }
+
   function setAnim(e, row, fps, frames) {
     e.row = row; e.frame = Math.floor(e.anim * fps) % frames;
   }
@@ -564,6 +576,16 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
       e.giveUp = 0; e.notice = 0; e.flank = Math.random() * Math.PI * 2; e.lose = 0; e.stuck = 0; e.unreach = 0; e.hasTarget = false; setState(e, CHASE);
     }
     const chaseSpeed = c.speed * playerSpeed, wanderSpeed = chaseSpeed * CONFIG.wanderSpeedMult;
+    if (arena && c.role === 'patrol' && e.state !== ATTACK) { // Survival: walks back and forth along its own line (reverses at the ends or when blocked), biting on contact
+      if (e.pdir === undefined) { e.pdir = Math.random() * Math.PI * 2; e.plen = rnd(CONFIG.patrolMin, CONFIG.patrolMax); e.pd = 0; e.ps = 1; e.pblk = 0; }
+      const ux = Math.cos(e.pdir) * e.ps, uy = Math.sin(e.pdir) * e.ps, step = chaseSpeed * dt;
+      if (Math.abs(e.pd + e.ps * step) > e.plen / 2) e.ps = -e.ps;
+      else if (open(e, e.x + ux * step, e.y + uy * step, c.flies)) { e.x += ux * step; e.y += uy * step; e.pd += e.ps * step; e.pblk = 0; }
+      else { e.ps = -e.ps; if (++e.pblk > 3) { e.pdir = Math.random() * Math.PI * 2; e.pd = 0; e.pblk = 0; } } // boxed in: new line from here
+      face(e, ux, uy); setAnim(e, c.flies ? R.fly : R.walk, CONFIG.animFps, FRAMES);
+      if (alive && !safe && d2 <= c.hit2 && e.cd <= 0) bite(e, dx, dy, d2);
+      return;
+    }
 
     switch (e.state) {
       case WANDER: case RETURN: {
@@ -651,8 +673,7 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
           if (sp >= 25 && (e.x - T.x) * tvx + (e.y - T.y) * tvy < -0.2 * Math.sqrt(d2) * sp && cutOffAim(e)) behind = true;
         }
         if (c.role === 'charger' && d2 <= c.hit2 && e.cd <= 0) { // rockets bite on contact and keep flying (no stopping to attack)
-          e.cd = c.cooldown; api.takeHit(c.damage);
-          if (window.TT_SOUND && window.TT_SOUND.enemyAttack) window.TT_SOUND.enemyAttack(e.type, Math.sqrt(d2));
+          bite(e, dx, dy, d2); return;
         }
         if (d2 <= c.attack2 && !behind && c.role !== 'charger') {
           face(e, dx, dy);
@@ -677,25 +698,6 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
               else { e.dodge = 0; setState(e, STUN); } // re-rolls after the stun
             }
           }
-          return;
-        }
-        if (c.role === 'edge' && d2 > CONFIG.edgeChaseDist * CONFIG.edgeChaseDist) {
-          // Patrols the arena's inner edge, sliding to the stretch of wall nearest where the turtle is heading
-          // (spread along the wall by e.flank) to cut off that way out. Once the turtle is close it chases it normally.
-          const A = api.arena, inset = 110, sp = Math.hypot(tvx, tvy);
-          let px = T.x + (sp >= 25 ? tvx / sp * 500 : 0), py = T.y + (sp >= 25 ? tvy / sp * 500 : 0);
-          const off = (e.flank / (Math.PI * 2) - 0.5) * 700;
-          px = Math.max(A.x0 + inset, Math.min(A.x1 - inset, px)); py = Math.max(A.y0 + inset, Math.min(A.y1 - inset, py));
-          const dl = px - A.x0, dr = A.x1 - px, dtp = py - A.y0, db = A.y1 - py, m = Math.min(dl, dr, dtp, db);
-          let bx = px, by = py;
-          if (m === dl) { bx = A.x0 + inset; by = py + off; } else if (m === dr) { bx = A.x1 - inset; by = py + off; }
-          else if (m === dtp) { by = A.y0 + inset; bx = px + off; } else { by = A.y1 - inset; bx = px + off; }
-          bx = Math.max(A.x0 + inset, Math.min(A.x1 - inset, bx)); by = Math.max(A.y0 + inset, Math.min(A.y1 - inset, by));
-          if ((bx - e.x) ** 2 + (by - e.y) ** 2 < 40 * 40) { setAnim(e, R.idle, 4, FRAMES); face(e, dx, dy); return; } // in position: wait
-          const progress = stepToward(e, bx, by, chaseSpeed, dt, false);
-          e.stuck = progress < 0.3 ? e.stuck + dt : Math.max(0, e.stuck - dt);
-          if (e.stuck > 0.5 && e.escT <= 0 && e.stuck <= CONFIG.stuckSeconds) startEscape(e, dx, dy);
-          setAnim(e, R.walk, CONFIG.animFps * 1.5, FRAMES);
           return;
         }
         // Far away, aim at this enemy's own spot around the turtle so a pack arrives from different sides;
@@ -856,6 +858,13 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
     }
     g.translate(e.x + lx, (air ? e.y - 10 : e.y) + ly);
     if (e.cfg.flipsSideways) { if (e.flip < 0) g.scale(-1, 1); }
+    else if (arena) { // Survival: free rotation, eased toward the heading like the Dash sprites (no 8-direction snapping)
+      const dt = Math.min(0.1, now - (e.dnow === undefined ? now : e.dnow)); e.dnow = now;
+      if (e.da === undefined) e.da = e.angle;
+      const d = Math.atan2(Math.sin(e.angle - e.da), Math.cos(e.angle - e.da));
+      e.da += d * Math.min(1, dt * 12);
+      g.rotate(e.da + Math.PI / 2);
+    }
     else g.rotate(Math.round((e.angle + Math.PI / 2) / (Math.PI / 4)) * (Math.PI / 4)); // art faces up; snap to 8 directions
     g.drawImage(img, e.frame * F, e.row * F, F, F, -D / 2, -D / 2, D, D);
     g.restore();

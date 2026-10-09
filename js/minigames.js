@@ -59,12 +59,12 @@
 
     // ---------------- Survival ----------------
     survival: {
-      startEnemies: 4, addEverySeconds: 5, maxEnemies: 25, maxEnemiesMobile: 14, // live enemy target = start + elapsed / addEvery, capped
+      startEnemies: 4, addEverySeconds: 5, maxEnemies: 100, maxEnemiesMobile: 50, // live enemy target = start + elapsed / addEvery, capped
       detectEverySeconds: 15, detectBonusPx: 40, detectBonusMax: 240,           // every enemy's detect radius grows by this much per step
       speedEverySeconds: 20, speedStep: 0.03, speedMax: 1.2,                     // optional small speed ramp (x base)
       maxSpeedFrac: 0.95,                                                        // a slow type never gets faster than this x the turtle (the snake is exempt, as in the main game)
       weights: { crab: 3, bear: 2, seagull: 3 },                      // spawn mix (wolves are separate: one every wolfEverySeconds)
-      wolfEverySeconds: 30, maxCrabs: 4, wolfExtraSlots: 12,                   // a wolf spawns on top of the cap this often; crabs on the map at once; pool slots reserved for wolves
+      wolfEverySeconds: 15, maxCrabs: 4, wolfExtraSlots: 12,                   // a wolf spawns on top of the cap this often; crabs on the map at once; pool slots reserved for wolves
       startGraceSeconds: 1.5,     // first telegraph comes this long after the start
       spawn: {
         tickSeconds: 0.25,        // how often the spawner runs
@@ -970,11 +970,10 @@
   function updateSurvival(dt) {
     if (phase !== 'play') return;
     const m = api(), tt = m.turtle, E = window.Enemies;
-    S.elapsed += dt; S.clock += dt;
-    m.move(dt, 1, true, false, true);
-    m.collide();
+    S.clock += dt;
+    if (!S.hit) { S.elapsed += dt; m.move(dt, 1, true, false, true); m.collide(); }
     E.update(dt);
-    if (S.hit) { finishRun(true); return; }
+    if (S.hit) { S.hitT = (S.hitT || 0) + dt; if (S.hitT >= 0.5) finishRun(true); return; } // brief pause so the attack animation is seen
     updateSurvivalDifficulty();
     // spawner + telegraphs
     for (let i = 0; i < S.pon.length; i++) {
