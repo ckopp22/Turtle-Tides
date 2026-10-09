@@ -63,7 +63,7 @@
       detectEverySeconds: 15, detectBonusPx: 40, detectBonusMax: 240,           // every enemy's detect radius grows by this much per step
       speedEverySeconds: 20, speedStep: 0.03, speedMax: 1.2,                     // optional small speed ramp (x base)
       maxSpeedFrac: 0.95,                                                        // a slow type never gets faster than this x the turtle (the snake is exempt, as in the main game)
-      weights: { crab: 3, bear: 2, seagull: 3 },                      // spawn mix (wolves are separate: one every wolfEverySeconds)
+      weights: { crab: 3, bear: 2, seagull: 3, snake: 2 },                      // spawn mix (wolves are separate: one every wolfEverySeconds)
       wolfEverySeconds: 15, maxCrabs: 4, wolfExtraSlots: 12,                   // a wolf spawns on top of the cap this often; crabs on the map at once; pool slots reserved for wolves
       startGraceSeconds: 1.5,     // first telegraph comes this long after the start
       spawn: {
@@ -223,7 +223,8 @@
     if (!b || b.disabled) return;
     const act = b.dataset.act;
     if (act === 'dash') startDash();
-    else if (act === 'survival') startSurvival();
+    else if (act === 'survival') showSurvivalMaps();
+    else if (act === 'woods' || act === 'beach') startSurvival(act);
     else if (act === 'close') { if (onDone) onDone(); else close(); }
     else if (act === 'resume') setPaused(false);
     else if (act === 'quit') finishRun(false);
@@ -239,6 +240,16 @@
       <button type="button" class="tt-mg-big" data-act="dash"><i class="tt-mg-icon tt-mg-icon-turtle"></i><em><strong>Baby Turtle Dash</strong><span>Best: ${best.dashBest} ${best.dashBest === 1 ? 'round' : 'rounds'}</span></em></button>
       <button type="button" class="tt-mg-big" data-act="survival"><i class="tt-mg-icon tt-mg-icon-timer"></i><em><strong>Survival</strong><span>Best: ${fmtTime(best.survivalBest)}</span></em></button>
       <div class="tt-name-actions"><button type="button" class="tt-cancel" data-act="close">Close</button></div>`;
+    setOverlay(box);
+  }
+
+  function showSurvivalMaps() {
+    view = 'menu'; phase = 'menu';
+    const box = el('div', 'tt-name-box tt-mg-box');
+    box.innerHTML = `<h3>Survival</h3>
+      <button type="button" class="tt-mg-big" data-act="woods"><em><strong>Woods</strong><span>Fenced arena in the west forest</span></em></button>
+      <button type="button" class="tt-mg-big" data-act="beach"><em><strong>Beach</strong><span>Fenced arena on the north beach</span></em></button>
+      <div class="tt-name-actions"><button type="button" class="tt-cancel" data-act="menu">Back</button></div>`;
     setOverlay(box);
   }
 
@@ -909,9 +920,12 @@
   const SC = CONFIG.survival;
   let survApi = null, weightKeys = null, weightSum = 0;
 
-  function startSurvival() {
+  let survMap = 'woods'; // 'woods' | 'beach': last pick, so "Play again" reuses it
+  function startSurvival(map) {
     const m = window.TurtleGame && api();
     if (!m || !window.Enemies) return;
+    if (map) survMap = map;
+    m.setArena(survMap);
     setOverlay(null);
     view = 'survival'; phase = 'play';
     const cap = isMobile() ? SC.maxEnemiesMobile : SC.maxEnemies;
@@ -921,7 +935,7 @@
       pk: new Array(SC.spawn.maxPending).fill(''), pon: new Uint8Array(SC.spawn.maxPending), clock: 0 };
     m.enter();
     if (window.TT_SOUND && m.music) { window.TT_SOUND.musicPrepareAdventure(m.music.files); window.TT_SOUND.musicZone(true, m.music.fade); } // adventure soundtrack
-    // Start near the middle of the fenced arena (west thick forest).
+    // Start near the middle of the fenced arena.
     const tt = m.turtle, C = m.center, A = m.arena, ax = (A.x0 + A.x1) / 2, ay = (A.y0 + A.y1) / 2;
     let placed = false;
     for (let i = 0; i < 60 && !placed; i++) {

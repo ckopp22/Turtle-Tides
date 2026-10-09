@@ -87,6 +87,12 @@
   const SURV_N = 26, SURV_SIZE = SURV_N * ADVENTURE.fenceTile;
   const SURV = { x0: CENTER.x - 1500 - SURV_SIZE / 2, y0: CENTER.y - SURV_SIZE / 2, x1: 0, y1: 0, stop: 40 }; // stop: turtle halts this far inside the post line
   SURV.x1 = SURV.x0 + SURV_SIZE; SURV.y1 = SURV.y0 + SURV_SIZE;
+  // Where the arena sits for each map choice: centre of the west thick forest, or of the north beach (both 1500 from the world centre).
+  const SURV_SPOTS = { woods: { x: CENTER.x - 1500, y: CENTER.y }, beach: { x: CENTER.x, y: CENTER.y - 1500 } };
+  function setSurvArena(kind) { // moves the shared SURV rect in place (the enemies and fence read it live)
+    const p = SURV_SPOTS[kind] || SURV_SPOTS.woods;
+    SURV.x0 = p.x - SURV_SIZE / 2; SURV.y0 = p.y - SURV_SIZE / 2; SURV.x1 = SURV.x0 + SURV_SIZE; SURV.y1 = SURV.y0 + SURV_SIZE;
+  }
   const inSurv = (x, y) => x > SURV.x0 && x < SURV.x1 && y > SURV.y0 && y < SURV.y1;
   const ISLAND_R = 260;                             // home island radius: safe area, no obstacles
   const WATER_WIDTH = 300;                          // water ring width beyond the island
@@ -2682,7 +2688,7 @@
     clampToWorld();
   }
   const miniApi = {
-    turtle, getDirection, move: miniMove, enter: miniEnter, exit: miniExit, collide: miniCollide,
+    turtle, getDirection, setArena: setSurvArena, move: miniMove, enter: miniEnter, exit: miniExit, collide: miniCollide,
     isWater, blockedAt, inHomeZone, ensureGroundAt, bodyRadius: TURTLE_BODY_RADIUS,
     walkable: (x, y) => enemyRoom(x, y) && !isWater(x, y), // Survival has no safe island: same as the main walkable minus the island rule
     flyable: (x, y) => enemyRoom(x, y),

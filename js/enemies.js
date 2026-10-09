@@ -46,6 +46,7 @@
     lungeSeconds: 1.1,       // ...for this long (they overshoot and loop back)...
     lungeCooldown: 1.5,      // ...and can't lunge again for this long after it starts
     patrolMin: 300, patrolMax: 800, // Survival bears/crabs: length (world px) of the fixed back-and-forth line each one walks, rolled per spawn
+    survivalSnakeSpeed: 0.7, // Survival: snakes just chase the turtle, at this x its speed (slower than their normal 1.15)
     survivalHitScale: 0.75,  // Survival: enemies must get this fraction of their normal hit range to land a hit (smaller turtle hitbox)
     wolfTurnRate: 1,         // Survival wolves: max turn in radians/second (slow, so a missed pass takes a while to loop back)
     cutSpread: 130,          // world px: how far the flankers sit to either side of the lead spot
@@ -263,7 +264,8 @@ let adv = null, advOn = false; // adv = ADVENTURE.enemies config from game.js; a
       arena.detectBonus = detectBonusPx; arena.speedMult = speedMult;
       for (const k in arena.types) {
         const base = CONFIG.types[k], c = arena.types[k];
-        c.speed = base.speed < 1 ? Math.min(base.speed * speedMult, arena.maxSpeedFrac) : base.speed * speedMult;
+        const bs = k === 'snake' ? CONFIG.survivalSnakeSpeed : base.speed;
+        c.speed = bs < 1 ? Math.min(bs * speedMult, arena.maxSpeedFrac) : bs * speedMult;
         c.detect = base.detect + detectBonusPx / U;
         if (base.ambush) c.ambush = base.ambush + detectBonusPx / U;
         derive(c);
