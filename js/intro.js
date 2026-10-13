@@ -276,8 +276,9 @@
   let musicOn = readMusic();
   let musicZoneAdv = false, musicFadeSec = 2, musicFadeTimer = null;
   const setUsable = set => !!set && set.bad < set.clips.length;
+  let suspended = false; // game paused / left: everything silent until suspend(false)
   function syncMusic() {
-    const want = soundOn && musicOn && currentScene === SCENES.GAME_HANDOFF;
+    const want = soundOn && musicOn && !suspended && currentScene === SCENES.GAME_HANDOFF;
     for (const k in musicSets) {
       const set = musicSets[k];
       if (!set) continue;
@@ -514,6 +515,15 @@
     swimming: (active, floating) => Sound.swimming(active, floating),
     wheelHum: active => driveLoop(wheelHumLoop, active && soundOn, 1), // no <audio> fallback: skipped until the buffer decodes
     wheelBeep: () => { if (soundOn) playPickup('onewheel-beep.mp3', wheelBeepClip); },
+    // Pause/exit: stops music, loops and any playing clip; syncMusic brings music back on suspend(false).
+    suspend: on => {
+      suspended = !!on;
+      if (suspended) {
+        gClips.forEach(c => { if (!c.paused) c.pause(); });
+        [walkLoop, swimLoop, wheelHumLoop, fireLoop].forEach(l => { if (l.src) { try { l.src.stop(); } catch {} l.src = null; if (l.gain) l.gain = null; } });
+      }
+      syncMusic();
+    },
     toggle: () => { soundOn = !soundOn; writeSound(soundOn); syncMusic(); return soundOn; },
     musicZone, musicPrepareAdventure, musicInfo,
     musicGet: () => musicOn,

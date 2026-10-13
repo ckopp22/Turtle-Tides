@@ -275,10 +275,11 @@
   function setPaused(on) {
     if (on && phase === 'play') {
       phase = 'paused';
+      if (window.TT_SOUND) window.TT_SOUND.suspend(true);
       const box = el('div', 'tt-name-box tt-mg-box');
       box.innerHTML = `<h3>Paused</h3><div class="tt-mg-col"><button type="button" class="tt-upgrade-buy" data-act="resume">Resume</button><button type="button" class="tt-cancel" data-act="quit">Quit run</button></div>`;
       setOverlay(box);
-    } else if (!on && phase === 'paused') { phase = 'play'; setOverlay(null); }
+    } else if (!on && phase === 'paused') { phase = 'play'; setOverlay(null); if (window.TT_SOUND) window.TT_SOUND.suspend(false); }
   }
 
   // Results card for both games. `rows` = [label, value] pairs.
@@ -294,6 +295,7 @@
   // Ends the current run (caught, or "Quit run" from the pause card) and shows the results.
   function finishRun(caught) {
     if (phase === 'over') return;
+    if (window.TT_SOUND && !caught) { window.TT_SOUND.suspend(true); window.TT_SOUND.suspend(false); } // quit from pause: stop all sounds
     if (view === 'dash') {
       const rounds = D.rounds, rec = rounds > D.bestAtStart;
       P().setMinigameBest('dashBest', rounds);
@@ -341,6 +343,7 @@
   }
   // Releases the running game: pools, canvases, DOM HUD, the saved turtle (back to the hut), and the arena enemies.
   function stopGame() {
+    if (window.TT_SOUND) { window.TT_SOUND.suspend(true); window.TT_SOUND.suspend(false); } // cut every playing sound; hut music resumes
     if (view === 'dash') releaseDash();
     else if (view === 'survival') releaseSurvival();
     if (hud) { hud.remove(); hud = hudA = hudB = null; }
