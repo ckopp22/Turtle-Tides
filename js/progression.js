@@ -632,7 +632,7 @@
     // Test shortcut: ?master=1 maxes every upgrade (saved with the slot on the next persist).
     // On localhost it's on by default; ?master=0 turns it off there.
     const masterParam = new URLSearchParams(location.search).get('master');
-    if (masterParam === '1' || (masterParam !== '0' && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname))) {
+    if (masterParam === '1' || (masterParam !== '0' && /^https?:$/.test(location.protocol) && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname))) {
       state.heartsLevel = CONFIG.hearts.upgradeCosts.length;
       state.hullLevel = CONFIG.hull.capTiers.length - 1;
       state.homeLevel = window.Home.UPGRADES.length;
