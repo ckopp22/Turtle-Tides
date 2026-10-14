@@ -187,7 +187,7 @@
     }
     fetch('assets/sfx/fire.mp3').then(r => r.arrayBuffer()).then(b => audioCtx.decodeAudioData(b))
       .then(buf => { fireLoop.buf = buf; }).catch(() => {});
-    for (const f of ['bag.m4a', 'splash.mp3', 'shell.mp3', 'coin.mp3', 'sand.mp3', 'stomp.mp3', 'full.mp3', 'onewheel-beep.mp3', ...Object.values(HUT_SFX).map(n => n + '.mp3')]) {
+    for (const f of ['bag.m4a', 'splash.mp3', 'shell.mp3', 'coin.mp3', 'sand.mp3', 'stomp.mp3', 'full.mp3', 'umph.mp3', 'onewheel-beep.mp3', ...Object.values(HUT_SFX).map(n => n + '.mp3')]) {
       fetch(`assets/sfx/${f}`).then(r => r.arrayBuffer()).then(b => audioCtx.decodeAudioData(b))
         .then(buf => { pickupBuffers[f] = buf; }).catch(() => {});
     }
@@ -431,8 +431,7 @@
     },
     umph: () => {
       if (!soundOn) return;
-      umphClip.currentTime = 0;
-      umphClip.play().catch(() => {});
+      playPickup('umph.mp3', umphClip); // decoded buffer: no <audio> start delay
     },
     gameover: () => {
       if (!soundOn) return;
