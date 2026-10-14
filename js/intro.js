@@ -641,6 +641,19 @@
     }
     ctx.restore();
   }
+  // Share button: same tile as the mute button, with an iOS-style share glyph (box + up arrow).
+  function drawShareIcon(r) {
+    ctx.save();
+    ctx.globalAlpha = 0.8;
+    roundRect(r.x, r.y, r.w, r.h, 10);
+    ctx.fillStyle = '#ffcb80'; ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = '#c9a15f'; ctx.stroke();
+    ctx.translate(r.x + r.w / 2 - 13, r.y + r.h / 2 - 13);
+    ctx.strokeStyle = '#3a2a10'; ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.stroke(new Path2D('M9 11H7v11h12V11h-2'));
+    ctx.stroke(new Path2D('M13 18V5M9 9l4-4 4 4'));
+    ctx.restore();
+  }
   // Beach backdrop shared by every scene: no sky — a straight-down sand view with a water band at
   // the bottom, matching the game's own top-down look, textured with the game's real ground tiles
   // (assets/tiles/*) instead of flat color. Neither tile loops cleanly on its own (opposite edges
@@ -984,6 +997,7 @@
     return {
       play: { x: viewW / 2 - playW / 2, y: Math.min(viewH * 0.78, viewH - playH - 24), w: playW, h: playH },
       mute: { x: viewW - 64, y: 20 + (window.Progression ? window.Progression.topInset() : 0), w: 44, h: 44 },
+      share: { x: 20, y: 20 + (window.Progression ? window.Progression.topInset() : 0), w: 44, h: 44 },
     };
   }
   function onMenuTap(e) {
@@ -992,7 +1006,15 @@
     const { x, y } = pointerPos(e);
     const L = layoutMenu();
     if (inRect(x, y, L.mute)) { soundOn = !soundOn; writeSound(soundOn); syncBeach(); syncMusic(); Sound.click(); return; }
+    if (inRect(x, y, L.share)) { shareApp(); return; }
     if (inRect(x, y, L.play)) { Sound.click(); goto('SAVE_SLOTS'); }
+  }
+  // TODO: swap for the App Store link once the app is live.
+  const SHARE_URL = 'https://ckopp22.github.io/Turtle-Tides/';
+  function shareApp() {
+    const data = { title: 'Turtle Tides', text: 'Check out Turtle Tides!', url: SHARE_URL };
+    if (navigator.share) navigator.share(data).catch(() => {}); // cancelled share rejects: ignore
+    else if (navigator.clipboard) navigator.clipboard.writeText(SHARE_URL).catch(() => {});
   }
   const BEACH_MENU = {
     enter() { resetMenuTurtle(); on(canvas, 'pointerdown', onMenuTap); },
@@ -1006,6 +1028,7 @@
       drawButton(L.play, 'PLAY', true);
       drawMenuTurtle(t); // after the button so the turtle walks over it
       drawMuteIcon(L.mute, soundOn);
+      drawShareIcon(L.share);
     },
   };
 
