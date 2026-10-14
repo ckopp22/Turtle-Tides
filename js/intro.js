@@ -1009,8 +1009,7 @@
     if (inRect(x, y, L.share)) { shareApp(); return; }
     if (inRect(x, y, L.play)) { Sound.click(); goto('SAVE_SLOTS'); }
   }
-  // TODO: swap for the App Store link once the app is live.
-  const SHARE_URL = 'https://ckopp22.github.io/Turtle-Tides/';
+  const SHARE_URL = 'https://apps.apple.com/app/id6822570048';
   function shareApp() {
     const data = { title: 'Turtle Tides', text: 'Check out Turtle Tides!', url: SHARE_URL };
     if (navigator.share) navigator.share(data).catch(() => {}); // cancelled share rejects: ignore
