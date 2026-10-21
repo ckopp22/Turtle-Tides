@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#1e88c7">
 <link rel="preload" as="image" href="assets/items/shop_stall.png?v=2">
-<link rel="stylesheet" href="css/style.css?v=61">
+<link rel="stylesheet" href="css/style.css?v=62">
 <link rel="stylesheet" href="css/minigames.css?v=3">
 </head>
 <body>
@@ -33,6 +33,28 @@ if ('serviceWorker' in navigator) {
     if (window.caches) caches.keys().then((ks) => ks.forEach((k) => caches.delete(k)));
   } else window.addEventListener('load', () => navigator.serviceWorker.register('service-worker.js').catch(() => {}));
 }
+</script>
+<script>
+// Update banner: re-fetch index.html (no cache) and compare its ?v= asset list with this page's; on a difference show "Tap to Update!".
+(function () {
+  const sig = html => (html.match(/(?:src|href)="[^"]+\?v=\d+"/g) || []).filter(s => /\.(js|css)\?/.test(s)).sort().join('|');
+  const base = sig(document.documentElement.outerHTML);
+  let shown = false;
+  function check() {
+    if (shown || document.hidden) return;
+    fetch('index.html?_=' + Date.now(), { cache: 'no-store' }).then(r => r.text()).then(t => {
+      if (shown || sig(t) === base) return;
+      shown = true;
+      const b = document.createElement('button');
+      b.id = 'tt-update-banner'; b.type = 'button'; b.textContent = 'Tap to Update!';
+      b.addEventListener('click', () => location.reload());
+      document.body.appendChild(b);
+    }).catch(() => {});
+  }
+  setTimeout(check, 10000);
+  setInterval(check, 300000);
+  document.addEventListener('visibilitychange', check);
+})();
 </script>
 </body>
 </html>

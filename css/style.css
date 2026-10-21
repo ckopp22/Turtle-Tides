@@ -506,3 +506,9 @@ button { touch-action: manipulation; }
   transition: opacity 0.3s, transform 0.3s;
 }
 .discovery-toast.show { opacity: 1; transform: translate(-50%, -50%); }
+
+#tt-update-banner {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100000;
+  padding: calc(10px + env(safe-area-inset-top)) 12px 10px; border: 0;
+  background: #2d8a3e; color: #fff; font: 700 16px system-ui, sans-serif; text-align: center; cursor: pointer;
+}
