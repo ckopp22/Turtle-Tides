@@ -895,6 +895,26 @@
   // ---- Leave-game button (top right) — bails out to the main menu. A reload is the simplest way
   // to hand the canvas back to intro.js's own state machine (it always boots to BEACH_MENU), rather
   // than teaching game.js how to stop its rAF loop and tearing down its DOM bits by hand.
+  // Tapping the X pauses the game (game.js skips update() while window.TT_PAUSED) and asks: resume or leave.
+  // Leaving saves first; items carried but not banked are lost, same as any non-banked exit.
+  function openPauseMenu() {
+    if (window.TT_PAUSED) return;
+    window.TT_PAUSED = true;
+    if (window.TT_SOUND && window.TT_SOUND.suspend) window.TT_SOUND.suspend(true);
+    const wrap = document.createElement('div');
+    wrap.className = 'tt-name-prompt';
+    wrap.innerHTML = `<div class="tt-name-box tt-pause-box">
+      <h3>Game Paused</h3>
+      <p>Leaving saves your banked progress. Anything you're carrying that isn't banked will be lost.</p>
+      <div class="tt-name-actions"><button type="button" class="tt-cancel tt-pause-leave">Main Menu</button><button type="button" class="tt-confirm tt-pause-resume">Resume</button></div>
+    </div>`;
+    document.body.appendChild(wrap);
+    const resume = () => { wrap.remove(); window.TT_PAUSED = false; if (window.TT_SOUND && window.TT_SOUND.suspend) window.TT_SOUND.suspend(false); };
+    wrap.addEventListener('click', e => {
+      if (e.target.closest('.tt-pause-resume')) resume();
+      else if (e.target.closest('.tt-pause-leave')) { try { persist(); } catch {} location.reload(); }
+    });
+  }
   let leaveBtn = null;
   function ensureLeaveButton() {
     if (leaveBtn) return;
@@ -903,14 +923,7 @@
     leaveBtn.type = 'button';
     leaveBtn.title = 'Leave to main menu';
     leaveBtn.textContent = '✕';
-    leaveBtn.addEventListener('click', () => {
-      // Mid-trip carried items are already lost on any non-banked exit (see MDD save model), so a
-      // reload here is no different from closing the tab — just confirm so a stray tap doesn't eat
-      // an in-progress trip.
-      if (confirm('Leave to the main menu? Any items carried but not banked will be lost.')) {
-        location.reload();
-      }
-    });
+    leaveBtn.addEventListener('click', openPauseMenu);
     document.body.appendChild(leaveBtn);
   }
 

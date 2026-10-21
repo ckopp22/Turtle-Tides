@@ -438,6 +438,8 @@ button { touch-action: manipulation; }
 .tt-closet-buy { display: block; width: 100%; min-height: 48px; margin-top: 6px; }
 
 /* Collection book (home.js) */
+.tt-pause-box { text-align: center; }
+.tt-pause-box p { margin: 8px 0 14px; font-size: 14px; color: #6b5b3a; }
 .tt-map-box { background: #f6ecd0; }
 .tt-map-art canvas { display: block; width: 100%; max-width: 420px; margin: 0 auto; border: 3px solid #3a2a10; border-radius: 6px; }
 .tt-map-key { margin-top: 8px; font: 700 13px system-ui, sans-serif; color: #3a2a10; text-align: center; }

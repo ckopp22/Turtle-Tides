@@ -2606,7 +2606,7 @@
     const rawMs = now - last;
     last = now;
     const w0 = perf ? performance.now() : 0;
-    update(dt);
+    if (!window.TT_PAUSED) update(dt); // paused by the top-right X (progression.js)
     render(now / 1000);
     if (!Home.isInterior() || miniMode() === 'survival') serviceGroundAhead();
     if (perf) {
