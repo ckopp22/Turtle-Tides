@@ -672,7 +672,7 @@
     wrap.innerHTML = `<div class="tt-name-box tt-upgrade-box tt-closet-box tt-map-box">
       <div class="tt-closet-head"><h3>World Map</h3><button type="button" class="tt-closet-x" aria-label="Close">&#x2715;</button></div>
       <div class="tt-map-art"></div>
-      <div class="tt-map-key"><span class="tt-map-dot" style="background:#8a5a2b"></span>Home &nbsp; <span class="tt-map-dot" style="background:#e8493a"></span>You</div>
+      <div class="tt-map-key"><span class="tt-map-dot" style="background:#8a5a2b"></span>Home &nbsp; <span class="tt-map-dot" style="background:#e8493a"></span>You &nbsp; <b style="color:#d3201a">&#x2715;</b> Treasure</div>
       <div class="tt-name-actions"><button type="button" class="tt-cancel tt-closet-close">Close</button></div>
     </div>`;
     wrap.querySelector('.tt-map-art').appendChild(worldMap(640));

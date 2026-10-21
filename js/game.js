@@ -204,6 +204,11 @@
     g.strokeStyle = '#3a2a10'; g.lineWidth = 2; g.strokeRect(px(0), py(0), WORLD_SIZE / span * size, WORLD_SIZE / span * size); // home zone border
     g.fillStyle = '#8a5a2b'; g.strokeStyle = '#fff'; g.lineWidth = 2; // hut marker on the home island
     g.beginPath(); g.arc(px(CENTER.x), py(CENTER.y), 6, 0, 7); g.fill(); g.stroke();
+    if (chest.on) { // red X where the treasure chest is right now
+      const cx = px(chest.x), cy = py(chest.y);
+      g.lineCap = 'round';
+      for (const [w, col] of [[7, '#fff'], [4, '#d3201a']]) { g.lineWidth = w; g.strokeStyle = col; g.beginPath(); g.moveTo(cx - 7, cy - 7); g.lineTo(cx + 7, cy + 7); g.moveTo(cx + 7, cy - 7); g.lineTo(cx - 7, cy + 7); g.stroke(); }
+    }
     g.fillStyle = '#e8493a'; g.beginPath(); g.arc(px(turtle.x), py(turtle.y), 4, 0, 7); g.fill(); g.stroke(); // you
     return c;
   }
