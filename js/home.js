@@ -296,10 +296,12 @@
   function tapAt(cx, cy) {
     if (scene !== 'interior' || phase !== 0 || sleep.phase || modal) return;
     if (bibleOpen) { bibleOpen = false; rebuildRoom(); return; } // any tap closes the Bible and its verse
-    const u = hitSpot((cx - L.x0) / L.s, (cy - L.y0) / L.s);
+    const rx = (cx - L.x0) / L.s, u = hitSpot(rx, (cy - L.y0) / L.s);
     if (!u) return;
+    // the map prop (art x 140-156) opens the world map; the Bible sits right of it
     const r = u.hotspot.rect, dx = room.x - clamp(room.x, r[0], r[2]), dy = room.y - clamp(room.y, r[1], r[3]);
     if (Math.hypot(dx, dy) > CONFIG.nearbyPx) { showHint('Come closer'); return; }
+    if (u.id === 'table' && rx < 154 && worldMap) { openMap(); return; }
     ACTIONS[u.hotspot.action](u);
   }
   // Pointer events (mouse + touch + pen). A tap = short press with little movement.
@@ -319,7 +321,7 @@
   }
 
   // ---- State ----
-  let onEnterInterior = null;
+  let onEnterInterior = null, worldMap = null; // worldMap(size) -> canvas of the world (game.js)
   let speedMult = () => 1, screenScale = () => 1; // game.js's camera zoom: room speed is set so it covers the same screen distance as outside
   let turtle = null, hutX = 0, hutY = 0, bodyR = 22, maxSpeed = 0, accel = 0, decel = 0, onEnter = null;
   let scene = 'world';   // 'world' | 'interior' — which one is drawn/simulated
@@ -333,7 +335,7 @@
   const hutEntry = { x: 0, y: 0, type: 'custom', collide: false, draw: drawHut };
 
   function init(o) {
-    turtle = o.turtle; bodyR = o.bodyRadius; maxSpeed = o.maxSpeed; accel = o.accel; decel = o.decel; onEnter = o.onEnter; if (o.screenScale) screenScale = o.screenScale; if (o.speedMult) speedMult = o.speedMult; onEnterInterior = o.onEnterInterior;
+    turtle = o.turtle; bodyR = o.bodyRadius; maxSpeed = o.maxSpeed; accel = o.accel; decel = o.decel; onEnter = o.onEnter; if (o.screenScale) screenScale = o.screenScale; if (o.speedMult) speedMult = o.speedMult; onEnterInterior = o.onEnterInterior; worldMap = o.worldMap;
     hutX = o.center.x + CONFIG.hutOffset.x;
     hutY = o.center.y + CONFIG.hutOffset.y;
     hutEntry.x = hutX; hutEntry.y = hutY;
@@ -582,7 +584,7 @@
   // "Buy & wear" spends banked coins. Opening it pauses the room; Close, the backdrop, Escape and the
   // browser Back button all close it. ----
   const CLOSET_SLOTS = [['color', 'Shell color'], ['hat', 'Hats'], ['clothes', 'Clothes'], ['accessory', 'Accessories']];
-  let modal = false, closet = null, book = null, minigame = null, screenPushed = false, pick = null, bookPage = 0;
+  let modal = false, mapPanel = null, closet = null, book = null, minigame = null, screenPushed = false, pick = null, bookPage = 0;
   function closetTile(item, coins) {
     const P = window.Progression, owned = P.ownsCosmetic(item.id), on = P.equippedIn(item.category) === item.id;
     let art;
@@ -644,8 +646,9 @@
     try { history.pushState({ ttCloset: 1 }, ''); screenPushed = true; } catch { screenPushed = false; } // so Back closes it
   }
   function closeScreen(fromPop) { // closes whichever full-screen panel (closet / collection book) is open
-    if (!closet && !book && !minigame) return;
+    if (!closet && !book && !minigame && !mapPanel) return;
     if (closet) { closet.remove(); closet = null; if (window.TT_SOUND) window.TT_SOUND.door(); } // lid shuts
+    if (mapPanel) { mapPanel.remove(); mapPanel = null; }
     if (minigame) { minigame.remove(); minigame = null; } // closing returns to the hut (the room was only paused)
     if (book) { book.remove(); book = null; if (window.TT_SOUND) window.TT_SOUND.bookClose(); }
     modal = false;
@@ -656,8 +659,28 @@
   window.addEventListener('keydown', e => {
     if (e.key !== 'Escape') return;
     if (minigame) window.MiniGames.escape(); // pauses a running game / backs out of a menu
-    else if (closet || book) closeScreen();
+    else if (closet || book || mapPanel) closeScreen();
   });
+
+  // ---- World map (table): pop-up of the whole world, drawn by game.js. Same modal/Back/Escape handling. ----
+  function openMap() {
+    closeScreen();
+    modal = true;
+    if (window.TT_SOUND) window.TT_SOUND.bookOpen();
+    const wrap = document.createElement('div');
+    wrap.className = 'tt-name-prompt';
+    wrap.innerHTML = `<div class="tt-name-box tt-upgrade-box tt-closet-box tt-map-box">
+      <div class="tt-closet-head"><h3>World Map</h3><button type="button" class="tt-closet-x" aria-label="Close">&#x2715;</button></div>
+      <div class="tt-map-art"></div>
+      <div class="tt-map-key"><span class="tt-map-dot" style="background:#8a5a2b"></span>Home &nbsp; <span class="tt-map-dot" style="background:#e8493a"></span>You</div>
+      <div class="tt-name-actions"><button type="button" class="tt-cancel tt-closet-close">Close</button></div>
+    </div>`;
+    wrap.querySelector('.tt-map-art').appendChild(worldMap(320));
+    document.body.appendChild(wrap);
+    mapPanel = wrap;
+    wrap.addEventListener('click', e => { if (e.target === wrap || e.target.closest('.tt-closet-x, .tt-closet-close')) closeScreen(); });
+    try { history.pushState({ ttMap: 1 }, ''); screenPushed = true; } catch { screenPushed = false; }
+  }
 
   // ---- Plant mini games: tap the plant -> minigames.js shows its menu (Baby Turtle Dash / Survival). The room
   // stays paused (modal) until it closes; closeScreen() (Back / Escape / popstate) tears the whole thing down. ----

@@ -169,11 +169,40 @@
   // not here at script-parse time, so a slow/first load can never leave the turtle at 0,0.
   const turtle = { x: 0, y: 0, vx: 0, vy: 0, angle: 0 };
   let spawned = false;
+  // Hut-table map pop-up: the whole world sampled at low res from the same biome/water functions the game
+  // uses. Shows the Adventure Zone only once it's unlocked (the table unlocks it, so in practice always).
+  function drawWorldMap(size) {
+    const c = document.createElement('canvas'); c.width = c.height = size;
+    const g = c.getContext('2d'), img = g.createImageData(size, size);
+    const lo = adventureUnlocked ? WORLD_MIN : 0, span = (adventureUnlocked ? WORLD_MAX : WORLD_SIZE) - lo;
+    for (let j = 0; j < size; j++) for (let i = 0; i < size; i++) {
+      const x = lo + (i + 0.5) / size * span, y = lo + (j + 0.5) / size * span;
+      let col;
+      if (isWater(x, y)) col = [88, 160, 214];
+      else if (isHomeIsland(x, y)) col = [236, 224, 180];
+      else {
+        const w = biomeWeights(Math.atan2(y - CENTER.y, x - CENTER.x) + biomeAngleNoise(x, y));
+        col = [0, 0, 0];
+        for (const k in BIOME_COLOR) { col[0] += BIOME_COLOR[k][0] * w[k]; col[1] += BIOME_COLOR[k][1] * w[k]; col[2] += BIOME_COLOR[k][2] * w[k]; }
+      }
+      const o = (j * size + i) * 4;
+      img.data[o] = col[0]; img.data[o + 1] = col[1]; img.data[o + 2] = col[2]; img.data[o + 3] = 255;
+    }
+    g.putImageData(img, 0, 0);
+    const px = x => (x - lo) / span * size, py = y => (y - lo) / span * size;
+    g.strokeStyle = '#3a2a10'; g.lineWidth = 2; g.strokeRect(px(0), py(0), WORLD_SIZE / span * size, WORLD_SIZE / span * size); // home zone border
+    g.fillStyle = '#8a5a2b'; g.strokeStyle = '#fff'; g.lineWidth = 2; // hut marker on the home island
+    g.beginPath(); g.arc(px(CENTER.x), py(CENTER.y), 6, 0, 7); g.fill(); g.stroke();
+    g.fillStyle = '#e8493a'; g.beginPath(); g.arc(px(turtle.x), py(turtle.y), 4, 0, 7); g.fill(); g.stroke(); // you
+    return c;
+  }
+
   // The player's hut (home.js): solid walls + door trigger on the island, and the interior scene.
   // Interior movement reuses the world's speed/accel numbers, scaled down inside home.js.
   Home.init({
     turtle, center: CENTER, bodyRadius: TURTLE_BODY_RADIUS,
     maxSpeed: MAX_SPEED * LAND_SPEED_MULT, accel: ACCEL, decel: DECEL, screenScale: () => ZOOM, speedMult: () => window.Progression.moveSpeedMultiplier(),
+    worldMap: size => drawWorldMap(size),
     onEnter: () => { if (window.Enemies) window.Enemies.resetAggro(); }, // chasers give up when the turtle goes inside
     onEnterInterior: () => { window.Progression.setHomeButtonVisible(true); setCompassShown(false); }, // shop (upgrades) icon stays available indoors; only the compass hides
   });
