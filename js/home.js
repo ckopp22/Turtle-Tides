@@ -675,7 +675,7 @@
       <div class="tt-map-key"><span class="tt-map-dot" style="background:#8a5a2b"></span>Home &nbsp; <span class="tt-map-dot" style="background:#e8493a"></span>You</div>
       <div class="tt-name-actions"><button type="button" class="tt-cancel tt-closet-close">Close</button></div>
     </div>`;
-    wrap.querySelector('.tt-map-art').appendChild(worldMap(320));
+    wrap.querySelector('.tt-map-art').appendChild(worldMap(640));
     document.body.appendChild(wrap);
     mapPanel = wrap;
     wrap.addEventListener('click', e => { if (e.target === wrap || e.target.closest('.tt-closet-x, .tt-closet-close')) closeScreen(); });

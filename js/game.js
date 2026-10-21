@@ -177,18 +177,29 @@
     const lo = adventureUnlocked ? WORLD_MIN : 0, span = (adventureUnlocked ? WORLD_MAX : WORLD_SIZE) - lo;
     for (let j = 0; j < size; j++) for (let i = 0; i < size; i++) {
       const x = lo + (i + 0.5) / size * span, y = lo + (j + 0.5) / size * span;
+      // water/sand from the same grid Shore.js draws, so coastlines match the world; land = biome blend + a little grain
+      const tx = Math.floor((x - SHORE_ORIGIN) / Shore.TILE), ty = Math.floor((y - SHORE_ORIGIN) / Shore.TILE);
+      const cell = shoreMap[ty] ? shoreMap[ty][tx] : 1;
       let col;
-      if (isWater(x, y)) col = [88, 160, 214];
-      else if (isHomeIsland(x, y)) col = [236, 224, 180];
+      if (cell === 1) col = [88, 160, 214];
+      else if (cell === 2) col = [236, 222, 172];
       else {
         const w = biomeWeights(Math.atan2(y - CENTER.y, x - CENTER.x) + biomeAngleNoise(x, y));
         col = [0, 0, 0];
         for (const k in BIOME_COLOR) { col[0] += BIOME_COLOR[k][0] * w[k]; col[1] += BIOME_COLOR[k][1] * w[k]; col[2] += BIOME_COLOR[k][2] * w[k]; }
       }
+      if (cell !== 1) { const n = (noise2(x / 90, y / 90) - 0.5) * 22; col = [col[0] + n, col[1] + n, col[2] + n]; }
       const o = (j * size + i) * 4;
       img.data[o] = col[0]; img.data[o + 1] = col[1]; img.data[o + 2] = col[2]; img.data[o + 3] = 255;
     }
     g.putImageData(img, 0, 0);
+    for (const s of scenery) { // trees and rocks as tiny dots so the forests read as forests
+      if (s.type !== 'sprite' || s.x < lo || s.y < lo || s.x > lo + span || s.y > lo + span) continue;
+      const tree = /tree|pine|oak|palm|bush/i.test(s.sprite), rock = /rock/i.test(s.sprite);
+      if (!tree && !rock) continue;
+      g.fillStyle = tree ? 'rgba(24,60,28,0.8)' : 'rgba(120,120,120,0.8)';
+      g.fillRect((s.x - lo) / span * size - 1, (s.y - lo) / span * size - 1, 2, 2);
+    }
     const px = x => (x - lo) / span * size, py = y => (y - lo) / span * size;
     g.strokeStyle = '#3a2a10'; g.lineWidth = 2; g.strokeRect(px(0), py(0), WORLD_SIZE / span * size, WORLD_SIZE / span * size); // home zone border
     g.fillStyle = '#8a5a2b'; g.strokeStyle = '#fff'; g.lineWidth = 2; // hut marker on the home island

@@ -439,7 +439,7 @@ button { touch-action: manipulation; }
 
 /* Collection book (home.js) */
 .tt-map-box { background: #f6ecd0; }
-.tt-map-art canvas { display: block; width: 100%; max-width: 420px; margin: 0 auto; border: 3px solid #3a2a10; border-radius: 6px; image-rendering: pixelated; }
+.tt-map-art canvas { display: block; width: 100%; max-width: 420px; margin: 0 auto; border: 3px solid #3a2a10; border-radius: 6px; }
 .tt-map-key { margin-top: 8px; font: 700 13px system-ui, sans-serif; color: #3a2a10; text-align: center; }
 .tt-map-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 1px solid #fff; margin-right: 4px; }
 .tt-book-box { background: #f6ecd0; height: min(560px, 88vh); height: min(560px, 88dvh); } /* fixed so nav buttons stay put between pages */
